@@ -20,6 +20,7 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O2 -Wall -Wextra")
 set(ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 add_executable(avcdec_test
   main.c
+  ../common/test_log.c
   ${ROOT}/src/core/iso9660.c
   ${ROOT}/src/core/umdv.c
   ${ROOT}/src/core/mpeg_ps.c

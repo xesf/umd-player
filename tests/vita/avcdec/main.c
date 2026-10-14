@@ -4,7 +4,6 @@
    units with sceAvcdec straight into the framebuffer, and logs errors, output frames, and
    decode times to ux0:data/umdplayer/avcdec_test.txt. Discs that fail are run again with
    sceAvcdecSetInterlacedStreamMode, whose signature is a guess (see the log for its result). */
-#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -22,9 +21,9 @@
 #include "../../../src/core/iso9660.h"
 #include "../../../src/core/umdv.h"
 #include "../../../src/platform/vita/vita_source.h"
+#include "../common/test_log.h"
 
-#define LOG_DIR  "ux0:data/umdplayer"
-#define LOG_PATH LOG_DIR "/avcdec_test.txt"
+#define LOG_PATH "ux0:data/umdplayer/avcdec_test.txt"
 #define ISO_DIR  "ux0:umd"
 
 #define SCREEN_W 960
@@ -48,28 +47,6 @@ static iso_volume vol;
 static umdv_playlist playlist;
 static umdv_clip clip;
 static uint8_t file_buf[512 * 1024];
-
-static void log_line(const char *fmt, ...)
-{
-    char line[512];
-    va_list ap;
-    SceUID fd;
-    int n;
-
-    va_start(ap, fmt);
-    n = vsnprintf(line, sizeof(line), fmt, ap);
-    va_end(ap);
-    if (n < 0)
-        return;
-    if (n >= (int)sizeof(line))
-        n = sizeof(line) - 1;
-    /* Open and close on every line so the log survives a crash. */
-    fd = sceIoOpen(LOG_PATH, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_APPEND, 0666);
-    if (fd >= 0) {
-        sceIoWrite(fd, line, n);
-        sceIoClose(fd);
-    }
-}
 
 static void *alloc_block(const char *name, unsigned int type, SceSize size, SceSize align, SceUID *uid)
 {
@@ -325,8 +302,7 @@ int main(void)
     SceCtrlData pad;
     int discs = 0, passed = 0, r;
 
-    sceIoMkdir(LOG_DIR, 0777);
-    sceIoRemove(LOG_PATH);
+    test_log_open(LOG_PATH);
     log_line("avcdec_test: sceAvcdec on UMD Video ISOs in " ISO_DIR "/\n");
     if ((r = sceSysmoduleLoadModule(SCE_SYSMODULE_AVCDEC)) < 0)
         log_line("sceSysmoduleLoadModule(AVCDEC) = 0x%08x\n", r);

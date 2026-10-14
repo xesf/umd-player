@@ -7,7 +7,7 @@ BIN = ../build/host
 TOOLS = $(BIN)/umdinfo $(BIN)/umddemux $(BIN)/at3pdec
 AT3P = $(wildcard $(CORE)/atrac3p/*.c)
 # The FFmpeg-derived files keep upstream's style; silence the warnings it triggers.
-AT3P_CFLAGS = -Wno-pointer-sign -Wno-unused-parameter -Wno-sign-compare -Wno-shift-op-parentheses
+AT3P_CFLAGS = -Wno-pointer-sign -Wno-unused-parameter -Wno-sign-compare -Wno-shift-op-parentheses -Wno-parentheses
 
 all: $(TOOLS)
 

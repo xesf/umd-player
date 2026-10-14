@@ -155,14 +155,21 @@ Results:
 
 To repeat: `./build/host/umddemux <iso> <outdir> -s 0x80`, then `ffmpeg -v error -i <outdir>/video.264 -f null -`.
 
-### Phase 2: ATRAC3plus decoder
+### Phase 2: ATRAC3plus decoder (done on the host, Vita speed pending)
 
-1. Port the FFmpeg ATRAC3plus decoder (`libavcodec/atrac3plus.c`, `atrac3plusdsp.c`, `atrac3plusdec.c`, and the tables) into `src/core/atrac3p/` as standalone C. Replace the FFmpeg framework code (`AVCodecContext`, `GetBitContext`, the float DSP helpers) with small local versions. Keep the original copyright notices.
-2. Write `tools/at3pdec`.
+`src/core/atrac3p/` is the FFmpeg `n7.1` ATRAC3plus decoder, copied with only its `#include` lines changed. `ffcompat.h` and `at3p.c` replace the FFmpeg framework: the bit reader, VLC tables, float helpers, sine windows, and the inverse MDCT.
 
-Check: for every audio track on the 5 discs, the PCM from `at3pdec` matches FFmpeg's PCM within 1 LSB per sample. A script prints the largest difference.
+FFmpeg's `av_tx` inverse MDCT conventions were measured with impulse inputs against `libavutil`, and our transform matches them at float precision. The transform is a DCT-IV computed with an FFT.
 
-Before the Vita work, spend one day in IDA on the Vita's `SceAudiodec` module. Codec IDs `0x1001` and `0x1002` are not in the public headers and might be ATRAC3 and ATRAC3plus (guess). If one works, the Vita can use the hardware decoder, and our decoder is still used on macOS.
+Results:
+
+- `tools/at3p_check.sh` decodes every audio track on the 5 discs with our decoder and with FFmpeg. All 13 tracks match within 1 LSB at 16 bits, with an SNR of 134.6 to 137.6 dB.
+- Decoding 140 s of audio takes 1.09 s of CPU on the Mac.
+
+Still to do:
+
+- Measure the decoder on the Vita with `tests/vita/at3p_bench`. The budget is 10% of one core at 333 MHz. If it is over budget, profile it with the **frame-budget** skill. The likely targets are the IPQF filter and the IMDCT, which suit NEON.
+- Check whether the Vita's `SceAudiodec` decodes ATRAC3plus (codec IDs `0x1001` and `0x1002`, guess). Our decoder works, so this is now only a speed option.
 
 ### Phase 3: macOS platform and first playback
 
