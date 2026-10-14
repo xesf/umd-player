@@ -305,7 +305,7 @@ def startup(path):
 
 
 TEMPLATE = '''<?xml version="1.0" encoding="utf-8"?>
-<livearea style="a1" format-ver="01.00" content-rev="1">
+<livearea style="a1" format-ver="01.00" content-rev="2">
   <livearea-background>
     <image>bg.png</image>
   </livearea-background>
