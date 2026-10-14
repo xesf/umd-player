@@ -318,7 +318,7 @@ def bg(path):
     film_background(c, 54, 34, 22, 60)
     title, by, scale = 'UMD Player', 'by xesf', 3
     icon, gap = 64, 18
-    x, y = 15, 340                       # top left of the title group
+    x, y = 15, 355                       # top left of the title group
     emblem(c, x + icon * 0.48, y + 32, icon * 0.86)
     tx = x + icon + gap
     c.text(title, tx, y + 8, scale, WHITE)
@@ -341,7 +341,7 @@ def startup(path):
 
 
 TEMPLATE = '''<?xml version="1.0" encoding="utf-8"?>
-<livearea style="a1" format-ver="01.00" content-rev="5">
+<livearea style="a1" format-ver="01.00" content-rev="6">
   <livearea-background>
     <image>bg.png</image>
   </livearea-background>
