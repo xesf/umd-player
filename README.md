@@ -24,13 +24,13 @@ The player starts in the disc library: the disc images (`.iso`, `.cso` or `.zso`
 | Circle | | Back to the library | Close the panel |
 | Triangle | | Open the options panel | Close it |
 | Left, Right | | Back or forward 10 s | Change the value |
-| Square | | Next screen mode | |
+| Square | Play the disc from the start | Next screen mode | |
 | Select | | Show the title and time | |
 | Start | Quit | Back to the library | |
 
 The options panel also shows the date, time, and battery level. While a movie plays, the Vita does not dim the screen or go to sleep.
 
-Each disc remembers where you left it and its audio, subtitle, and screen settings (`ux0:data/umdplayer/resume.txt`). Playing it again resumes from there; near the end of the movie it starts over.
+Each disc remembers where you left it and its audio, subtitle, and screen settings (`ux0:data/umdplayer/resume.txt`). Playing it again resumes from there; near the end of the movie it starts over. In the library, a disc with a saved position shows how far you got, and Square plays it from the start with the same settings.
 
 Screen modes:
 

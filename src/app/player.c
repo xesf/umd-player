@@ -1339,6 +1339,8 @@ static void save_resume(player *p)
     e.audio = p->want_audio;
     e.sub = p->sub_sub;
     e.screen = (int)p->mode;
+    e.start = p->title->start_pts;
+    e.end = p->title->end_pts;
     resume_save(&e);
     p->last_save_us = plat_time_us();
     p->last_frame_us = plat_time_us();

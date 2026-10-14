@@ -11,11 +11,14 @@ typedef struct resume_entry {
     uint64_t pos;         /* 90 kHz, in the clip's time */
     int audio, sub;       /* substreams; sub is -1 for off */
     int screen;           /* screen_mode */
+    uint64_t start, end;  /* the title's range, for showing progress; 0 when not known */
 } resume_entry;
 
 /* Returns 0 and the entry for key, or -1 when the disc has none. */
 int resume_load(const char *key, resume_entry *out);
 /* Adds or replaces the entry for e->key. */
 void resume_save(const resume_entry *e);
+/* Keeps the settings for key but forgets the position, so the disc plays from the start. */
+void resume_forget_position(const char *key);
 
 #endif

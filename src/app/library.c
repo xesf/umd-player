@@ -16,6 +16,7 @@
 #include "../core/vtiming.h"
 #include "../platform/platform.h"
 #include "osd.h"
+#include "resume.h"
 #include "version.h"
 
 #define LIB_MAX        64
@@ -41,6 +42,8 @@ typedef struct lib_disc {
     char title[96];
     uint8_t *icon0;                  /* RGBA, or NULL */
     int icon_w, icon_h;
+    int has_resume;                  /* a saved position past the start */
+    uint64_t resume_pos, resume_start, resume_end;   /* 90 kHz; start and end are 0 for 0.1.0 entries */
 } lib_disc;
 
 typedef struct icon_au {
@@ -115,6 +118,7 @@ struct library {
     canvas ui;
     plat_present_info info;
     int ui_dirty;
+    int marks_stale;                 /* reread the resume points: a movie was played */
 };
 
 static uint32_t le16(const uint8_t *p) { return (uint32_t)p[0] | (uint32_t)p[1] << 8; }
@@ -520,6 +524,53 @@ static void tell_worker(library *l, int paused)
     plat_mutex_unlock(l->cache_lock);
 }
 
+/* Reads each disc's resume point for the progress mark under its icon. */
+static void load_resume_marks(library *l)
+{
+    for (int i = 0; i < l->count; i++) {
+        lib_disc *d = &l->discs[i];
+        resume_entry e;
+        d->has_resume = resume_load(file_name(d->path), &e) == 0 && e.pos > e.start && e.pos > 0;
+        d->resume_pos = e.pos;
+        d->resume_start = e.start;
+        d->resume_end = e.end;
+    }
+    l->marks_stale = 0;
+}
+
+static void format_time(char *out, size_t size, uint64_t ticks)
+{
+    unsigned s = (unsigned)(ticks / 90000);
+    snprintf(out, size, "%u:%02u:%02u", s / 3600, s / 60 % 60, s % 60);
+}
+
+/* Right of the selected icon: how far the disc was played, and □ to start over. */
+static void draw_resume_mark(library *l)
+{
+    const lib_disc *d = &l->discs[l->sel];
+    canvas *c = &l->ui;
+    int x = BIG_X + 2 * ICON_W + 32, y = BIG_Y + 2 * ICON_H - 78, w = 300;
+    char at[16], total[16], line[48];
+
+    if (!d->has_resume)
+        return;
+    format_time(at, sizeof(at), d->resume_pos - d->resume_start);
+    canvas_darken(c, x - 14, y - 14, w + 132, 96, 90);
+    if (d->resume_end > d->resume_start) {
+        uint64_t len = d->resume_end - d->resume_start, done = d->resume_pos - d->resume_start;
+        int fill = done >= len ? w : (int)(done * (uint64_t)w / len);
+        format_time(total, sizeof(total), len);
+        snprintf(line, sizeof(line), "Resume at %s of %s", at, total);
+        canvas_rect(c, x, y + 24, w, 6, RGBA(70, 80, 100, 255));
+        canvas_rect(c, x, y + 24, fill, 6, RGBA(255, 255, 255, 230));
+    } else {
+        snprintf(line, sizeof(line), "Resume at %s", at);
+    }
+    canvas_text(c, x, y, 2, RGBA(255, 255, 255, 255), line);
+    canvas_icon(c, ICON_BUTTON_SQUARE, x, y + 44, 2, COLOR_SQUARE);
+    canvas_text(c, x + 2 * ICON_SIZE + 10, y + 52, 2, TEXT_DIM, "Play from the start");
+}
+
 /* ---- the disc on screen ---- */
 
 static void drop_frames(library *l)
@@ -656,6 +707,7 @@ static void draw_ui(library *l)
     } else {
         canvas_rect(c, BIG_X, BIG_Y, 2 * ICON_W, 2 * ICON_H, RGBA(60, 70, 90, 255));
     }
+    draw_resume_mark(l);
     canvas_text(c, UI_W - 20 - canvas_text_width("v" UMDPLAYER_VERSION, 1), UI_H - 18, 1, TEXT_DIM, "v" UMDPLAYER_VERSION);
 
     l->info.ui_rgba = c->rgba;
@@ -788,6 +840,7 @@ static void scan(library *l)
     l->sel = 0;
     if (l->cache_lock)
         plat_mutex_unlock(l->cache_lock);
+    load_resume_marks(l);
     plat_log("library: %d discs in %s\n", count, l->dirs);
 }
 
@@ -888,8 +941,17 @@ int library_update(library *l, uint32_t pressed)
             return -1;
         }
     }
+    if (l->marks_stale) {
+        load_resume_marks(l);
+        l->ui_dirty = 1;
+    }
     if (pressed & PLAT_BTN_CROSS)
         return l->sel;
+    if ((pressed & PLAT_BTN_SQUARE) && l->discs[l->sel].has_resume) {
+        resume_forget_position(file_name(l->discs[l->sel].path));
+        l->discs[l->sel].has_resume = 0;
+        return l->sel;
+    }
     if ((pressed & PLAT_BTN_UP) && l->sel > 0)
         l->sel--;
     else if ((pressed & PLAT_BTN_DOWN) && l->sel < l->count - 1)
@@ -930,6 +992,7 @@ void library_suspend(library *l)
     release_devices(l);
     tell_worker(l, 1);   /* no memory card reads while a movie plays */
     l->ui_dirty = 1;
+    l->marks_stale = 1;
 }
 
 void library_close(library *l)
