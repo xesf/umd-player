@@ -28,6 +28,8 @@ set_source_files_properties(${AT3P_SOURCES} PROPERTIES
 add_executable(umdplayer
   src/app/main.c
   src/app/player.c
+  src/app/screen.c
+  src/app/osd.c
   src/core/iso9660.c
   src/core/umdv.c
   src/core/mpeg_ps.c
@@ -36,6 +38,9 @@ add_executable(umdplayer
   src/core/vtiming.c
   src/core/deint.c
   src/core/png.c
+  src/core/canvas.c
+  src/core/font8x8.c
+  src/core/cropdetect.c
   ${AT3P_SOURCES}
   src/platform/vita/vita_main.c
   src/platform/vita/vita_sys.c

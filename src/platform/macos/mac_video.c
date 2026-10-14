@@ -258,3 +258,17 @@ void plat_video_close(plat_video *v)
     free(v->nal_buf);
     free(v);
 }
+
+int plat_frame_lock(plat_frame *f, const uint8_t **pixels, int *stride)
+{
+    if (CVPixelBufferLockBaseAddress(f->image, kCVPixelBufferLock_ReadOnly) != kCVReturnSuccess)
+        return -1;
+    *pixels = CVPixelBufferGetBaseAddress(f->image);
+    *stride = (int)CVPixelBufferGetBytesPerRow(f->image);
+    return 0;
+}
+
+void plat_frame_unlock(plat_frame *f)
+{
+    CVPixelBufferUnlockBaseAddress(f->image, kCVPixelBufferLock_ReadOnly);
+}

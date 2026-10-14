@@ -22,3 +22,4 @@ Decision: the project is MIT. The ATRAC3plus decoder in `src/core/atrac3p/` is L
 | `src/core/atrac3p/at3p.c` | Port of FFmpeg `libavcodec/atrac3plusdec.c` (`n7.1`) without the AVCodec framework | LGPL-2.1-or-later |
 | `src/core/atrac3p/ffcompat.h`, `at3p.h` | Written for umd-player, kept in the same folder and licence | LGPL-2.1-or-later |
 | `src/platform/vita/vita_shaders.c` | libvita2d `libvita2d/shader/compiled/texture_v_gxp.o` and `texture_f_gxp.o`, extracted as raw `.gxp` programs | MIT, Copyright (c) 2015 Sergi Granell |
+| `src/core/font8x8.c` | font8x8_basic by Daniel Hepper, from IBM VGA fonts via Marcel Sondaar (github.com/dhepper/font8x8) | Public domain |

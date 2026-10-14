@@ -1,5 +1,6 @@
 #include "player.h"
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,6 +13,8 @@
 #include "../core/umdv.h"
 #include "../core/vtiming.h"
 #include "../platform/platform.h"
+#include "osd.h"
+#include "screen.h"
 
 #define VQ_BYTES      (4 * 1024 * 1024)  /* queued video access units */
 #define VQ_MAX        512
@@ -31,6 +34,12 @@
 #define SUB_HEADER    18                 /* size, "0088", duration, ?, x, y, 0; then the PNG */
 #define VIDEO_W       720
 #define VIDEO_H       480
+#define UI_W          960                /* the UI layer is drawn at Vita screen size */
+#define UI_H          544
+#define TOAST_US      2500000
+#define DETECT_US     500000             /* border detection interval */
+#define MENU_ROWS     4
+enum { ROW_AUDIO, ROW_SUBTITLES, ROW_SCREEN, ROW_CHAPTER };
 
 enum { AU_PENDING, AU_READY, AU_DROP };
 
@@ -107,6 +116,21 @@ struct player {
     plat_present_info present;
     uint8_t *sub_rgba, *sub_work;    /* decoded subtitle image and PNG scratch */
     uint32_t sub_shown_seq;          /* seq of the unit in sub_rgba, 0 for none */
+    int sub_x, sub_y;                /* its place in video pixels */
+    int dirty;                       /* the shown frame must be presented again */
+
+    /* Screen mode and the picture area found inside black borders (grows, never shrinks). */
+    screen_mode mode;
+    crop_rect active;
+    int have_active;
+    uint64_t last_detect_us;
+
+    /* On-screen display. */
+    canvas ui;
+    osd_view osd_drawn;              /* what the UI layer holds now */
+    int menu_open, menu_row, menu_chapter;
+    char toast[64];
+    uint64_t toast_until;
     int paused, audio_open;
     uint64_t audio_base_played;      /* plat_audio_played() when playback started */
     uint64_t clk_raw, clk_us, clk_last;  /* last audio clock reading, when it changed, last value given */
@@ -375,10 +399,8 @@ static int open_video(player *p)
         p->video_disabled = 1;
         return -1;
     }
-    p->present.width = p->sps.width;
-    p->present.height = p->sps.height;
-    p->present.sar_w = p->sps.sar_w;
-    p->present.sar_h = p->sps.sar_h;
+    p->present.video_w = p->sps.width;
+    p->present.video_h = p->sps.height;
     p->present.deinterlace = p->field_coded;
     plat_log("video: %dx%d, sample aspect %d:%d, %s\n", p->sps.width, p->sps.height, p->sps.sar_w, p->sps.sar_h,
            p->field_coded ? "field pictures (deinterlaced)" : "frame pictures");
@@ -574,6 +596,8 @@ static void restart_reader(player *p, uint64_t target, int audio, int sub)
 }
 
 /* The current position: the seek target until a frame from after the seek is on screen. */
+static void toast(player *p, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
+
 static uint64_t now_or_shown(player *p)
 {
     if (p->seeking)
@@ -608,69 +632,140 @@ static void seek_chapter(player *p, int step)
     if (cur < 0)
         cur = 0;
     if (cur >= n) {
-        plat_log("no next chapter\n");
+        toast(p, "Last chapter");
         return;
     }
-    plat_log("chapter %d of %d\n", cur + 1, n);
     seek_to(p, ch[cur].pts, "chapter");
+    toast(p, "Chapter %d of %d", cur + 1, n);
 }
 
-static void next_audio_track(player *p)
+static void toast(player *p, const char *fmt, ...)
 {
-    int found = -1, first = -1;
+    va_list ap;
 
-    for (int i = 0; i < p->clip.stream_count; i++) {
-        const umdv_stream *st = &p->clip.streams[i];
-        if (st->kind != UMDV_STREAM_AUDIO)
-            continue;
-        if (first < 0)
-            first = i;
-        if (found == -2) {
-            found = i;
-            break;
-        }
-        if (st->sub_id == p->audio_sub)
-            found = -2;
-    }
-    if (found < 0)
-        found = first;
-    if (found < 0 || p->clip.streams[found].sub_id == p->audio_sub)
-        return;
-    plat_log("audio track 0x%02x (%.2s)\n", p->clip.streams[found].sub_id, p->clip.streams[found].lang);
-    restart_reader(p, now_or_shown(p), p->clip.streams[found].sub_id, p->sub_sub);
+    va_start(ap, fmt);
+    vsnprintf(p->toast, sizeof(p->toast), fmt, ap);
+    va_end(ap);
+    p->toast_until = plat_time_us() + TOAST_US;
+    plat_log("%s\n", p->toast);
 }
 
-/* Cycles subtitles: off, then each subtitle track of the clip, then off again. */
-static void next_subtitle_track(player *p)
+static const char *language(const char *code)
 {
-    int next = DEMUX_NONE, take = p->sub_sub == DEMUX_NONE, any = 0;
+    static const struct { const char *code, *name; } names[] = {
+        {"en", "English"}, {"fr", "French"}, {"de", "German"}, {"es", "Spanish"}, {"it", "Italian"},
+        {"pt", "Portuguese"}, {"nl", "Dutch"}, {"ja", "Japanese"}, {"zh", "Chinese"}, {"ko", "Korean"},
+        {"ru", "Russian"}, {"pl", "Polish"}, {"sv", "Swedish"}, {"da", "Danish"}, {"no", "Norwegian"},
+        {"fi", "Finnish"}, {"el", "Greek"}, {"tr", "Turkish"}, {"cs", "Czech"}, {"hu", "Hungarian"},
+        {"ar", "Arabic"}, {"he", "Hebrew"}, {"hi", "Hindi"}, {"th", "Thai"}, {"hr", "Croatian"},
+        {"ro", "Romanian"}, {"is", "Icelandic"}};
+    static char other[3];
 
-    for (int i = 0; i < p->clip.stream_count; i++)
-        any |= p->clip.streams[i].kind == UMDV_STREAM_SUBTITLE;
-    if (!any) {
-        plat_log("this title has no subtitles\n");
+    for (unsigned i = 0; i < sizeof(names) / sizeof(names[0]); i++)
+        if (code[0] == names[i].code[0] && code[1] == names[i].code[1])
+            return names[i].name;
+    other[0] = code[0];
+    other[1] = code[1];
+    return other;
+}
+
+/* The streams of one kind in the clip, as indexes into clip.streams. */
+static int list_streams(const player *p, int kind, int *out)
+{
+    int n = 0;
+    for (int i = 0; i < p->clip.stream_count && n < UMDV_MAX_STREAMS; i++)
+        if (p->clip.streams[i].kind == kind)
+            out[n++] = i;
+    return n;
+}
+
+/* "English", or "French 2" when a language has more than one track. */
+static const char *stream_name(const player *p, int kind, int sub_id, char *buf, size_t size)
+{
+    int list[UMDV_MAX_STREAMS], n = list_streams(p, kind, list), nth = 0, total = 0;
+    const umdv_stream *found = NULL;
+
+    if (sub_id == DEMUX_NONE)
+        return "Off";
+    for (int i = 0; i < n; i++)
+        if (p->clip.streams[list[i]].sub_id == sub_id)
+            found = &p->clip.streams[list[i]];
+    if (!found)
+        return "?";
+    for (int i = 0; i < n; i++) {
+        const umdv_stream *st = &p->clip.streams[list[i]];
+        if (st->lang[0] != found->lang[0] || st->lang[1] != found->lang[1])
+            continue;
+        if (st == found)
+            nth = total;
+        total++;
+    }
+    if (total > 1)
+        snprintf(buf, size, "%s %d", language(found->lang), nth + 1);
+    else
+        snprintf(buf, size, "%s", language(found->lang));
+    return buf;
+}
+
+/* Moves dir steps through the audio tracks (wrapping) and restarts reading with it. */
+static void cycle_audio(player *p, int dir)
+{
+    int list[UMDV_MAX_STREAMS], n = list_streams(p, UMDV_STREAM_AUDIO, list), cur = 0;
+    char name[32];
+
+    if (n < 2) {
+        toast(p, "Only one audio track");
         return;
     }
+    for (int i = 0; i < n; i++)
+        if (p->clip.streams[list[i]].sub_id == p->audio_sub)
+            cur = i;
+    cur = (cur + dir + n) % n;
+    restart_reader(p, now_or_shown(p), p->clip.streams[list[cur]].sub_id, p->sub_sub);
+    toast(p, "Audio: %s", stream_name(p, UMDV_STREAM_AUDIO, p->audio_sub, name, sizeof(name)));
+}
 
-    for (int i = 0; i < p->clip.stream_count; i++) {
-        const umdv_stream *st = &p->clip.streams[i];
-        if (st->kind != UMDV_STREAM_SUBTITLE)
-            continue;
-        if (take) {
-            next = st->sub_id;
-            break;
-        }
-        if (st->sub_id == p->sub_sub)
-            take = 1;
+/* Moves through off and the subtitle tracks (wrapping) and restarts reading with it. */
+static void cycle_subtitles(player *p, int dir)
+{
+    int list[UMDV_MAX_STREAMS], n = list_streams(p, UMDV_STREAM_SUBTITLE, list), cur = 0;
+    char name[32];
+
+    if (n == 0) {
+        toast(p, "No subtitles on this title");
+        return;
     }
-    if (next == DEMUX_NONE) {
-        plat_log("subtitles off\n");
-    } else {
-        for (int i = 0; i < p->clip.stream_count; i++)
-            if (p->clip.streams[i].kind == UMDV_STREAM_SUBTITLE && p->clip.streams[i].sub_id == next)
-                plat_log("subtitles 0x%02x (%.2s)\n", next, p->clip.streams[i].lang);
-    }
-    restart_reader(p, now_or_shown(p), p->audio_sub, next);
+    for (int i = 0; i < n; i++)
+        if (p->clip.streams[list[i]].sub_id == p->sub_sub)
+            cur = i + 1;
+    cur = (cur + dir + n + 1) % (n + 1);    /* position 0 is off */
+    restart_reader(p, now_or_shown(p), p->audio_sub, cur ? p->clip.streams[list[cur - 1]].sub_id : DEMUX_NONE);
+    toast(p, "Subtitles: %s", stream_name(p, UMDV_STREAM_SUBTITLE, p->sub_sub, name, sizeof(name)));
+}
+
+static void cycle_screen(player *p, int dir)
+{
+    p->mode = (screen_mode)(((int)p->mode + dir + SCREEN_MODES) % SCREEN_MODES);
+    p->dirty = 1;
+    toast(p, "Screen: %s", screen_mode_name(p->mode));
+}
+
+static int current_chapter(player *p)
+{
+    const umdv_chapter *ch = &p->playlist.chapters[p->title->first_chapter];
+    uint64_t now = now_or_shown(p);
+    int cur = 0;
+
+    for (int i = 0; i < p->title->chapter_count; i++)
+        if (ch[i].pts <= now)
+            cur = i;
+    return cur;
+}
+
+static void format_time(char *buf, size_t size, uint64_t ticks)
+{
+    unsigned s = (unsigned)(ticks / 90000);
+    snprintf(buf, size, "%u:%02u:%02u", s / 3600, s / 60 % 60, s % 60);
 }
 
 /* Picks the subtitle unit active at now and decodes it if it changed. Returns 1 if the overlay
@@ -702,10 +797,10 @@ static int update_subtitle(player *p, uint64_t now)
             p->present.overlay_rgba = p->sub_rgba;
             p->present.overlay_w = w;
             p->present.overlay_h = h;
-            p->present.overlay_x = active->x;
-            p->present.overlay_y = active->y;
             p->present.overlay_stride = w * 4;
             p->present.overlay_id = seq;
+            p->sub_x = active->x;
+            p->sub_y = active->y;
         } else {
             seq = 0;
         }
@@ -717,6 +812,189 @@ static int update_subtitle(player *p, uint64_t now)
     }
     p->sub_shown_seq = seq;
     return changed;
+}
+
+/* Builds what the OSD should show now. */
+static void build_osd(player *p, osd_view *v)
+{
+    uint64_t now = now_or_shown(p), len = p->title->end_pts - p->title->start_pts;
+    char a[24], b[24];
+
+    memset(v, 0, sizeof(*v));
+    if (p->toast[0] && plat_time_us() < p->toast_until)
+        snprintf(v->toast, sizeof(v->toast), "%s", p->toast);
+    v->menu_open = p->menu_open;
+    if (p->menu_open) {
+        v->row_count = MENU_ROWS;
+        v->menu_row = p->menu_row;
+        snprintf(v->rows[ROW_AUDIO].label, sizeof(v->rows[0].label), "Audio");
+        stream_name(p, UMDV_STREAM_AUDIO, p->has_audio ? p->audio_sub : DEMUX_NONE, v->rows[ROW_AUDIO].value,
+                    sizeof(v->rows[0].value));
+        if (!p->has_audio)
+            snprintf(v->rows[ROW_AUDIO].value, sizeof(v->rows[0].value), "None");
+        snprintf(v->rows[ROW_SUBTITLES].label, sizeof(v->rows[0].label), "Subtitles");
+        snprintf(v->rows[ROW_SUBTITLES].value, sizeof(v->rows[0].value), "%s",
+                 stream_name(p, UMDV_STREAM_SUBTITLE, p->sub_sub, a, sizeof(a)));
+        snprintf(v->rows[ROW_SCREEN].label, sizeof(v->rows[0].label), "Screen");
+        snprintf(v->rows[ROW_SCREEN].value, sizeof(v->rows[0].value), "%s", screen_mode_name(p->mode));
+        snprintf(v->rows[ROW_CHAPTER].label, sizeof(v->rows[0].label), "Chapter");
+        snprintf(v->rows[ROW_CHAPTER].value, sizeof(v->rows[0].value), "%d / %d", p->menu_chapter + 1,
+                 p->title->chapter_count);
+        snprintf(v->hint[0], sizeof(v->hint[0]), "Up/Down: choose    Left/Right: change");
+        snprintf(v->hint[1], sizeof(v->hint[1]), "X: go to chapter   O or Triangle: close");
+    }
+    v->show_bar = p->menu_open || v->toast[0] || p->paused;
+    if (v->show_bar) {
+        snprintf(v->title, sizeof(v->title), "%s%.40s", p->paused ? "Paused  " : "", p->title->name);
+        format_time(a, sizeof(a), now > p->title->start_pts ? now - p->title->start_pts : 0);
+        format_time(b, sizeof(b), len);
+        snprintf(v->time_text, sizeof(v->time_text), "%.20s / %.20s", a, b);
+        v->progress = len ? (float)(now - p->title->start_pts) / (float)len : 0;
+    }
+}
+
+/* Redraws the UI layer when the OSD changed. Returns 1 if it changed. */
+static int update_osd(player *p)
+{
+    osd_view v;
+
+    build_osd(p, &v);
+    if (memcmp(&v, &p->osd_drawn, sizeof(v)) == 0)
+        return 0;
+    p->osd_drawn = v;
+    if (osd_visible(&v)) {
+        osd_draw(&v, &p->ui);
+        p->present.ui_rgba = p->ui.rgba;
+        p->present.ui_w = p->ui.w;
+        p->present.ui_h = p->ui.h;
+        p->present.ui_stride = p->ui.stride;
+        p->present.ui_id++;
+    } else {
+        p->present.ui_rgba = NULL;
+    }
+    return 1;
+}
+
+/* Looks for black borders in the shown frame and grows the known picture area. */
+static void detect_borders(player *p)
+{
+    const uint8_t *pixels;
+    int stride;
+    crop_rect r;
+
+    if (!p->shown || plat_time_us() - p->last_detect_us < DETECT_US)
+        return;
+    p->last_detect_us = plat_time_us();
+    if (plat_frame_lock(p->shown, &pixels, &stride) < 0)
+        return;
+    if (crop_detect(pixels, p->present.video_w, p->present.video_h, stride, &r) == 0) {
+        if (!p->have_active) {
+            p->active = r;
+            p->have_active = 1;
+            p->dirty |= p->mode == SCREEN_ZOOM;
+        } else {
+            int x0 = r.x < p->active.x ? r.x : p->active.x, y0 = r.y < p->active.y ? r.y : p->active.y;
+            int x1 = r.x + r.w > p->active.x + p->active.w ? r.x + r.w : p->active.x + p->active.w;
+            int y1 = r.y + r.h > p->active.y + p->active.h ? r.y + r.h : p->active.y + p->active.h;
+            if (x0 != p->active.x || y0 != p->active.y || x1 - x0 != p->active.w || y1 - y0 != p->active.h) {
+                p->active = (crop_rect){x0, y0, x1 - x0, y1 - y0};
+                p->dirty |= p->mode == SCREEN_ZOOM;
+                plat_log("picture area %dx%d at %d,%d\n", p->active.w, p->active.h, p->active.x, p->active.y);
+            }
+        }
+    }
+    plat_frame_unlock(p->shown);
+}
+
+static void present(player *p)
+{
+    screen_geom g;
+    int sw, sh;
+
+    if (!p->shown)
+        return;
+    plat_screen_size(&sw, &sh);
+    screen_layout(p->mode, p->present.video_w, p->present.video_h, p->sps.sar_w, p->sps.sar_h,
+                  p->have_active ? &p->active : NULL, (float)sw / (float)sh, &g);
+    p->present.src_x = g.src_x;
+    p->present.src_y = g.src_y;
+    p->present.src_w = g.src_w;
+    p->present.src_h = g.src_h;
+    p->present.dst = g.dst;
+    if (p->present.overlay_rgba)
+        p->present.overlay_dst = screen_map(&g, p->sub_x, p->sub_y, p->present.overlay_w, p->present.overlay_h);
+    plat_present(p->shown, &p->present);
+    p->dirty = 0;
+}
+
+/* Buttons while the options panel is open. */
+static void menu_input(player *p, uint32_t pressed)
+{
+    int dir = (pressed & PLAT_BTN_RIGHT) ? 1 : (pressed & PLAT_BTN_LEFT) ? -1 : 0;
+
+    if (pressed & (PLAT_BTN_CIRCLE | PLAT_BTN_TRIANGLE)) {
+        p->menu_open = 0;
+        return;
+    }
+    if (pressed & PLAT_BTN_UP)
+        p->menu_row = (p->menu_row + MENU_ROWS - 1) % MENU_ROWS;
+    if (pressed & PLAT_BTN_DOWN)
+        p->menu_row = (p->menu_row + 1) % MENU_ROWS;
+    if (dir) {
+        switch (p->menu_row) {
+        case ROW_AUDIO: cycle_audio(p, dir); break;
+        case ROW_SUBTITLES: cycle_subtitles(p, dir); break;
+        case ROW_SCREEN: cycle_screen(p, dir); break;
+        default:
+            p->menu_chapter = (p->menu_chapter + dir + p->title->chapter_count) % p->title->chapter_count;
+            break;
+        }
+        p->toast[0] = 0;    /* the panel shows the value already */
+    }
+    if ((pressed & PLAT_BTN_CROSS) && p->menu_row == ROW_CHAPTER) {
+        seek_to(p, p->playlist.chapters[p->title->first_chapter + p->menu_chapter].pts, "chapter");
+        p->menu_open = 0;
+        toast(p, "Chapter %d of %d", p->menu_chapter + 1, p->title->chapter_count);
+    }
+}
+
+static void toggle_pause(player *p)
+{
+    p->paused = !p->paused;
+    p->clk_raw = 0;   /* restart the extrapolation after a pause */
+    if (p->has_audio)
+        plat_audio_pause(p->paused);
+    else if (p->wall_base_us && !p->paused)
+        p->wall_base_us = plat_time_us() - (p->shown_pts - p->wall_base_pts) * 100 / 9;
+}
+
+/* Buttons during playback. */
+static void play_input(player *p, uint32_t pressed)
+{
+    if (pressed & PLAT_BTN_TRIANGLE) {
+        p->menu_open = 1;
+        p->menu_row = ROW_AUDIO;
+        p->menu_chapter = current_chapter(p);
+        return;
+    }
+    if (pressed & PLAT_BTN_RIGHT) {
+        seek_to(p, (int64_t)now_or_shown(p) + SEEK_STEP, "forward");
+        toast(p, "Forward 10 s");
+    }
+    if (pressed & PLAT_BTN_LEFT) {
+        seek_to(p, (int64_t)now_or_shown(p) - SEEK_STEP, "back");
+        toast(p, "Back 10 s");
+    }
+    if (pressed & PLAT_BTN_UP)
+        seek_chapter(p, 1);
+    if (pressed & PLAT_BTN_DOWN)
+        seek_chapter(p, -1);
+    if (pressed & PLAT_BTN_SQUARE)
+        cycle_screen(p, 1);
+    if (pressed & PLAT_BTN_SELECT)
+        toast(p, "%s", p->title->name);
+    if (pressed & PLAT_BTN_CROSS)
+        toggle_pause(p);
 }
 
 player *player_open(const player_options *opt)
@@ -776,10 +1054,15 @@ player *player_open(const player_options *opt)
     p->at3p = malloc(at3p_decoder_size());
     p->sub_rgba = malloc(VIDEO_W * VIDEO_H * 4);
     p->sub_work = malloc((VIDEO_W * 8 + 1) * VIDEO_H);
+    p->ui.w = UI_W;
+    p->ui.h = UI_H;
+    p->ui.stride = UI_W * 4;
+    p->ui.rgba = malloc(UI_W * UI_H * 4);
+    p->mode = SCREEN_ZOOM;
     for (i = 0; i < SUBQ; i++)
         if (!(p->subs[i].png = malloc(SUB_PNG_MAX)))
             goto fail;
-    if (!p->lock || !p->cond || !p->vq_data || !p->pcm || !p->dmx || !p->at3p || !p->sub_rgba || !p->sub_work)
+    if (!p->lock || !p->cond || !p->vq_data || !p->pcm || !p->dmx || !p->at3p || !p->sub_rgba || !p->sub_work || !p->ui.rgba)
         goto fail;
     at3p_init_tables();
     if (p->has_audio && plat_audio_open(AUDIO_RATE, audio_fill, p) < 0) {
@@ -811,26 +1094,10 @@ int player_update(player *p, uint32_t pressed)
         if (open_video(p) < 0 && !p->has_audio)
             return 0;
     }
-    if (pressed & PLAT_BTN_RIGHT)
-        seek_to(p, (int64_t)now_or_shown(p) + SEEK_STEP, "forward");
-    if (pressed & PLAT_BTN_LEFT)
-        seek_to(p, (int64_t)now_or_shown(p) - SEEK_STEP, "back");
-    if (pressed & PLAT_BTN_UP)
-        seek_chapter(p, 1);
-    if (pressed & PLAT_BTN_DOWN)
-        seek_chapter(p, -1);
-    if (pressed & PLAT_BTN_TRIANGLE)
-        next_audio_track(p);
-    if (pressed & PLAT_BTN_SQUARE)
-        next_subtitle_track(p);
-    if (pressed & PLAT_BTN_CROSS) {
-        p->paused = !p->paused;
-        p->clk_raw = 0;   /* restart the extrapolation after a pause */
-        if (p->has_audio)
-            plat_audio_pause(p->paused);
-        else if (p->wall_base_us && !p->paused)
-            p->wall_base_us = plat_time_us() - (p->shown_pts - p->wall_base_pts) * 100 / 9;
-    }
+    if (p->menu_open)
+        menu_input(p, pressed);
+    else
+        play_input(p, pressed);
     if (p->video_disabled)
         drain_video(p);
     else
@@ -854,9 +1121,9 @@ int player_update(player *p, uint32_t pressed)
             memmove(&p->frames[0], &p->frames[best + 1], (size_t)(p->frame_count - best - 1) * sizeof(p->frames[0]));
             p->frame_count -= best + 1;
             update_subtitle(p, now);
-            plat_present(p->shown, &p->present);
+            p->dirty = 1;
         } else if (p->shown && update_subtitle(p, now)) {
-            plat_present(p->shown, &p->present);
+            p->dirty = 1;
         }
         if (p->frames_shown > 0 && plat_time_us() - p->last_report_us > 2000000) {
             p->last_report_us = plat_time_us();
@@ -868,9 +1135,12 @@ int player_update(player *p, uint32_t pressed)
                    p->wait_empty, p->wait_pending, p->reader_wait_pcm, p->reader_wait_vq);
             plat_mutex_unlock(p->lock);
         }
-    } else if (!p->shown && p->frame_count > 0) {
-        plat_present(p->frames[0].frame, &p->present);
     }
+    detect_borders(p);
+    if (update_osd(p))
+        p->dirty = 1;
+    if (p->dirty)
+        present(p);
 
     plat_mutex_lock(p->lock);
     done = p->eof && p->vq_count == 0 && p->pcm_count == 0;
@@ -908,6 +1178,7 @@ void player_close(player *p)
     free(p->at3p);
     free(p->sub_rgba);
     free(p->sub_work);
+    free(p->ui.rgba);
     for (int i = 0; i < SUBQ; i++)
         free(p->subs[i].png);
     free(p->clp_buf);

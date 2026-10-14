@@ -76,22 +76,40 @@ void plat_audio_reset(void);            /* after a seek: drop queued audio, play
 void plat_audio_close(void);
 
 /* ---- Screen ----
-   Draws the frame scaled to the window at the display aspect ratio (sar_w:sar_h is the
-   sample aspect ratio from the SPS), with the subtitle overlay on top, or black when frame
-   is NULL. deinterlace blends the two fields of a frame. The app calls it again with the
-   same frame when only the overlay changed. */
+   The app decides all geometry; the platform draws up to three layers, back to front:
+   the video, the subtitle overlay, and the UI. Rectangles on screen are normalized (0..1,
+   origin at the top left), so the app does not depend on the window size. */
+typedef struct plat_rect {
+    float x, y, w, h;
+} plat_rect;
+
 typedef struct plat_present_info {
-    int width, height;
-    int sar_w, sar_h;
-    int deinterlace;
-    /* Subtitle overlay: RGBA with straight alpha, placed in video pixels (0..width, 0..height).
-       overlay_rgba is NULL when there is none; overlay_id changes whenever the image changes. */
+    int video_w, video_h;               /* decoded picture size */
+    int src_x, src_y, src_w, src_h;     /* the part of the picture to show */
+    plat_rect dst;                      /* where it goes */
+    int deinterlace;                    /* blend the two fields (macOS only; the Vita uses bob) */
+    /* Subtitle overlay: RGBA, straight alpha. NULL for none; id changes when the image changes. */
     const uint8_t *overlay_rgba;
-    int overlay_w, overlay_h, overlay_x, overlay_y, overlay_stride;
+    int overlay_w, overlay_h, overlay_stride;
     uint32_t overlay_id;
+    plat_rect overlay_dst;
+    /* UI layer covering the whole screen: RGBA, straight alpha, NULL for none. */
+    const uint8_t *ui_rgba;
+    int ui_w, ui_h, ui_stride;
+    uint32_t ui_id;
 } plat_present_info;
 
+/* Draws the layers, or a black screen with only the UI when frame is NULL. The app calls it
+   again with the same frame when only the overlay or the UI changed. */
 void plat_present(plat_frame *frame, const plat_present_info *info);
+
+/* Screen size in pixels, for aspect ratio decisions (960x544 on the Vita). */
+void plat_screen_size(int *w, int *h);
+
+/* CPU access to a decoded frame's pixels (32-bit, alpha in the 4th byte), for border detection.
+   Returns 0 with the top-left pixel of the picture; call plat_frame_unlock after. */
+int plat_frame_lock(plat_frame *f, const uint8_t **pixels, int *stride);
+void plat_frame_unlock(plat_frame *f);
 
 /* ---- Input, as Vita buttons on every platform ---- */
 enum {

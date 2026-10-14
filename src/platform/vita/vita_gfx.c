@@ -20,6 +20,7 @@
 #define PATCHER_USSE   (64 * 1024)
 #define OVERLAY_MAX_W  720
 #define OVERLAY_MAX_H  480
+#define VERTICES       12             /* 4 per layer: video, subtitle, UI */
 
 typedef struct vertex {
     float x, y, z;
@@ -32,9 +33,15 @@ static SceGxmRenderTarget *target;
 static SceGxmShaderPatcher *patcher;
 static SceGxmVertexProgram *vprog;
 static SceGxmFragmentProgram *fprog, *fprog_blend;
-static uint8_t *overlay_tex;
-static uint32_t overlay_id;
-static int overlay_w, overlay_h;
+typedef struct layer_tex {
+    uint8_t *mem;
+    int max_w, max_h;
+    int w, h;
+    uint32_t id;
+    int valid;
+} layer_tex;
+
+static layer_tex sub_tex, ui_tex;
 static const SceGxmProgramParameter *wvp_param;
 static uint8_t *display[DISPLAY_BUFFERS];
 static SceGxmColorSurface surface[DISPLAY_BUFFERS];
@@ -42,7 +49,6 @@ static SceGxmSyncObject *sync_obj[DISPLAY_BUFFERS];
 static int back;
 static vertex *vertices;
 static uint16_t *indices;
-static float last_rect[4];
 
 static void *gpu_alloc(unsigned type, SceSize size, SceSize align, SceGxmMemoryAttribFlags attr, int map)
 {
@@ -191,11 +197,16 @@ int vita_gfx_init(void)
     }
     wvp_param = sceGxmProgramFindParameterByName(vp, "wvp");
 
-    vertices = gpu_alloc(SCE_KERNEL_MEMBLOCK_TYPE_USER_RW_UNCACHE, 8 * sizeof(vertex), 4096, SCE_GXM_MEMORY_ATTRIB_READ, 1);
-    overlay_tex = gpu_alloc(SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW, OVERLAY_MAX_W * OVERLAY_MAX_H * 4, 256 * 1024,
+    vertices = gpu_alloc(SCE_KERNEL_MEMBLOCK_TYPE_USER_RW_UNCACHE, VERTICES * sizeof(vertex), 4096, SCE_GXM_MEMORY_ATTRIB_READ, 1);
+    sub_tex.mem = gpu_alloc(SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW, OVERLAY_MAX_W * OVERLAY_MAX_H * 4, 256 * 1024,
                             SCE_GXM_MEMORY_ATTRIB_READ, 1);
+    sub_tex.max_w = OVERLAY_MAX_W;
+    sub_tex.max_h = OVERLAY_MAX_H;
+    ui_tex.mem = gpu_alloc(SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW, FB_BYTES, 256 * 1024, SCE_GXM_MEMORY_ATTRIB_READ, 1);
+    ui_tex.max_w = SCREEN_W;
+    ui_tex.max_h = SCREEN_H;
     indices = gpu_alloc(SCE_KERNEL_MEMBLOCK_TYPE_USER_RW_UNCACHE, 4 * sizeof(uint16_t), 4096, SCE_GXM_MEMORY_ATTRIB_READ, 1);
-    if (!vertices || !indices || !overlay_tex)
+    if (!vertices || !indices || !sub_tex.mem || !ui_tex.mem)
         return -1;
     for (int i = 0; i < 4; i++)
         indices[i] = (uint16_t)i;
@@ -204,59 +215,72 @@ int vita_gfx_init(void)
     return 0;
 }
 
-/* Copies the overlay into GPU memory with rows 8-pixel aligned, as linear textures need. */
-static int upload_overlay(const vita_overlay *ov)
+/* Copies an RGBA image into GPU memory with rows 8-pixel aligned, as linear textures need.
+   Only when its id changed. */
+static int upload(layer_tex *t, const uint8_t *rgba, int w, int h, int stride, uint32_t id)
 {
-    int stride;
+    int row;
 
-    if (ov->id == overlay_id)
+    if (t->valid && t->id == id)
         return 0;
-    if (ov->w > OVERLAY_MAX_W || ov->h > OVERLAY_MAX_H)
+    if (w > t->max_w || h > t->max_h)
         return -1;
-    stride = ALIGN(ov->w, 8) * 4;
-    for (int y = 0; y < ov->h; y++)
-        memcpy(overlay_tex + (size_t)y * stride, ov->rgba + (size_t)y * ov->stride, (size_t)ov->w * 4);
-    overlay_id = ov->id;
-    overlay_w = ov->w;
-    overlay_h = ov->h;
+    row = ALIGN(w, 8) * 4;
+    for (int y = 0; y < h; y++)
+        memcpy(t->mem + (size_t)y * row, rgba + (size_t)y * stride, (size_t)w * 4);
+    t->w = w;
+    t->h = h;
+    t->id = id;
+    t->valid = 1;
     return 0;
 }
 
-int vita_gfx_present(const uint8_t *image, int image_w, int image_h, int src_x, int src_y, int src_w, int src_h,
-                     float display_aspect, const vita_overlay *overlay)
+/* Clip space: x and y from -1 to 1, y up. dst is normalized with the origin at the top left. */
+static void quad(vertex *v, plat_rect dst, float u0, float v0, float u1, float v1)
+{
+    float x0 = dst.x * 2 - 1, x1 = (dst.x + dst.w) * 2 - 1;
+    float y0 = 1 - dst.y * 2, y1 = 1 - (dst.y + dst.h) * 2;
+
+    v[0] = (vertex){x0, y0, 0.5f, u0, v0};
+    v[1] = (vertex){x1, y0, 0.5f, u1, v0};
+    v[2] = (vertex){x0, y1, 0.5f, u0, v1};
+    v[3] = (vertex){x1, y1, 0.5f, u1, v1};
+}
+
+static void draw(SceGxmFragmentProgram *fp, const SceGxmTexture *tex, const vertex *v)
 {
     static const float identity[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    void *uniforms;
+
+    sceGxmSetFragmentProgram(context, fp);
+    sceGxmReserveVertexDefaultUniformBuffer(context, &uniforms);
+    sceGxmSetUniformDataF(uniforms, wvp_param, 0, 16, identity);
+    sceGxmSetFragmentTexture(context, 0, tex);
+    sceGxmSetVertexStream(context, 0, v);
+    sceGxmDraw(context, SCE_GXM_PRIMITIVE_TRIANGLE_STRIP, SCE_GXM_INDEX_FORMAT_U16, indices, 4);
+}
+
+static int layer_texture(SceGxmTexture *t, const layer_tex *l)
+{
+    if (sceGxmTextureInitLinear(t, l->mem, SCE_GXM_TEXTURE_FORMAT_A8B8G8R8, (unsigned)l->w, (unsigned)l->h, 0) < 0)
+        return -1;
+    sceGxmTextureSetMinFilter(t, SCE_GXM_TEXTURE_FILTER_LINEAR);
+    sceGxmTextureSetMagFilter(t, SCE_GXM_TEXTURE_FILTER_LINEAR);
+    return 0;
+}
+
+int vita_gfx_present(const uint8_t *image, int image_w, int image_h, int pic_x, int pic_y, const plat_present_info *info)
+{
     SceGxmTexture tex;
     SceDisplayFrameBuf fb;
-    float w = SCREEN_W, h = SCREEN_W / display_aspect, x0, y0, x1, y1;
-    void *uniforms;
 
     if (!ready)
         return -1;
-    if (h > SCREEN_H) {
-        h = SCREEN_H;
-        w = SCREEN_H * display_aspect;
-    }
-    /* Clip space: x and y from -1 to 1, y up. */
-    x1 = w / SCREEN_W;
-    x0 = -x1;
-    y1 = h / SCREEN_H;
-    y0 = -y1;
-    if (memcmp(last_rect, (float[4]){x0, y0, x1, y1}, sizeof(last_rect)) != 0) {
-        /* The picture changed size: clear the borders of both display buffers. */
-        for (int i = 0; i < DISPLAY_BUFFERS; i++)
-            memset(display[i], 0, FB_BYTES);
-        memcpy(last_rect, (float[4]){x0, y0, x1, y1}, sizeof(last_rect));
-    }
-    vertices[0] = (vertex){x0, y1, 0.5f, (float)src_x / image_w, (float)src_y / image_h};
-    vertices[1] = (vertex){x1, y1, 0.5f, (float)(src_x + src_w) / image_w, (float)src_y / image_h};
-    vertices[2] = (vertex){x0, y0, 0.5f, (float)src_x / image_w, (float)(src_y + src_h) / image_h};
-    vertices[3] = (vertex){x1, y0, 0.5f, (float)(src_x + src_w) / image_w, (float)(src_y + src_h) / image_h};
-
-    if (sceGxmTextureInitLinear(&tex, image, SCE_GXM_TEXTURE_FORMAT_A8B8G8R8, (unsigned)image_w, (unsigned)image_h, 0) < 0)
-        return -1;
-    sceGxmTextureSetMinFilter(&tex, SCE_GXM_TEXTURE_FILTER_LINEAR);
-    sceGxmTextureSetMagFilter(&tex, SCE_GXM_TEXTURE_FILTER_LINEAR);
+    /* Black everywhere the video does not cover. The quad's place changes with the screen mode,
+       so clear every frame; the fill runs on the GPU's transfer engine. */
+    sceGxmTransferFill(0xFF000000, SCE_GXM_TRANSFER_FORMAT_U8U8U8U8_ABGR, display[back], 0, 0, SCREEN_W, SCREEN_H,
+                       SCREEN_W * 4, NULL, 0, NULL);
+    sceGxmTransferFinish();
 
     sceGxmBeginScene(context, 0, target, NULL, NULL, sync_obj[back], &surface[back], NULL);
     sceGxmSetViewport(context, SCREEN_W / 2.0f, SCREEN_W / 2.0f, SCREEN_H / 2.0f, -SCREEN_H / 2.0f, 0.5f, 0.5f);
@@ -264,34 +288,25 @@ int vita_gfx_present(const uint8_t *image, int image_w, int image_h, int src_x, 
     sceGxmSetFrontDepthWriteEnable(context, SCE_GXM_DEPTH_WRITE_DISABLED);
     sceGxmSetCullMode(context, SCE_GXM_CULL_NONE);
     sceGxmSetVertexProgram(context, vprog);
-    sceGxmSetFragmentProgram(context, fprog);
-    sceGxmReserveVertexDefaultUniformBuffer(context, &uniforms);
-    sceGxmSetUniformDataF(uniforms, wvp_param, 0, 16, identity);
-    sceGxmSetFragmentTexture(context, 0, &tex);
-    sceGxmSetVertexStream(context, 0, vertices);
-    sceGxmDraw(context, SCE_GXM_PRIMITIVE_TRIANGLE_STRIP, SCE_GXM_INDEX_FORMAT_U16, indices, 4);
 
-    if (overlay && overlay->rgba && upload_overlay(overlay) == 0) {
-        SceGxmTexture otex;
-        /* Map the overlay's place in source pixels onto the video rectangle. */
-        float sx = (x1 - x0) / src_w, sy = (y1 - y0) / src_h;
-        float ox0 = x0 + overlay->x * sx, ox1 = x0 + (overlay->x + overlay_w) * sx;
-        float oy1 = y1 - overlay->y * sy, oy0 = y1 - (overlay->y + overlay_h) * sy;
-        vertices[4] = (vertex){ox0, oy1, 0.5f, 0.0f, 0.0f};
-        vertices[5] = (vertex){ox1, oy1, 0.5f, 1.0f, 0.0f};
-        vertices[6] = (vertex){ox0, oy0, 0.5f, 0.0f, 1.0f};
-        vertices[7] = (vertex){ox1, oy0, 0.5f, 1.0f, 1.0f};
-        if (sceGxmTextureInitLinear(&otex, overlay_tex, SCE_GXM_TEXTURE_FORMAT_A8B8G8R8, (unsigned)overlay_w,
-                                    (unsigned)overlay_h, 0) == 0) {
-            sceGxmTextureSetMinFilter(&otex, SCE_GXM_TEXTURE_FILTER_LINEAR);
-            sceGxmTextureSetMagFilter(&otex, SCE_GXM_TEXTURE_FILTER_LINEAR);
-            sceGxmSetFragmentProgram(context, fprog_blend);
-            sceGxmReserveVertexDefaultUniformBuffer(context, &uniforms);
-            sceGxmSetUniformDataF(uniforms, wvp_param, 0, 16, identity);
-            sceGxmSetFragmentTexture(context, 0, &otex);
-            sceGxmSetVertexStream(context, 0, &vertices[4]);
-            sceGxmDraw(context, SCE_GXM_PRIMITIVE_TRIANGLE_STRIP, SCE_GXM_INDEX_FORMAT_U16, indices, 4);
-        }
+    if (image && sceGxmTextureInitLinear(&tex, image, SCE_GXM_TEXTURE_FORMAT_A8B8G8R8, (unsigned)image_w,
+                                         (unsigned)image_h, 0) == 0) {
+        sceGxmTextureSetMinFilter(&tex, SCE_GXM_TEXTURE_FILTER_LINEAR);
+        sceGxmTextureSetMagFilter(&tex, SCE_GXM_TEXTURE_FILTER_LINEAR);
+        quad(&vertices[0], info->dst, (float)(pic_x + info->src_x) / image_w, (float)(pic_y + info->src_y) / image_h,
+             (float)(pic_x + info->src_x + info->src_w) / image_w, (float)(pic_y + info->src_y + info->src_h) / image_h);
+        draw(fprog, &tex, &vertices[0]);
+    }
+    if (image && info->overlay_rgba &&
+        upload(&sub_tex, info->overlay_rgba, info->overlay_w, info->overlay_h, info->overlay_stride, info->overlay_id) == 0 &&
+        layer_texture(&tex, &sub_tex) == 0) {
+        quad(&vertices[4], info->overlay_dst, 0, 0, 1, 1);
+        draw(fprog_blend, &tex, &vertices[4]);
+    }
+    if (info->ui_rgba && upload(&ui_tex, info->ui_rgba, info->ui_w, info->ui_h, info->ui_stride, info->ui_id) == 0 &&
+        layer_texture(&tex, &ui_tex) == 0) {
+        quad(&vertices[8], (plat_rect){0, 0, 1, 1}, 0, 0, 1, 1);
+        draw(fprog_blend, &tex, &vertices[8]);
     }
     sceGxmEndScene(context, NULL, NULL);
     sceGxmFinish(context);

@@ -10,8 +10,8 @@
 #define WINDOW_H 544
 
 static uint32_t held_buttons;
-static CALayer *video_layer, *overlay_layer;
-static uint32_t overlay_id;
+static CALayer *video_layer, *overlay_layer, *ui_layer;
+static uint32_t overlay_id, ui_id;
 static NSView *content_view;
 
 static uint32_t button_for_key(unsigned short code)
@@ -75,6 +75,10 @@ static uint32_t button_for_key(unsigned short code)
     overlay_layer = [CALayer layer];
     overlay_layer.contentsGravity = kCAGravityResize;
     [content_view.layer addSublayer:overlay_layer];
+    ui_layer = [CALayer layer];
+    ui_layer.contentsGravity = kCAGravityResize;
+    ui_layer.magnificationFilter = kCAFilterNearest;
+    [content_view.layer addSublayer:ui_layer];
     self.window.contentView = content_view;
     [self.window center];
     [self.window makeKeyAndOrderFront:nil];
@@ -103,11 +107,29 @@ uint32_t plat_buttons(void)
     return held_buttons;
 }
 
+static CGRect screen_rect(plat_rect r)
+{
+    CGRect b = content_view.bounds;
+    /* Layer coordinates start at the bottom left; plat_rect at the top left. */
+    return CGRectMake(r.x * b.size.width, (1 - r.y - r.h) * b.size.height, r.w * b.size.width, r.h * b.size.height);
+}
+
+static CGImageRef image_from_rgba(const uint8_t *rgba, int w, int h, int stride)
+{
+    /* Copy the pixels: the app reuses its buffers. */
+    CFDataRef data = CFDataCreate(NULL, rgba, (CFIndex)stride * h);
+    CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
+    CGDataProviderRef dp = CGDataProviderCreateWithCFData(data);
+    CGImageRef img = CGImageCreate((size_t)w, (size_t)h, 8, 32, (size_t)stride, cs,
+                                   kCGImageAlphaLast | kCGBitmapByteOrderDefault, dp, NULL, false, kCGRenderingIntentDefault);
+    CGDataProviderRelease(dp);
+    CGColorSpaceRelease(cs);
+    CFRelease(data);
+    return img;
+}
+
 void plat_present(plat_frame *frame, const plat_present_info *info)
 {
-    CGRect bounds = content_view.bounds;
-    double aspect, w, h;
-
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     if (!frame) {
@@ -121,44 +143,43 @@ void plat_present(plat_frame *frame, const plat_present_info *info)
             frame->deinterlaced = 1;
         }
         video_layer.contents = (__bridge id)CVPixelBufferGetIOSurface(frame->image);
-        aspect = (double)info->width / info->height;
-        if (info->sar_w > 0 && info->sar_h > 0)
-            aspect *= (double)info->sar_w / info->sar_h;
-        w = bounds.size.width;
-        h = w / aspect;
-        if (h > bounds.size.height) {
-            h = bounds.size.height;
-            w = h * aspect;
-        }
-        video_layer.frame = CGRectMake((bounds.size.width - w) / 2, (bounds.size.height - h) / 2, w, h);
+        /* contentsRect is in unit coordinates of the image, origin at the bottom left. */
+        video_layer.contentsRect = CGRectMake((CGFloat)info->src_x / info->video_w,
+                                              1 - (CGFloat)(info->src_y + info->src_h) / info->video_h,
+                                              (CGFloat)info->src_w / info->video_w, (CGFloat)info->src_h / info->video_h);
+        video_layer.frame = screen_rect(info->dst);
     }
     if (!frame || !info->overlay_rgba) {
         overlay_layer.contents = nil;
         overlay_id = 0;
     } else {
-        CGRect v = video_layer.frame;
-        double sx = v.size.width / info->width, sy = v.size.height / info->height;
         if (info->overlay_id != overlay_id) {
-            /* Copy the pixels: the app reuses its buffer for the next subtitle. */
-            CFDataRef data = CFDataCreate(NULL, info->overlay_rgba, (CFIndex)info->overlay_stride * info->overlay_h);
-            CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
-            CGDataProviderRef dp = CGDataProviderCreateWithCFData(data);
-            CGImageRef img = CGImageCreate((size_t)info->overlay_w, (size_t)info->overlay_h, 8, 32,
-                                           (size_t)info->overlay_stride, cs, kCGImageAlphaLast | kCGBitmapByteOrderDefault,
-                                           dp, NULL, false, kCGRenderingIntentDefault);
+            CGImageRef img = image_from_rgba(info->overlay_rgba, info->overlay_w, info->overlay_h, info->overlay_stride);
             overlay_layer.contents = (__bridge id)img;
             CGImageRelease(img);
-            CFRelease(data);
-            CGDataProviderRelease(dp);
-            CGColorSpaceRelease(cs);
             overlay_id = info->overlay_id;
         }
-        /* Layer coordinates start at the bottom left; overlay positions at the top left. */
-        overlay_layer.frame = CGRectMake(v.origin.x + info->overlay_x * sx,
-                                         v.origin.y + v.size.height - (info->overlay_y + info->overlay_h) * sy,
-                                         info->overlay_w * sx, info->overlay_h * sy);
+        overlay_layer.frame = screen_rect(info->overlay_dst);
+    }
+    if (!info->ui_rgba) {
+        ui_layer.contents = nil;
+        ui_id = 0;
+    } else {
+        if (info->ui_id != ui_id) {
+            CGImageRef img = image_from_rgba(info->ui_rgba, info->ui_w, info->ui_h, info->ui_stride);
+            ui_layer.contents = (__bridge id)img;
+            CGImageRelease(img);
+            ui_id = info->ui_id;
+        }
+        ui_layer.frame = content_view.bounds;
     }
     [CATransaction commit];
+}
+
+void plat_screen_size(int *w, int *h)
+{
+    *w = (int)content_view.bounds.size.width;
+    *h = (int)content_view.bounds.size.height;
 }
 
 int main(int argc, char **argv)

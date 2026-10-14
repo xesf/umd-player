@@ -12,6 +12,27 @@ make -C tools
 ./tools/check_corpus.sh umd             # check every disc in a folder
 ```
 
+## Controls
+
+| Button | During playback | In the options panel |
+|---|---|---|
+| Triangle | Open the options panel | Close it |
+| Cross | Pause or play | Go to the chosen chapter |
+| Circle | | Close the panel |
+| Left, Right | Back or forward 10 s | Change the value |
+| Up, Down | Next or previous chapter | Choose a row |
+| Square | Next screen mode | |
+| Select | Show the title and time | |
+| L, R | Previous or next disc in `ux0:umd/` | |
+| Start | Quit | |
+
+Screen modes:
+
+- **Fit**: the whole picture at its aspect ratio, with black bars where needed.
+- **Zoom** (default): finds black borders inside the picture and fills the screen with what is inside, cropping at most 10%.
+- **Fill**: fills the screen with the whole frame and crops what does not fit, for example a 4:3 picture cropped to 16:9.
+- **Stretch**: fills the screen and ignores the aspect ratio.
+
 - [Build plan](docs/plan.md)
 - [UMD Video format reference](docs/formats/umd-video.md)
 - [Licensing](docs/licensing.md)
