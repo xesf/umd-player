@@ -20,6 +20,7 @@
 #define FRAMES_AHEAD  4                  /* decoded frames kept ahead of the clock */
 #define MAX_DECODED   8
 #define RESOLVE_SPAN  (3 * VTIMING_SETTLE + 2)
+#define CLOCK_LEAD    (2 * 1024 * 90000 / AUDIO_RATE)  /* two audio buffers, in 90 kHz */
 
 enum { AU_PENDING, AU_READY, AU_DROP };
 
@@ -82,6 +83,7 @@ struct player {
     plat_present_info present;
     int paused, audio_open;
     uint64_t audio_base_played;      /* plat_audio_played() when playback started */
+    uint64_t clk_raw, clk_us, clk_last;  /* last audio clock reading, when it changed, last value given */
     uint64_t wall_base_us, wall_base_pts;
     uint64_t last_report_us;
     uint32_t frames_shown, frames_late;
@@ -391,7 +393,7 @@ static void drain_video(player *p)
 /* The playback clock in 90 kHz. Audio drives it; without audio, wall time does. */
 static int clock_now(player *p, uint64_t *now)
 {
-    uint64_t played;
+    uint64_t played, raw, est, t;
 
     if (p->has_audio) {
         if (!p->audio_started)
@@ -400,8 +402,23 @@ static int clock_now(player *p, uint64_t *now)
         played = played > p->audio_base_played ? played - p->audio_base_played : 0;
         plat_mutex_lock(p->lock);
         played = played > p->silence_frames ? played - p->silence_frames : 0;
-        *now = p->pcm_first_pts + played * 90000 / AUDIO_RATE;
+        raw = p->pcm_first_pts + played * 90000 / AUDIO_RATE;
         plat_mutex_unlock(p->lock);
+        /* The platform reports played audio in buffer-sized steps (about 21 ms on the Vita).
+           Between steps, run on the system timer, at most CLOCK_LEAD ahead of the last step,
+           so frames that are 16.7 ms apart do not come due two at a time. */
+        t = plat_time_us();
+        if (raw != p->clk_raw) {
+            p->clk_raw = raw;
+            p->clk_us = t;
+        }
+        est = p->clk_raw + (t - p->clk_us) * 9 / 100;
+        if (est > raw + CLOCK_LEAD)
+            est = raw + CLOCK_LEAD;
+        if (est < p->clk_last)
+            est = p->clk_last;
+        p->clk_last = est;
+        *now = est;
         return 1;
     }
     if (!p->wall_base_us)
@@ -531,6 +548,7 @@ int player_update(player *p, uint32_t pressed)
     }
     if (pressed & PLAT_BTN_CROSS) {
         p->paused = !p->paused;
+        p->clk_raw = 0;   /* restart the extrapolation after a pause */
         if (p->has_audio)
             plat_audio_pause(p->paused);
         else if (p->wall_base_us && !p->paused)
