@@ -20,6 +20,9 @@
 #define FRAMES_AHEAD  4                  /* decoded frames kept ahead of the clock */
 #define MAX_DECODED   8
 #define RESOLVE_SPAN  (3 * VTIMING_SETTLE + 2)
+#define AT3P_FRAME_TICKS (AT3P_FRAME_SAMPLES * 90000 / AUDIO_RATE)
+#define SEEK_STEP     (10 * 90000)       /* left and right */
+#define CHAPTER_BACK  (3 * 90000)        /* "previous chapter" within this of a chapter start restarts it */
 #define CLOCK_LEAD    (2 * 1024 * 90000 / AUDIO_RATE)  /* two audio buffers, in 90 kHz */
 
 enum { AU_PENDING, AU_READY, AU_DROP };
@@ -50,6 +53,8 @@ struct player {
     plat_mutex *lock;
     plat_cond *cond;
     int quit, eof;
+    int stop;                        /* the reader should stop for a seek */
+    uint64_t min_pts;                /* frames and audio before this time are dropped (after a seek) */
     uint8_t *vq_data;
     uint32_t vq_write;               /* next free byte when the ring is not empty */
     vq_entry vq[VQ_MAX];
@@ -157,6 +162,11 @@ static void vq_resolve(player *p, int at_end)
 
 /* ---- reader thread ---- */
 
+static int stopping(const player *p)
+{
+    return p->quit || p->stop;
+}
+
 static void push_video(player *p, const demux_unit *u)
 {
     h264_au_info info;
@@ -183,11 +193,11 @@ static void push_video(player *p, const demux_unit *u)
         p->field_coded = info.field_pic;
         p->have_sps = 1;
     }
-    if (!p->quit && vq_alloc(p, u->size) < 0)
+    if (!stopping(p) && vq_alloc(p, u->size) < 0)
         p->reader_wait_vq++;
-    while (!p->quit && (off = vq_alloc(p, u->size)) < 0)
+    while (!stopping(p) && (off = vq_alloc(p, u->size)) < 0)
         plat_cond_wait(p->cond, p->lock);
-    if (!p->quit) {
+    if (!stopping(p)) {
         memcpy(p->vq_data + off, u->data, u->size);
         p->vq_write = (uint32_t)off + u->size;
         e = &p->vq[(p->vq_first + p->vq_count++) % VQ_MAX];
@@ -220,6 +230,8 @@ static void push_audio(player *p, const demux_unit *u)
     }
     if (p->at3p_channels < 0)
         return;
+    if (u->pts != PS_NO_TS && u->pts + AT3P_FRAME_TICKS < p->min_pts)
+        return;   /* before the seek target */
     if (at3p_decode(p->at3p, u->data + AT3P_HEADER_SIZE, u->size - AT3P_HEADER_SIZE, out) < 0) {
         memset(left, 0, sizeof(left));
         memset(right, 0, sizeof(right));
@@ -229,11 +241,11 @@ static void push_audio(player *p, const demux_unit *u)
     at3p_to_s16(out, 2, pcm);
 
     plat_mutex_lock(p->lock);
-    if (!p->quit && PCM_FRAMES - p->pcm_count < AT3P_FRAME_SAMPLES)
+    if (!stopping(p) && PCM_FRAMES - p->pcm_count < AT3P_FRAME_SAMPLES)
         p->reader_wait_pcm++;
-    while (!p->quit && PCM_FRAMES - p->pcm_count < AT3P_FRAME_SAMPLES)
+    while (!stopping(p) && PCM_FRAMES - p->pcm_count < AT3P_FRAME_SAMPLES)
         plat_cond_wait(p->cond, p->lock);
-    if (!p->quit) {
+    if (!stopping(p)) {
         if (!p->have_audio_pts && u->pts != PS_NO_TS) {
             p->pcm_first_pts = u->pts;
             p->have_audio_pts = 1;
@@ -256,7 +268,7 @@ static void reader_main(void *user)
     player *p = (player *)user;
     demux_unit u;
 
-    while (!p->quit && demux_next(p->dmx, &u) > 0) {
+    while (!stopping(p) && demux_next(p->dmx, &u) > 0) {
         if (u.type == DEMUX_VIDEO)
             push_video(p, &u);
         else if (u.type == DEMUX_AUDIO)
@@ -326,7 +338,7 @@ static void keep_frame(player *p, plat_frame *f, uint64_t pts)
 {
     int i;
 
-    if (pts == PLAT_PTS_HIDDEN) {
+    if (pts == PLAT_PTS_HIDDEN || pts < p->min_pts) {
         plat_frame_release(f);
         return;
     }
@@ -455,6 +467,122 @@ static void maybe_start(player *p)
     }
 }
 
+/* Stops the reader, drops everything queued, and restarts reading at the seek point at or
+   before target (90 kHz) with the given audio track. */
+static void restart_reader(player *p, uint64_t target, int audio)
+{
+    umdv_ep ep;
+    uint32_t index;
+
+    if (p->reader) {
+        plat_mutex_lock(p->lock);
+        p->stop = 1;
+        plat_cond_broadcast(p->cond);
+        plat_mutex_unlock(p->lock);
+        plat_thread_join(p->reader);
+        p->reader = NULL;
+    }
+    for (int i = 0; i < p->frame_count; i++)
+        plat_frame_release(p->frames[i].frame);
+    p->frame_count = 0;
+    if (p->video)
+        plat_video_flush(p->video);
+
+    plat_mutex_lock(p->lock);
+    p->stop = 0;
+    p->eof = 0;
+    p->vq_first = p->vq_count = 0;
+    p->vq_write = 0;
+    p->pcm_read = p->pcm_count = 0;
+    p->have_audio_pts = 0;
+    p->audio_started = 0;
+    p->silence_frames = 0;
+    p->min_pts = target;
+    plat_mutex_unlock(p->lock);
+
+    p->audio_open = 0;               /* re-measure the audio clock base at the next start */
+    p->clk_raw = p->clk_last = 0;
+    p->wall_base_us = 0;
+    p->audio_sub = audio;
+    p->at3p_channels = 0;            /* fresh decoder state: the old overlap is from elsewhere */
+    h264_parser_init(&p->h264);      /* the seek point starts with an SPS */
+    if (p->have_sps)
+        vtiming_reset(&p->vt, &p->sps);
+
+    index = p->clip.ep_count ? umdv_clip_find(&p->clip, (uint32_t)target) : 0;
+    ep.sector = 0;
+    if (p->clip.ep_count)
+        umdv_clip_ep(&p->clip, index, &ep);
+    demux_init(p->dmx, read_mps, p);
+    demux_select(p->dmx, p->has_audio ? audio : DEMUX_NONE, DEMUX_NONE);
+    demux_seek(p->dmx, ep.sector);
+    p->reader = plat_thread_start(reader_main, p, "reader");
+}
+
+static uint64_t now_or_shown(player *p)
+{
+    return p->clk_last ? p->clk_last : (p->shown_pts ? p->shown_pts : p->title->start_pts);
+}
+
+static void seek_to(player *p, int64_t target, const char *why)
+{
+    int64_t first = p->title->start_pts, last = (int64_t)p->title->end_pts - 90000;
+
+    if (target < first)
+        target = first;
+    if (target > last)
+        target = last;
+    plat_log("%s: seek to %.1f s\n", why, (double)(target - first) / 90000.0);
+    restart_reader(p, (uint64_t)target, p->audio_sub);
+}
+
+static void seek_chapter(player *p, int step)
+{
+    const umdv_chapter *ch = &p->playlist.chapters[p->title->first_chapter];
+    uint64_t now = now_or_shown(p);
+    int n = p->title->chapter_count, cur = 0;
+
+    for (int i = 0; i < n; i++)
+        if (ch[i].pts <= now)
+            cur = i;
+    if (step < 0 && now - ch[cur].pts > CHAPTER_BACK)
+        step = 0;                    /* "previous" first goes back to the start of this chapter */
+    cur += step;
+    if (cur < 0)
+        cur = 0;
+    if (cur >= n) {
+        plat_log("no next chapter\n");
+        return;
+    }
+    plat_log("chapter %d of %d\n", cur + 1, n);
+    seek_to(p, ch[cur].pts, "chapter");
+}
+
+static void next_audio_track(player *p)
+{
+    int found = -1, first = -1;
+
+    for (int i = 0; i < p->clip.stream_count; i++) {
+        const umdv_stream *st = &p->clip.streams[i];
+        if (st->kind != UMDV_STREAM_AUDIO)
+            continue;
+        if (first < 0)
+            first = i;
+        if (found == -2) {
+            found = i;
+            break;
+        }
+        if (st->sub_id == p->audio_sub)
+            found = -2;
+    }
+    if (found < 0)
+        found = first;
+    if (found < 0 || p->clip.streams[found].sub_id == p->audio_sub)
+        return;
+    plat_log("audio track 0x%02x (%.2s)\n", p->clip.streams[found].sub_id, p->clip.streams[found].lang);
+    restart_reader(p, now_or_shown(p), p->clip.streams[found].sub_id);
+}
+
 player *player_open(const player_options *opt)
 {
     player *p = calloc(1, sizeof(*p));
@@ -513,15 +641,11 @@ player *player_open(const player_options *opt)
     if (!p->lock || !p->cond || !p->vq_data || !p->pcm || !p->dmx || !p->at3p)
         goto fail;
     at3p_init_tables();
-    h264_parser_init(&p->h264);
-    demux_init(p->dmx, read_mps, p);
-    demux_select(p->dmx, p->has_audio ? p->audio_sub : DEMUX_NONE, DEMUX_NONE);
-    demux_seek(p->dmx, 0);
     if (p->has_audio && plat_audio_open(AUDIO_RATE, audio_fill, p) < 0) {
         plat_log("cannot open audio output\n");
         p->has_audio = 0;
     }
-    p->reader = plat_thread_start(reader_main, p, "reader");
+    restart_reader(p, p->title->start_pts, p->audio_sub);
     if (!p->reader)
         goto fail;
     return p;
@@ -546,6 +670,16 @@ int player_update(player *p, uint32_t pressed)
         if (open_video(p) < 0 && !p->has_audio)
             return 0;
     }
+    if (pressed & PLAT_BTN_RIGHT)
+        seek_to(p, (int64_t)now_or_shown(p) + SEEK_STEP, "forward");
+    if (pressed & PLAT_BTN_LEFT)
+        seek_to(p, (int64_t)now_or_shown(p) - SEEK_STEP, "back");
+    if (pressed & PLAT_BTN_UP)
+        seek_chapter(p, 1);
+    if (pressed & PLAT_BTN_DOWN)
+        seek_chapter(p, -1);
+    if (pressed & PLAT_BTN_TRIANGLE)
+        next_audio_track(p);
     if (pressed & PLAT_BTN_CROSS) {
         p->paused = !p->paused;
         p->clk_raw = 0;   /* restart the extrapolation after a pause */

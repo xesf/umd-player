@@ -164,22 +164,16 @@ static void bob_field(plat_frame *dst, const uint8_t *field, int bottom)
         sceDmacMemcpy(pic, field, PIC_W * 4);
 }
 
-plat_video *plat_video_open(const plat_video_config *cfg)
+static int decoder_create(plat_video *v)
 {
-    static plat_video v;
     SceVideodecQueryInitInfoHwAvcdec init;
     SceAvcdecQueryDecoderInfo query;
     SceAvcdecDecoderInfo info;
     void *mem;
     int r;
 
-    if (v.ready)
-        plat_video_close(&v);
-    memset(&v, 0, sizeof(v));
-    if (cfg->width > 720 || cfg->height > 480)
-        return NULL;
     /* Set every time: the mode outlives the decoder when switching discs. */
-    sceAvcdecSetInterlacedStreamMode(SCE_VIDEODEC_TYPE_HW_AVCDEC, cfg->interlaced ? 1 : 0);
+    sceAvcdecSetInterlacedStreamMode(SCE_VIDEODEC_TYPE_HW_AVCDEC, v->interlaced ? 1 : 0);
     memset(&init, 0, sizeof(init));
     init.size = sizeof(init);
     init.horizontal = 720;
@@ -188,7 +182,7 @@ plat_video *plat_video_open(const plat_video_config *cfg)
     init.numOfStreams = 1;
     if ((r = sceVideodecInitLibrary(SCE_VIDEODEC_TYPE_HW_AVCDEC, &init)) < 0) {
         plat_log("sceVideodecInitLibrary: 0x%08x\n", r);
-        return NULL;
+        return -1;
     }
     memset(&query, 0, sizeof(query));
     query.horizontal = 720;
@@ -197,23 +191,46 @@ plat_video *plat_video_open(const plat_video_config *cfg)
     memset(&info, 0, sizeof(info));
     if (sceAvcdecQueryDecoderMemSize(SCE_VIDEODEC_TYPE_HW_AVCDEC, &query, &info) < 0)
         goto fail;
-    mem = alloc_block("avcdec", SCE_KERNEL_MEMBLOCK_TYPE_USER_MAIN_PHYCONT_NC_RW, info.frameMemSize, 1024 * 1024, &v.mem_uid);
+    mem = alloc_block("avcdec", SCE_KERNEL_MEMBLOCK_TYPE_USER_MAIN_PHYCONT_NC_RW, info.frameMemSize, 1024 * 1024, &v->mem_uid);
     if (!mem)
         goto fail;
-    v.ctrl.frameBuf.pBuf = mem;
-    v.ctrl.frameBuf.size = ALIGN(info.frameMemSize, 1024 * 1024);
-    if ((r = sceAvcdecCreateDecoder(SCE_VIDEODEC_TYPE_HW_AVCDEC, &v.ctrl, &query)) < 0) {
+    memset(&v->ctrl, 0, sizeof(v->ctrl));
+    v->ctrl.frameBuf.pBuf = mem;
+    v->ctrl.frameBuf.size = ALIGN(info.frameMemSize, 1024 * 1024);
+    if ((r = sceAvcdecCreateDecoder(SCE_VIDEODEC_TYPE_HW_AVCDEC, &v->ctrl, &query)) < 0) {
         plat_log("sceAvcdecCreateDecoder: 0x%08x\n", r);
-        sceKernelFreeMemBlock(v.mem_uid);
+        sceKernelFreeMemBlock(v->mem_uid);
         goto fail;
     }
-    v.interlaced = cfg->interlaced;
-    v.ready = 1;
-    return &v;
+    v->ready = 1;
+    return 0;
 
 fail:
     sceVideodecTermLibrary(SCE_VIDEODEC_TYPE_HW_AVCDEC);
-    return NULL;
+    return -1;
+}
+
+static void decoder_destroy(plat_video *v)
+{
+    if (!v->ready)
+        return;
+    sceAvcdecDeleteDecoder(&v->ctrl);
+    sceKernelFreeMemBlock(v->mem_uid);
+    sceVideodecTermLibrary(SCE_VIDEODEC_TYPE_HW_AVCDEC);
+    v->ready = 0;
+}
+
+plat_video *plat_video_open(const plat_video_config *cfg)
+{
+    static plat_video v;
+
+    if (v.ready)
+        plat_video_close(&v);
+    memset(&v, 0, sizeof(v));
+    if (cfg->width > 720 || cfg->height > 480)
+        return NULL;
+    v.interlaced = cfg->interlaced;
+    return decoder_create(&v) == 0 ? &v : NULL;
 }
 
 int plat_video_decode(plat_video *v, const uint8_t *au, uint32_t size, uint64_t pts, unsigned flags)
@@ -224,6 +241,8 @@ int plat_video_decode(plat_video *v, const uint8_t *au, uint32_t size, uint64_t 
     plat_frame *target = pool_get(NULL);
     int r;
 
+    if (!v->ready)
+        return -1;
     (void)flags;   /* in interlaced mode the decoder takes each field on its own */
     if (!target || size > ES_SIZE || v->out_count == POOL)
         return -1;
@@ -316,21 +335,23 @@ void plat_frame_release(plat_frame *f)
         f->app_ref = 0;
 }
 
+/* sceAvcdec has no documented flush, and pictures left in its reorder buffer would come out
+   after a seek, so start a new decoder instead (a few milliseconds). */
 void plat_video_flush(plat_video *v)
 {
     while (v->out_count > 0)
         v->out[--v->out_count].frame->app_ref = 0;
+    decoder_destroy(v);
+    decoder_create(v);
 }
 
 void plat_video_close(plat_video *v)
 {
-    if (!v || !v->ready)
+    if (!v)
         return;
-    plat_video_flush(v);
-    sceAvcdecDeleteDecoder(&v->ctrl);
-    sceKernelFreeMemBlock(v->mem_uid);
-    sceVideodecTermLibrary(SCE_VIDEODEC_TYPE_HW_AVCDEC);
-    v->ready = 0;
+    while (v->out_count > 0)
+        v->out[--v->out_count].frame->app_ref = 0;
+    decoder_destroy(v);
 }
 
 void plat_present(plat_frame *frame, const plat_present_info *info)
