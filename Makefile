@@ -12,7 +12,8 @@ CORE = src/core/iso9660.c src/core/umdv.c src/core/mpeg_ps.c src/core/demux.c sr
        src/core/vtiming.c src/core/deint.c
 AT3P = $(wildcard src/core/atrac3p/*.c)
 APP = src/app/main.c src/app/player.c
-MAC = src/platform/macos/mac_sys.c src/platform/macos/mac_video.c src/platform/macos/mac_audio.c
+MAC = src/platform/macos/mac_sys.c src/platform/macos/mac_video.c src/platform/macos/mac_audio.c \
+      src/platform/macos/h264_progressive.c
 
 OBJS = $(patsubst %.c,$(BUILD)/%.o,$(CORE) $(APP) $(MAC)) $(patsubst %.c,$(BUILD)/%.o,$(AT3P)) \
        $(BUILD)/src/platform/macos/mac_main.o

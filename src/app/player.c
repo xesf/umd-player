@@ -74,6 +74,7 @@ struct player {
 
     /* Main thread only. */
     plat_video *video;
+    int video_disabled;              /* this platform cannot decode the stream: audio only */
     decoded frames[MAX_DECODED];
     int frame_count;
     plat_frame *shown;
@@ -84,6 +85,8 @@ struct player {
     uint64_t wall_base_us, wall_base_pts;
     uint64_t last_report_us;
     uint32_t frames_shown, frames_late;
+    uint32_t wait_pending, wait_empty;  /* decode_ahead found the queue head unresolved or empty */
+    uint32_t reader_wait_pcm, reader_wait_vq;
 };
 
 /* ---- disc ---- */
@@ -178,6 +181,8 @@ static void push_video(player *p, const demux_unit *u)
         p->field_coded = info.field_pic;
         p->have_sps = 1;
     }
+    if (!p->quit && vq_alloc(p, u->size) < 0)
+        p->reader_wait_vq++;
     while (!p->quit && (off = vq_alloc(p, u->size)) < 0)
         plat_cond_wait(p->cond, p->lock);
     if (!p->quit) {
@@ -222,6 +227,8 @@ static void push_audio(player *p, const demux_unit *u)
     at3p_to_s16(out, 2, pcm);
 
     plat_mutex_lock(p->lock);
+    if (!p->quit && PCM_FRAMES - p->pcm_count < AT3P_FRAME_SAMPLES)
+        p->reader_wait_pcm++;
     while (!p->quit && PCM_FRAMES - p->pcm_count < AT3P_FRAME_SAMPLES)
         plat_cond_wait(p->cond, p->lock);
     if (!p->quit) {
@@ -298,7 +305,9 @@ static int open_video(player *p)
     cfg.pps = p->pps_nal;
     cfg.pps_size = p->pps_size;
     if ((p->video = plat_video_open(&cfg)) == NULL) {
-        fprintf(stderr, "cannot open the video decoder\n");
+        fprintf(stderr, "this platform cannot decode the video (%s); playing audio only\n",
+                p->field_coded ? "field pictures" : "decoder error");
+        p->video_disabled = 1;
         return -1;
     }
     p->present.width = p->sps.width;
@@ -340,6 +349,12 @@ static void decode_ahead(player *p)
 
         plat_mutex_lock(p->lock);
         if (p->vq_count == 0 || p->vq[p->vq_first].state == AU_PENDING) {
+            if (p->frame_count < 2) {
+                if (p->vq_count == 0)
+                    p->wait_empty++;
+                else
+                    p->wait_pending++;
+            }
             plat_mutex_unlock(p->lock);
             return;
         }
@@ -359,6 +374,18 @@ static void decode_ahead(player *p)
         while (plat_video_frame(p->video, &f, &pts))
             keep_frame(p, f, pts);
     }
+}
+
+/* Without a decoder, video access units are dropped so the reader never blocks on them. */
+static void drain_video(player *p)
+{
+    plat_mutex_lock(p->lock);
+    while (p->vq_count > 0 && p->vq[p->vq_first].state != AU_PENDING) {
+        p->vq_first = (p->vq_first + 1) % VQ_MAX;
+        p->vq_count--;
+    }
+    plat_cond_broadcast(p->cond);
+    plat_mutex_unlock(p->lock);
 }
 
 /* The playback clock in 90 kHz. Audio drives it; without audio, wall time does. */
@@ -387,7 +414,7 @@ static void maybe_start(player *p)
 {
     int ready;
 
-    if (p->frame_count == 0 || (p->has_audio ? p->audio_started : p->wall_base_us != 0))
+    if ((p->frame_count == 0 && !p->video_disabled) || (p->has_audio ? p->audio_started : p->wall_base_us != 0))
         return;
     if (!p->has_audio) {
         p->wall_base_us = plat_time_us();
@@ -492,14 +519,14 @@ int player_update(player *p, uint32_t pressed)
     uint64_t now;
     int best = -1, done;
 
-    if (!p->video) {
+    if (!p->video && !p->video_disabled) {
         int have;
         plat_mutex_lock(p->lock);
         have = p->have_sps;
         plat_mutex_unlock(p->lock);
         if (!have)
             return 1;
-        if (open_video(p) < 0)
+        if (open_video(p) < 0 && !p->has_audio)
             return 0;
     }
     if (pressed & PLAT_BTN_CROSS) {
@@ -509,7 +536,10 @@ int player_update(player *p, uint32_t pressed)
         else if (p->wall_base_us && !p->paused)
             p->wall_base_us = plat_time_us() - (p->shown_pts - p->wall_base_pts) * 100 / 9;
     }
-    decode_ahead(p);
+    if (p->video_disabled)
+        drain_video(p);
+    else
+        decode_ahead(p);
     maybe_start(p);
 
     if (!p->paused && clock_now(p, &now)) {
@@ -531,9 +561,13 @@ int player_update(player *p, uint32_t pressed)
         }
         if (p->frames_shown > 0 && plat_time_us() - p->last_report_us > 2000000) {
             p->last_report_us = plat_time_us();
-            printf("t %7.2f s  frame-clock %+6.1f ms  shown %u  skipped %u  queued %d\n",
+            plat_mutex_lock(p->lock);
+            printf("t %7.2f s  frame-clock %+6.1f ms  shown %u  skipped %u  queued %d  au %u  pcm %.2f s  "
+                   "starved %u/%u  reader waits pcm %u vq %u\n",
                    (double)(now - p->title->start_pts) / 90000.0, ((double)p->shown_pts - (double)now) / 90.0,
-                   p->frames_shown, p->frames_late, p->frame_count);
+                   p->frames_shown, p->frames_late, p->frame_count, p->vq_count, p->pcm_count / 48000.0,
+                   p->wait_empty, p->wait_pending, p->reader_wait_pcm, p->reader_wait_vq);
+            plat_mutex_unlock(p->lock);
             fflush(stdout);
         }
     } else if (!p->shown && p->frame_count > 0) {
@@ -543,7 +577,11 @@ int player_update(player *p, uint32_t pressed)
     plat_mutex_lock(p->lock);
     done = p->eof && p->vq_count == 0 && p->pcm_count == 0;
     plat_mutex_unlock(p->lock);
-    return !(done && p->frame_count == 0);
+    if (done && p->frame_count == 0) {
+        printf("end of title\n");
+        return 0;
+    }
+    return 1;
 }
 
 void player_close(player *p)

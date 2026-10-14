@@ -204,6 +204,8 @@ int main(int argc, char **argv)
                     anchor = vtiming_anchor(&vt, vt_last_id);
                     if (r2 == 1) {
                         vt_resolved++;
+                        if (getenv("VT_DUMP"))
+                            printf("pts %u %.4f\n", vt_last_id, (double)(pts - ti->start_pts) / UMDV_PTS_HZ);
                         if (anchor >= 0 && pred >= 0) {
                             int64_t err = anchor - pred;
                             if (err < 0) err = -err;

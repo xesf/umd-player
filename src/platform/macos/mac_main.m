@@ -40,6 +40,7 @@ static uint32_t button_for_key(unsigned short code)
 - (void)keyDown:(NSEvent *)e
 {
     if (e.keyCode == 53) {   /* escape */
+        printf("quit: escape key\n");
         [NSApp terminate:nil];
         return;
     }
@@ -84,7 +85,12 @@ static uint32_t button_for_key(unsigned short code)
     [[NSRunLoop mainRunLoop] addTimer:self.timer forMode:NSRunLoopCommonModes];
 }
 
-- (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)app { (void)app; return YES; }
+- (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)app
+{
+    (void)app;
+    printf("quit: window closed\n");
+    return YES;
+}
 - (void)applicationWillTerminate:(NSNotification *)n { (void)n; [self.timer invalidate]; app_shutdown(); }
 @end
 

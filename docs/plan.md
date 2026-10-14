@@ -171,13 +171,24 @@ Still to do:
 - Measure the decoder on the Vita with `tests/vita/at3p_bench`. The budget is 10% of one core at 333 MHz. If it is over budget, profile it with the **frame-budget** skill. The likely targets are the IPQF filter and the IMDCT, which suit NEON.
 - Check whether the Vita's `SceAudiodec` decodes ATRAC3plus (codec IDs `0x1001` and `0x1002`, guess). Our decoder works, so this is now only a speed option.
 
-### Phase 3: macOS platform and first playback
+### Phase 3: macOS platform and first playback (parked)
 
-1. Write `platform.h`, then `src/platform/macos/`: a Cocoa window, VideoToolbox decode, AudioQueue output, keyboard input, and threads.
-2. Write a minimal `src/app/player.c`: open an ISO, play the longest title from the start, A/V sync on the audio clock.
-3. Draw the video at the correct display aspect ratio, and deinterlace field-coded video (start with a simple line-doubling "bob" filter).
+Done and still useful on every platform:
 
-Check: the movie on each of the 5 discs plays for 10 minutes with no visible errors. Lip sync stays within 40 ms at the start and at the 10-minute mark. Compare frames against FFmpeg frames at the same PTS with the **pixel-parity** skill.
+- `src/platform/platform.h`, the interface between the player and an OS.
+- `src/app/player.c`: a reader thread, a video queue timed by `src/core/vtiming.c`, ATRAC3plus into a PCM ring, and A/V sync on the audio clock.
+- `src/core/vtiming.c` gives every access unit a display time. See the format reference for the check.
+
+macOS results, measured with `make && ./build/macos/umdplayer <iso>`:
+
+- Audio plays, and the three film discs show video at the right aspect ratio. Over 90 s per film, the shown frame stays within one frame of the audio clock, with 2 to 6 frames skipped.
+- VideoToolbox does not accept `frame_mbs_only_flag = 0`, which all discs set. `src/platform/macos/h264_progressive.c` rewrites film streams to progressive. Software decoding of the rewritten stream is identical to the original for 2000 frames.
+- Field-coded discs cannot be rewritten, so they play audio only on macOS.
+
+Parked with these known issues, because the Vita decodes all discs in hardware:
+
+- VideoToolbox drops a few film frames without an error (status 0, no image), for example around 4 s and 26 s into *Zathura*. FFmpeg's VideoToolbox path decodes the same rewritten stream without drops, so the cause is in `mac_video.c`.
+- Deinterlacing, seeking, and subtitles are not done on macOS.
 
 ### Phase 4: player features
 
@@ -197,7 +208,14 @@ Check: on each disc, every chapter starts on the same frame as in Adrenaline. Su
 
 Check: the library shows all 5 discs with correct titles and covers, and opens each one.
 
-### Phase 6: Vita platform
+### Phase 6: Vita platform (next)
+
+Vita test results so far, from `tests/vita/avcdec` and `tests/vita/at3p_bench`:
+
+- `sceAvcdec` decodes the film discs as they are: 592 to 595 frames from 600 access units, about 4 ms each.
+- Field-coded discs need `sceAvcdecSetInterlacedStreamMode(SCE_VIDEODEC_TYPE_HW_AVCDEC, 1)` before `sceVideodecInitLibrary`. Without it, every second field fails with `0x80620010`. With it: 295 frames from 600 fields, 0 errors, about 5.5 ms each. The function is in `SceVideodec_stub` but not in the VitaSDK headers.
+- The ATRAC3plus decoder output on the Vita is bit-exact with the Mac. It takes 10.3% of one core at 444 MHz and 13.8% at 333 MHz, over the 10% budget at 333 MHz.
+
 
 1. Set up the CMake project with `vita_create_self` and `vita_create_vpk`. Link only VitaSDK stub libraries.
 2. Write `src/platform/vita/` against the same `platform.h`.

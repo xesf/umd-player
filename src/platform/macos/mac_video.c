@@ -1,11 +1,15 @@
-/* macOS: H.264 decoding with VideoToolbox. Output frames are IOSurface-backed BGRA. */
+/* macOS: H.264 decoding with VideoToolbox. Output frames are IOSurface-backed BGRA.
+   VideoToolbox rejects frame_mbs_only_flag = 0, so the stream goes through h264_progressive.c
+   first; field-coded discs cannot be decoded here and only play on the Vita. */
 #include "../platform.h"
 #include "mac_frame.h"
+#include "h264_progressive.h"
 #include "../../core/h264.h"
 
 #include <CoreMedia/CoreMedia.h>
 #include <VideoToolbox/VideoToolbox.h>
 #include <pthread.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -19,6 +23,8 @@ struct plat_video {
     pthread_mutex_t lock;
     struct { CVPixelBufferRef image; uint64_t pts; } out[MAX_FRAMES];
     int out_count;
+    h264p_state rewrite;
+    uint8_t *nal_buf;       /* one rewritten NAL unit */
     uint8_t *sample;        /* AVCC sample being built: 4-byte big-endian length + NAL */
     uint32_t sample_size;
     int fields;             /* fields collected in sample, for field pairs */
@@ -33,8 +39,12 @@ static void on_frame(void *ref, void *source_ref, OSStatus status, VTDecodeInfoF
     (void)source_ref;
     (void)flags;
     (void)duration;
-    if (status != noErr || !image)
+    if (status != noErr || !image) {
+        static int reported;
+        if (reported++ < 10)
+            fprintf(stderr, "VideoToolbox: frame at %.3f s failed (status %d)\n", pts.value / 90000.0, (int)status);
         return;
+    }
     pthread_mutex_lock(&v->lock);
     if (v->out_count < MAX_FRAMES) {
         v->out[v->out_count].image = CVPixelBufferRetain(image);
@@ -46,18 +56,34 @@ static void on_frame(void *ref, void *source_ref, OSStatus status, VTDecodeInfoF
 
 plat_video *plat_video_open(const plat_video_config *cfg)
 {
-    const uint8_t *sets[2] = {cfg->sps, cfg->pps};
-    const size_t sizes[2] = {cfg->sps_size, cfg->pps_size};
+    uint8_t sps[2 * 256 + 16];
+    uint32_t sps_size = 0;
+    const uint8_t *sets[2] = {sps, cfg->pps};
+    size_t sizes[2] = {0, cfg->pps_size};
     VTDecompressionOutputCallbackRecord cb = {on_frame, NULL};
     CFMutableDictionaryRef attrs, surface;
     int32_t bgra = kCVPixelFormatType_32BGRA;
     CFNumberRef fmt;
     plat_video *v = calloc(1, sizeof(*v));
 
-    if (!v || !(v->sample = malloc(SAMPLE_MAX)))
+    if (!v || !(v->sample = malloc(SAMPLE_MAX)) || !(v->nal_buf = malloc(2 * SAMPLE_MAX + 16)))
         goto fail;
     pthread_mutex_init(&v->lock, NULL);
     v->interlaced = cfg->interlaced;
+    if (cfg->interlaced || cfg->sps_size > 256)
+        goto fail;
+    switch (h264p_rewrite(&v->rewrite, cfg->sps, cfg->sps_size, sps, &sps_size)) {
+    case H264P_REWRITTEN:
+        break;
+    case H264P_COPY:
+        memcpy(sps, cfg->sps, cfg->sps_size);
+        sps_size = cfg->sps_size;
+        break;
+    default:
+        goto fail;
+    }
+    sizes[0] = sps_size;
+    h264p_rewrite(&v->rewrite, cfg->pps, cfg->pps_size, v->nal_buf, &sps_size);
     if (CMVideoFormatDescriptionCreateFromH264ParameterSets(NULL, 2, sets, sizes, 4, &v->format) != noErr)
         goto fail;
 
@@ -93,9 +119,24 @@ static void append_nal(void *user, const uint8_t *nal, uint32_t size)
     append_ctx *c = (append_ctx *)user;
     plat_video *v = c->v;
     int type = size ? nal[0] & 0x1F : 0;
+    uint32_t rewritten;
 
-    if (size == 0 || type == 9 || type == 7 || type == 8)
+    /* SEI stays out too: with its picture timing, VideoToolbox drops some pulldown frames. */
+    if (size == 0 || type == 9 || type == 7 || type == 8 || type == 6)
         return;
+    if (size <= SAMPLE_MAX) {
+        int r = h264p_rewrite(&v->rewrite, nal, size, v->nal_buf, &rewritten);
+        if (r == H264P_REWRITTEN) {
+            nal = v->nal_buf;
+            size = rewritten;
+        } else if (r != H264P_COPY) {
+            static int reported;
+            if (reported++ < 10)
+                fprintf(stderr, "progressive rewrite failed (%d) on NAL type %d, %u bytes\n", r, type, size);
+            c->overflow = 1;
+            return;
+        }
+    }
     if (v->sample_size + 4 + size > SAMPLE_MAX) {
         c->overflow = 1;
         return;
@@ -127,6 +168,11 @@ static int submit(plat_video *v)
         st = CMSampleBufferCreateReady(NULL, block, v->format, 1, 1, &timing, 1, &size, &sample);
     if (st == noErr)
         st = VTDecompressionSessionDecodeFrame(v->session, sample, 0, NULL, &info);
+    if (st != noErr) {
+        static int reported;
+        if (reported++ < 10)
+            fprintf(stderr, "VideoToolbox: decode at %.3f s failed (status %d)\n", v->sample_pts / 90000.0, (int)st);
+    }
     if (sample)
         CFRelease(sample);
     if (block)
@@ -209,5 +255,6 @@ void plat_video_close(plat_video *v)
     if (v->format)
         CFRelease(v->format);
     free(v->sample);
+    free(v->nal_buf);
     free(v);
 }
