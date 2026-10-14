@@ -69,7 +69,12 @@ target_link_libraries(umdplayer
 )
 
 vita_create_self(umdplayer.self umdplayer)
+# Bubble icon and LiveArea, drawn by tools/make_assets.py.
 vita_create_vpk(umdplayer.vpk ${VITA_TITLEID} umdplayer.self
   VERSION ${VITA_VERSION}
   NAME ${VITA_APP_NAME}
+  FILE assets/vita/icon0.png sce_sys/icon0.png
+  FILE assets/vita/livearea/contents/bg.png sce_sys/livearea/contents/bg.png
+  FILE assets/vita/livearea/contents/startup.png sce_sys/livearea/contents/startup.png
+  FILE assets/vita/livearea/contents/template.xml sce_sys/livearea/contents/template.xml
 )
