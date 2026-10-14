@@ -36,7 +36,7 @@ int osd_draw_hint(canvas *c, int x, int y, icon_id button, const char *text)
 
 int osd_draw_status(canvas *c, int right, int top, const char *clock, int battery, int charging)
 {
-    char pct[8] = "";
+    char pct[16] = "";
     int bw = 34, bh = 18, w;
 
     if (battery >= 0)
