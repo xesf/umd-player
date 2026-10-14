@@ -141,12 +141,19 @@ Each phase ends with a check that runs on real data. A phase is done when its ch
 
 Results are in [formats/umd-video.md](formats/umd-video.md). `tools/check_corpus.sh` parses every disc and checks all 23,239 seek points. They all pass.
 
-### Phase 1: demux on the host
+### Phase 1: demux on the host (done)
 
-1. Write `src/core/demux.c`. It turns program stream packets into H.264 access units (video), ATRAC3plus frames (audio, one substream), and subtitle units (one substream).
-2. Write `tools/umddemux`. It writes a title's `.264` file, an `.oma` file per audio track, and the subtitle PNG files with their times.
+`src/core/demux.c` turns program stream packets into H.264 access units, ATRAC3plus frames for one audio track, and subtitle units for one subtitle track. `tools/umddemux` writes them to files.
 
-Check: the `.264` file plays in `ffplay`. The audio frames match a script that extracts them independently (byte-for-byte compare). Every subtitle PNG passes its chunk CRC checks.
+Results:
+
+- The movie title of every disc demuxes in 3 to 5 s with no dropped bytes.
+- On *Not Another Teen Movie*, the first 3360 decoded frames are identical (MD5) to frames decoded from FFmpeg's own demux of the same stream.
+- The audio frames are byte-identical to an independent extractor, and the timestamps have no gaps over the full film.
+- All subtitle PNGs pass their CRC checks.
+- FFmpeg decodes the full video of *Men in Black* and *Rhyme and Reason* with no errors.
+
+To repeat: `./build/host/umddemux <iso> <outdir> -s 0x80`, then `ffmpeg -v error -i <outdir>/video.264 -f null -`.
 
 ### Phase 2: ATRAC3plus decoder
 

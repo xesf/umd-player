@@ -4,11 +4,14 @@ CFLAGS ?= -std=c99 -O2 -g -Wall -Wextra -Wpedantic -D_POSIX_C_SOURCE=200809L
 CORE = ../src/core
 BIN = ../build/host
 
-TOOLS = $(BIN)/umdinfo
+TOOLS = $(BIN)/umdinfo $(BIN)/umddemux
 
 all: $(TOOLS)
 
 $(BIN)/umdinfo: umdinfo.c host_source.c $(CORE)/iso9660.c $(CORE)/sfo.c $(CORE)/umdv.c $(CORE)/mpeg_ps.c | $(BIN)
+	$(CC) $(CFLAGS) -o $@ $^
+
+$(BIN)/umddemux: umddemux.c host_source.c $(CORE)/iso9660.c $(CORE)/umdv.c $(CORE)/mpeg_ps.c $(CORE)/demux.c | $(BIN)
 	$(CC) $(CFLAGS) -o $@ $^
 
 $(BIN):

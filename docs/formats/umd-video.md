@@ -152,7 +152,11 @@ The file is an MPEG-2 program stream. Each pack has a system header (`0xBB`), a 
 
 ### Video (`0xE0`)
 
-H.264 in Annex B format, Main profile (77), level 3.0, 720x480, and 2 reference frames. Every PES packet has a PTS and a DTS.
+H.264 in Annex B format, Main profile (77), level 3.0, 720x480, and 2 reference frames.
+
+- Every access unit starts with an access unit delimiter (NAL type 9). The first access unit of a GOP has the NALs `9, 7, 8, 6, 6, 6, 5` (delimiter, SPS, PPS, three SEI, IDR slice). Other access units are `9, 6, 1`.
+- Only 1 access unit in 12 (film) to 1 in 29 (field-coded) gets a PTS and DTS from its PES header. The PTS applies to the first access unit that starts in that packet. The player must work out the times of the other frames from frame durations.
+- Field-coded discs have one access unit per field, so 59.94 access units per second.
 
 The SPS always has `frame_mbs_only_flag = 0`. The discs use two coding modes:
 
@@ -165,7 +169,9 @@ The sample aspect ratio is 40:33 (16:9 display) or 10:11 (4:3 display). The play
 
 ### Audio (private stream 1, substreams `0x00` to `0x0F`)
 
-The PES payload starts with a 4-byte header: substream ID, `0x00`, and a 2-byte offset (probably to the first frame that starts in this packet). The rest is a stream of ATRAC3plus frames that cross packet boundaries.
+The PES payload starts with a 4-byte header: substream ID, `0x00`, and a 2-byte offset. The offset is the position of the first frame that starts in this packet, counted from the end of the 4-byte header. The rest is a stream of ATRAC3plus frames that cross packet boundaries.
+
+Every audio packet has a PTS, which applies to the frame at the offset. Frames follow each other with no gaps: at 48 kHz, each frame adds exactly 3840 ticks.
 
 Each frame is an 8-byte header followed by the frame data:
 

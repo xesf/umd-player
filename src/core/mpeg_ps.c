@@ -62,11 +62,12 @@ int ps_next(const uint8_t *buf, uint32_t len, uint32_t *pos, ps_packet *out)
         } else {
             const uint8_t *h = &buf[i + 6];
             uint32_t hlen;
-            if (plen < 3 || (h[0] & 0xC0) != 0x80)
-                return PS_ERROR;   /* MPEG-1 PES headers never appear on UMD */
-            hlen = 3 + h[2];
-            if (hlen > plen)
+            hlen = plen >= 3 ? 3u + h[2] : 0;
+            /* MPEG-1 PES headers never appear on UMD. Skip the start code so the caller can resync. */
+            if (plen < 3 || (h[0] & 0xC0) != 0x80 || hlen > plen) {
+                *pos = i + 4;
                 return PS_ERROR;
+            }
             if ((h[1] & 0x80) && h[2] >= 5)
                 out->pts = read_ts(&h[3]);
             if ((h[1] & 0xC0) == 0xC0 && h[2] >= 10)

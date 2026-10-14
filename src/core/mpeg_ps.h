@@ -26,7 +26,7 @@ typedef struct ps_packet {
 enum {
     PS_OK = 1,               /* *out holds a PES packet */
     PS_NEED_MORE = 0,        /* the packet at *pos runs past len; refill from *pos */
-    PS_ERROR = -1
+    PS_ERROR = -1            /* malformed packet; *pos is past its start code */
 };
 
 /* Skips pack headers, system headers, end codes, and padding. Resyncs on garbage. */
