@@ -13,6 +13,7 @@
 #include "../core/sfo.h"
 #include "../core/vtiming.h"
 #include "../platform/platform.h"
+#include "osd.h"
 
 #define LIB_MAX        64
 #define UI_W           960
@@ -30,7 +31,6 @@
 #define PIC_MAX_W      960
 #define PIC_MAX_H      544
 
-#define TEXT      RGBA(240, 240, 240, 255)
 #define TEXT_DIM  RGBA(180, 190, 210, 255)
 
 typedef struct lib_disc {
@@ -417,21 +417,21 @@ static void draw_ui(library *l)
 {
     canvas *c = &l->ui;
     plat_status st;
-    char status[48];
-    int animated = l->video && l->loaded == l->sel;
+    char clock[16];
+    int animated = l->video && l->loaded == l->sel, hx;
 
     if (l->pic1 && l->loaded == l->sel) {
         canvas_blit(c, l->pic1, l->pic1_w, l->pic1_h, l->pic1_w * 4, 0, 0, UI_W, UI_H);
         for (int y = 0; y < UI_H; y++)   /* the background is opaque */
             for (int x = 0; x < UI_W; x++)
                 c->rgba[(size_t)y * c->stride + x * 4 + 3] = 255;
+        canvas_darken(c, 0, 0, UI_W, UI_H, 215);   /* keep the art visible */
     } else {
         for (int y = 0; y < UI_H; y++)
             canvas_rect(c, 0, y, UI_W, 1, RGBA(12 + y * 20 / UI_H, 18 + y * 30 / UI_H, 40 + y * 60 / UI_H, 255));
     }
-    canvas_darken(c, 0, 0, UI_W, UI_H, 120);
 
-    /* Neighbours: one above, two below, at icon size. */
+    /* Neighbours: icons only, one above and two below. */
     for (int k = -1; k <= 2; k++) {
         int i = l->sel + k, y = k < 0 ? BIG_Y - 100 : BIG_Y + 2 * ICON_H + 20 + (k - 1) * 90;
         const lib_disc *d;
@@ -442,7 +442,6 @@ static void draw_ui(library *l)
             canvas_blit(c, d->icon0, d->icon_w, d->icon_h, d->icon_w * 4, SMALL_X, y, ICON_W, ICON_H);
         else
             canvas_rect(c, SMALL_X, y, ICON_W, ICON_H, RGBA(60, 70, 90, 255));
-        canvas_text(c, SMALL_X + ICON_W + 24, y + (ICON_H - 16) / 2, 2, TEXT_DIM, d->title);
     }
 
     /* The selected disc: its ICON1 animation shows through a transparent hole, else ICON0. */
@@ -455,22 +454,25 @@ static void draw_ui(library *l)
         canvas_rect(c, BIG_X, BIG_Y, 2 * ICON_W, 2 * ICON_H, RGBA(60, 70, 90, 255));
     }
     {
-        /* Large title, smaller when it would not fit beside the icon. */
+        /* The title on a translucent band, smaller when it would not fit beside the icon. */
         const char *title = l->discs[l->sel].title;
-        int x = BIG_X + 2 * ICON_W + 28, scale = canvas_text_width(title, 3) <= UI_W - 24 - x ? 3 : 2;
-        canvas_text(c, x, BIG_Y + ICON_H - 8 * scale - 4, scale, TEXT, title);
-        canvas_text(c, x, BIG_Y + ICON_H + 12, 2, TEXT_DIM, "X  Play");
+        int x = BIG_X + 2 * ICON_W + 28, scale = canvas_text_width(title, 3) <= UI_W - 40 - x ? 3 : 2;
+        int w = canvas_text_width(title, scale), bw = (w > 130 ? w : 130) + 40;
+        canvas_darken(c, x - 20, BIG_Y + ICON_H - 8 * scale - 20, bw, 8 * scale + 64, 110);
+        canvas_text(c, x, BIG_Y + ICON_H - 8 * scale - 4, scale, RGBA(240, 240, 240, 255), title);
+        osd_draw_hint(c, x, BIG_Y + ICON_H + 14, ICON_BUTTON_CROSS, "Play");
     }
 
     plat_get_status(&st);
     l->minute = st.minute;
-    if (st.battery >= 0)
-        snprintf(status, sizeof(status), "%02d:%02d   %s %d%%", st.hour, st.minute, st.charging ? "Charging" : "Battery",
-                 st.battery);
-    else
-        snprintf(status, sizeof(status), "%02d:%02d", st.hour, st.minute);
-    canvas_text(c, UI_W - 24 - canvas_text_width(status, 2), 24, 2, TEXT, status);
-    canvas_text(c, 24, 28, 1, TEXT_DIM, "Up/Down: choose a disc    X: play    START: quit");
+    snprintf(clock, sizeof(clock), "%02d:%02d", st.hour, st.minute);
+    osd_draw_status(c, UI_W - 24, 24, clock, st.battery, st.charging);
+    hx = 24;
+    canvas_darken(c, 12, 22, 420, 32, 110);
+    canvas_text(c, hx, 34, 1, TEXT_DIM, "Up/Down: choose a disc");
+    hx += canvas_text_width("Up/Down: choose a disc", 1) + 24;
+    hx += osd_draw_hint(c, hx, 30, ICON_BUTTON_CROSS, "Play");
+    canvas_text(c, hx, 34, 1, TEXT_DIM, "START: quit");
 
     l->info.ui_rgba = c->rgba;
     l->info.ui_w = c->w;

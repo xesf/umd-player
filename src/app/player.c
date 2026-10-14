@@ -154,6 +154,7 @@ struct player {
     osd_view osd_drawn;              /* what the UI layer holds now */
     int menu_open, menu_row, menu_chapter;
     char toast[64];
+    icon_id toast_icon;
     uint64_t toast_until;
     int paused, audio_open;
     int leave;                       /* circle or start: back to the library */
@@ -764,7 +765,7 @@ static void restart_reader(player *p, uint64_t target, int audio, int sub)
 }
 
 /* The current position: the seek target until a frame from after the seek is on screen. */
-static void toast(player *p, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
+static void toast(player *p, icon_id icon, const char *fmt, ...) __attribute__((format(printf, 3, 4)));
 
 static uint64_t now_or_shown(player *p)
 {
@@ -800,17 +801,18 @@ static void seek_chapter(player *p, int step)
     if (cur < 0)
         cur = 0;
     if (cur >= n) {
-        toast(p, "Last chapter");
+        toast(p, ICON_NEXT_CHAPTER, "Last chapter");
         return;
     }
     seek_to(p, ch[cur].pts, "chapter");
-    toast(p, "Chapter %d of %d", cur + 1, n);
+    toast(p, step < 0 ? ICON_PREV_CHAPTER : ICON_NEXT_CHAPTER, "Chapter %d of %d", cur + 1, n);
 }
 
-static void toast(player *p, const char *fmt, ...)
+static void toast(player *p, icon_id icon, const char *fmt, ...)
 {
     va_list ap;
 
+    p->toast_icon = icon;
     va_start(ap, fmt);
     vsnprintf(p->toast, sizeof(p->toast), fmt, ap);
     va_end(ap);
@@ -882,7 +884,7 @@ static void cycle_audio(player *p, int dir)
     char name[32];
 
     if (n < 2) {
-        toast(p, "Only one audio track");
+        toast(p, ICON_AUDIO, "Only one audio track");
         return;
     }
     for (int i = 0; i < n; i++)
@@ -893,7 +895,7 @@ static void cycle_audio(player *p, int dir)
     p->want_audio = p->clip.streams[list[cur]].sub_id;   /* the reader switches without stopping */
     plat_cond_broadcast(p->cond);
     plat_mutex_unlock(p->lock);
-    toast(p, "Audio: %s", stream_name(p, UMDV_STREAM_AUDIO, p->want_audio, name, sizeof(name)));
+    toast(p, ICON_AUDIO, "%s", stream_name(p, UMDV_STREAM_AUDIO, p->want_audio, name, sizeof(name)));
 }
 
 /* Moves through off and the subtitle tracks (wrapping) and restarts reading with it. */
@@ -903,7 +905,7 @@ static void cycle_subtitles(player *p, int dir)
     char name[32];
 
     if (n == 0) {
-        toast(p, "No subtitles on this title");
+        toast(p, ICON_SUBTITLES, "No subtitles");
         return;
     }
     for (int i = 0; i < n; i++)
@@ -912,14 +914,14 @@ static void cycle_subtitles(player *p, int dir)
     cur = (cur + dir + n + 1) % (n + 1);    /* position 0 is off */
     p->sub_sub = cur ? p->clip.streams[list[cur - 1]].sub_id : DEMUX_NONE;   /* every track is queued */
     p->dirty = 1;
-    toast(p, "Subtitles: %s", stream_name(p, UMDV_STREAM_SUBTITLE, p->sub_sub, name, sizeof(name)));
+    toast(p, ICON_SUBTITLES, "%s", stream_name(p, UMDV_STREAM_SUBTITLE, p->sub_sub, name, sizeof(name)));
 }
 
 static void cycle_screen(player *p, int dir)
 {
     p->mode = (screen_mode)(((int)p->mode + dir + SCREEN_MODES) % SCREEN_MODES);
     p->dirty = 1;
-    toast(p, "Screen: %s", screen_mode_name(p->mode));
+    toast(p, ICON_SCREEN, "%s", screen_mode_name(p->mode));
 }
 
 static int current_chapter(player *p)
@@ -991,12 +993,19 @@ static void build_osd(player *p, osd_view *v)
     char a[24], b[24];
 
     memset(v, 0, sizeof(*v));
-    if (p->toast[0] && plat_time_us() < p->toast_until)
+    v->toast_icon = ICON_NONE;
+    if (p->toast[0] && plat_time_us() < p->toast_until) {
         snprintf(v->toast, sizeof(v->toast), "%s", p->toast);
+        v->toast_icon = p->toast_icon;
+    }
     v->menu_open = p->menu_open;
     if (p->menu_open) {
         v->row_count = MENU_ROWS;
         v->menu_row = p->menu_row;
+        v->rows[ROW_AUDIO].icon = ICON_AUDIO;
+        v->rows[ROW_SUBTITLES].icon = ICON_SUBTITLES;
+        v->rows[ROW_SCREEN].icon = ICON_SCREEN;
+        v->rows[ROW_CHAPTER].icon = ICON_CHAPTERS;
         snprintf(v->rows[ROW_AUDIO].label, sizeof(v->rows[0].label), "Audio");
         stream_name(p, UMDV_STREAM_AUDIO, p->has_audio ? p->want_audio : DEMUX_NONE, v->rows[ROW_AUDIO].value,
                     sizeof(v->rows[0].value));
@@ -1010,8 +1019,6 @@ static void build_osd(player *p, osd_view *v)
         snprintf(v->rows[ROW_CHAPTER].label, sizeof(v->rows[0].label), "Chapter");
         snprintf(v->rows[ROW_CHAPTER].value, sizeof(v->rows[0].value), "%d / %d", p->menu_chapter + 1,
                  p->title->chapter_count);
-        snprintf(v->hint[0], sizeof(v->hint[0]), "Up/Down: choose    Left/Right: change");
-        snprintf(v->hint[1], sizeof(v->hint[1]), "X: go to chapter   O or Triangle: close");
     }
     if (p->menu_open) {
         static const char *days[7] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
@@ -1020,20 +1027,20 @@ static void build_osd(player *p, osd_view *v)
         static const int offsets[12] = {0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4};
         plat_status st;
         int y, wd, m;
-        char battery[32] = "";
 
         plat_get_status(&st);
         m = st.month >= 1 && st.month <= 12 ? st.month : 1;
         y = st.year - (m < 3);
         wd = (y + y / 4 - y / 100 + y / 400 + offsets[m - 1] + st.day) % 7;   /* Sakamoto's method */
-        if (st.battery >= 0)
-            snprintf(battery, sizeof(battery), "   %s %d%%", st.charging ? "Charging" : "Battery", st.battery);
-        snprintf(v->status, sizeof(v->status), "%s %d %s  %02d:%02d%s", days[wd], st.day, months[m - 1], st.hour,
-                 st.minute, battery);
+        snprintf(v->clock, sizeof(v->clock), "%s %d %s  %02d:%02d", days[wd], st.day, months[m - 1], st.hour, st.minute);
+        v->battery = st.battery;
+        v->charging = st.charging;
+        v->show_status = 1;
     }
     v->show_bar = p->menu_open || v->toast[0] || p->paused;
     if (v->show_bar) {
-        snprintf(v->title, sizeof(v->title), "%s%.40s", p->paused ? "Paused  " : "", p->title->name);
+        v->paused = p->paused;
+        snprintf(v->title, sizeof(v->title), "%.40s", p->title->name);
         format_time(a, sizeof(a), now > p->title->start_pts ? now - p->title->start_pts : 0);
         format_time(b, sizeof(b), len);
         snprintf(v->time_text, sizeof(v->time_text), "%.20s / %.20s", a, b);
@@ -1210,13 +1217,14 @@ static void menu_input(player *p, uint32_t pressed)
     if ((pressed & PLAT_BTN_CROSS) && p->menu_row == ROW_CHAPTER) {
         seek_to(p, p->playlist.chapters[p->title->first_chapter + p->menu_chapter].pts, "chapter");
         p->menu_open = 0;
-        toast(p, "Chapter %d of %d", p->menu_chapter + 1, p->title->chapter_count);
+        toast(p, ICON_CHAPTERS, "Chapter %d of %d", p->menu_chapter + 1, p->title->chapter_count);
     }
 }
 
 static void toggle_pause(player *p)
 {
     p->paused = !p->paused;
+    toast(p, p->paused ? ICON_PAUSE : ICON_PLAY, p->paused ? "Paused" : "Play");
     p->clk_raw = 0;   /* restart the extrapolation after a pause */
     if (p->has_audio)
         plat_audio_pause(p->paused);
@@ -1235,11 +1243,11 @@ static void play_input(player *p, uint32_t pressed)
     }
     if (pressed & PLAT_BTN_RIGHT) {
         seek_to(p, (int64_t)now_or_shown(p) + SEEK_STEP, "forward");
-        toast(p, "Forward 10 s");
+        toast(p, ICON_FORWARD, "+10 s");
     }
     if (pressed & PLAT_BTN_LEFT) {
         seek_to(p, (int64_t)now_or_shown(p) - SEEK_STEP, "back");
-        toast(p, "Back 10 s");
+        toast(p, ICON_BACK, "-10 s");
     }
     if (pressed & PLAT_BTN_UP)
         seek_chapter(p, 1);
@@ -1248,7 +1256,7 @@ static void play_input(player *p, uint32_t pressed)
     if (pressed & PLAT_BTN_SQUARE)
         cycle_screen(p, 1);
     if (pressed & PLAT_BTN_SELECT)
-        toast(p, "%s", p->title->name);
+        toast(p, ICON_NONE, "%s", p->title->name);
     if (pressed & PLAT_BTN_CROSS)
         toggle_pause(p);
     if (pressed & (PLAT_BTN_CIRCLE | PLAT_BTN_START))
