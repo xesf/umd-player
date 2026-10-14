@@ -2,14 +2,20 @@
 
    Every decoded frame is a whole 960x544 framebuffer in CDRAM with the picture at a fixed
    offset, so showing a frame is one sceDisplaySetFrameBuf call and no copy. The picture is not
-   scaled yet (720x480 in the middle of the screen); scaling to the display aspect needs sceGxm. */
+   scaled yet (720x480 in the middle of the screen); scaling to the display aspect needs sceGxm.
+
+   Field-coded discs: with interlaced mode on, each output holds both fields of a frame as two
+   half-height pictures, one above the other (checked with frame dumps on hardware). They are
+   decoded into a scratch buffer and DMA-copied into two framebuffers, one per field, each line
+   doubled ("bob"). The second field is shown one field period (1/59.94 s) after the first. */
 #include "../platform.h"
 #include "vita_video.h"
 
 #include <stdio.h>
 #include <string.h>
 #include <psp2/display.h>
-#include <psp2/io/fcntl.h>
+#include <psp2/kernel/dmac.h>
+#include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/sysmem.h>
 #include <psp2/sysmodule.h>
 #include <psp2/videodec.h>
@@ -24,6 +30,9 @@
 #define REF_FRAMES 5
 #define ES_SIZE  (1024 * 1024)
 #define ALIGN(x, a) (((x) + ((a) - 1)) & ~((a) - 1))
+#define FIELD_TICKS 1501      /* one field at 59.94 Hz in 90 kHz ticks */
+#define PIC_W 720
+#define FIELD_H 240
 
 /* Exported by SceVideodec_stub but missing from psp2/videodec.h. Needed before
    sceVideodecInitLibrary for field-coded streams; returns 0 (checked on hardware). */
@@ -35,6 +44,7 @@ struct plat_frame {
 };
 
 struct plat_video {
+    int interlaced;           /* outputs are field pairs, stacked: split and line-double them */
     SceAvcdecCtrl ctrl;
     SceUID mem_uid;
     int ready;
@@ -43,28 +53,14 @@ struct plat_video {
 };
 
 static plat_frame pool[POOL];
-static SceUID pool_uid = -1, es_uid = -1;
-static uint8_t *es_buf;
+static SceUID pool_uid = -1, es_uid = -1, scratch_uid = -1;
+static uint8_t *es_buf, *scratch;
+static uint64_t bob_us_total;
+static uint32_t bob_count;
 static plat_frame *displayed;
 static int decode_errors;
 static uint32_t outputs;
 
-/* Debug: saves an output frame as raw RGBA (720x480, 4 bytes per pixel) to look at on a PC. */
-static void dump_frame(const uint8_t *pic, const SceAvcdecPicture *p)
-{
-    char path[64];
-    SceUID fd;
-
-    snprintf(path, sizeof(path), "ux0:data/umdplayer/frame%u.rgba", (unsigned)outputs);
-    fd = sceIoOpen(path, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);
-    if (fd < 0)
-        return;
-    for (int y = 0; y < 480; y++)
-        sceIoWrite(fd, pic + (size_t)y * SCREEN_W * 4, 720 * 4);
-    sceIoClose(fd);
-    plat_log("saved %s: %ux%u, picStruct %u %u, ctType %u\n", path, p->frame.horizontalSize, p->frame.verticalSize,
-             p->info.picStruct[0], p->info.picStruct[1], p->info.ctType);
-}
 
 static void *alloc_block(const char *name, unsigned type, SceSize size, SceSize align, SceUID *uid)
 {
@@ -82,8 +78,9 @@ int vita_video_init(void)
 
     sceSysmoduleLoadModule(SCE_SYSMODULE_AVCDEC);   /* may report "already loaded" */
     base = alloc_block("frames", SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW, POOL * ALIGN(FB_BYTES, FB_ALIGN), FB_ALIGN, &pool_uid);
+    scratch = alloc_block("fields", SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW, FB_BYTES, FB_ALIGN, &scratch_uid);
     es_buf = alloc_block("es", SCE_KERNEL_MEMBLOCK_TYPE_USER_MAIN_PHYCONT_NC_RW, ES_SIZE, 1024 * 1024, &es_uid);
-    if (!base || !es_buf)
+    if (!base || !es_buf || !scratch)
         return -1;
     memset(base, 0, POOL * ALIGN(FB_BYTES, FB_ALIGN));
     for (int i = 0; i < POOL; i++)
@@ -91,12 +88,29 @@ int vita_video_init(void)
     return 0;
 }
 
-static plat_frame *pool_get(void)
+static plat_frame *pool_get(const plat_frame *not_this)
 {
     for (int i = 0; i < POOL; i++)
-        if (!pool[i].app_ref && !pool[i].display_ref)
+        if (!pool[i].app_ref && !pool[i].display_ref && &pool[i] != not_this)
             return &pool[i];
     return NULL;
+}
+
+/* Line-doubles one field (240 rows of the scratch buffer) into a framebuffer. A bottom field
+   sits one line lower than a top field, so the picture does not bounce between fields. */
+static void bob_field(plat_frame *dst, const uint8_t *field, int bottom)
+{
+    uint8_t *pic = dst->pixels + (PIC_Y * SCREEN_W + PIC_X) * 4;
+
+    for (int r = 0; r < FIELD_H; r++) {
+        const uint8_t *src = field + (size_t)r * SCREEN_W * 4;
+        int y = 2 * r + bottom;
+        sceDmacMemcpy(pic + (size_t)y * SCREEN_W * 4, src, PIC_W * 4);
+        if (y + 1 < 2 * FIELD_H)
+            sceDmacMemcpy(pic + (size_t)(y + 1) * SCREEN_W * 4, src, PIC_W * 4);
+    }
+    if (bottom)
+        sceDmacMemcpy(pic, field, PIC_W * 4);
 }
 
 plat_video *plat_video_open(const plat_video_config *cfg)
@@ -142,6 +156,7 @@ plat_video *plat_video_open(const plat_video_config *cfg)
         sceKernelFreeMemBlock(v.mem_uid);
         goto fail;
     }
+    v.interlaced = cfg->interlaced;
     v.ready = 1;
     return &v;
 
@@ -155,7 +170,7 @@ int plat_video_decode(plat_video *v, const uint8_t *au, uint32_t size, uint64_t 
     SceAvcdecAu in;
     SceAvcdecPicture pic, *pics[1] = {&pic};
     SceAvcdecArrayPicture arr;
-    plat_frame *target = pool_get();
+    plat_frame *target = pool_get(NULL);
     int r;
 
     (void)flags;   /* in interlaced mode the decoder takes each field on its own */
@@ -177,6 +192,11 @@ int plat_video_decode(plat_video *v, const uint8_t *au, uint32_t size, uint64_t 
     pic.frame.frameWidth = SCREEN_W - PIC_X;
     pic.frame.frameHeight = SCREEN_H - PIC_Y;
     pic.frame.pPicture[0] = target->pixels + (PIC_Y * SCREEN_W + PIC_X) * 4;
+    if (v->interlaced) {
+        pic.frame.frameWidth = SCREEN_W;
+        pic.frame.frameHeight = SCREEN_H;
+        pic.frame.pPicture[0] = scratch;
+    }
     memset(&arr, 0, sizeof(arr));
     arr.numOfElm = 1;
     arr.pPicture = pics;
@@ -191,15 +211,35 @@ int plat_video_decode(plat_video *v, const uint8_t *au, uint32_t size, uint64_t 
         if (outputs < 3)
             plat_log("output %u: %ux%u, picStruct %u %u, ctType %u\n", outputs, pic.frame.horizontalSize,
                    pic.frame.verticalSize, pic.info.picStruct[0], pic.info.picStruct[1], pic.info.ctType);
-        ++outputs;
-        if (outputs == 600 || outputs == 1500 || outputs == 3000)
-            dump_frame(pic.frame.pPicture[0], &pic);
+        outputs++;
     }
     if (arr.numOfOutput > 0) {
         uint64_t out_pts = (uint64_t)pic.info.pts.upper << 32 | pic.info.pts.lower;
+        int hidden = pic.info.pts.lower == 0xFFFFFFFF;
+
+        if (v->interlaced) {
+            plat_frame *second = pool_get(target);
+            int first_bottom = pic.info.picStruct[0] == 2;
+            uint64_t t0 = sceKernelGetProcessTimeWide();
+
+            if (hidden || !second || v->out_count + 2 > POOL)
+                return 0;
+            bob_field(target, scratch, first_bottom);
+            bob_field(second, scratch + (size_t)FIELD_H * SCREEN_W * 4, !first_bottom);
+            bob_us_total += sceKernelGetProcessTimeWide() - t0;
+            if (++bob_count % 600 == 0)
+                plat_log("field split: %.2f ms per frame\n", bob_us_total / 1000.0 / bob_count);
+            target->app_ref = 1;
+            second->app_ref = 1;
+            v->out[v->out_count].frame = target;
+            v->out[v->out_count++].pts = out_pts;
+            v->out[v->out_count].frame = second;
+            v->out[v->out_count++].pts = out_pts + FIELD_TICKS;
+            return 0;
+        }
         target->app_ref = 1;
         v->out[v->out_count].frame = target;
-        v->out[v->out_count].pts = pic.info.pts.lower == 0xFFFFFFFF ? PLAT_PTS_HIDDEN : out_pts;
+        v->out[v->out_count].pts = hidden ? PLAT_PTS_HIDDEN : out_pts;
         v->out_count++;
     }
     return 0;
