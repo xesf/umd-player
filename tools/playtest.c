@@ -1,7 +1,7 @@
 /* playtest: drives the app headlessly on the null platform and checks that it keeps showing
-   frames. playtest <iso | folder> <seconds> [<time>:<button>]...
+   frames. playtest <iso | folder> <seconds> [<time>:<button>[:<hold seconds>]]...
    Buttons: up down left right cross circle square triangle l r start select.
-   Example: playtest umd/movie.iso 30 5:triangle 6:right 8:circle 10:up
+   Example: playtest umd/movie.iso 30 5:triangle 6:right 8:circle 10:up 12:right:3
    Exits with 1 if the player stops showing frames for more than 2 s (a hang). */
 #include <stdio.h>
 #include <stdlib.h>
@@ -48,9 +48,18 @@ int main(int argc, char **argv)
         uint32_t held = 0;
         for (int i = 3; i < argc; i++) {
             double at = atof(argv[i]);
-            const char *b = strchr(argv[i], ':');
-            if (b && t >= at && t < at + 0.1)
-                held |= button(b + 1);
+            const char *b = strchr(argv[i], ':'), *h;
+            char name[16];
+            double hold = 0.1;
+            if (!b)
+                continue;
+            snprintf(name, sizeof(name), "%s", b + 1);
+            if ((h = strchr(b + 1, ':')) != NULL) {
+                hold = atof(h + 1);
+                name[h - b - 1 < (long)sizeof(name) ? h - b - 1 : (long)sizeof(name) - 1] = 0;
+            }
+            if (t >= at && t < at + hold)
+                held |= button(name);
         }
         null_buttons = held;
         if (!app_frame())

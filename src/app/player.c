@@ -43,6 +43,7 @@
 #define UI_W          960                /* the UI layer is drawn at Vita screen size */
 #define UI_H          544
 #define TOAST_US      2500000
+#define SCRUB_DELAY   400000             /* us left or right is held before scrubbing starts */
 #define DETECT_US     500000             /* border detection interval */
 #define MENU_ROWS     4
 #define SAVE_US       10000000           /* save the resume point every 10 s while playing */
@@ -104,6 +105,7 @@ struct player {
     int stop;                        /* the reader should stop for a seek */
     uint64_t min_pts;                /* frames and audio before this time are dropped (after a seek) */
     int seeking;                     /* no frame shown since the last seek: the position is min_pts */
+    uint64_t entry_pts;              /* the seek table's time for the picture reading starts at, or 0 */
     uint8_t *vq_data;
     uint32_t vq_write;               /* next free byte when the ring is not empty */
     vq_entry vq[VQ_MAX];
@@ -167,6 +169,10 @@ struct player {
     char resume_key[128];            /* empty: do not remember */
     char disc_title[96];             /* PARAM.SFO TITLE */
     int next_title;                  /* L or R: the title to switch to, or -1 */
+    int scrub_dir;                   /* left or right held: -1 or 1, else 0 */
+    int scrubbing;                   /* held long enough to scrub; the seek happens on release */
+    uint64_t scrub_start_us, scrub_last_us;
+    int64_t scrub_target;
     uint64_t bar_until;              /* the time bar shows until then after a chapter change */
     uint64_t last_save_us;
     int ended;
@@ -260,6 +266,7 @@ static int stopping(const player *p)
 
 static void push_video(player *p, const demux_unit *u)
 {
+    uint64_t pts = u->pts;
     h264_au_info info;
     uint32_t id;
     int64_t off;
@@ -267,12 +274,19 @@ static void push_video(player *p, const demux_unit *u)
 
     if (h264_parse_au(&p->h264, u->data, u->size, &info) < 0)
         return;
+    /* The entry point's I picture often has no PES PTS, and without one no picture can be timed
+       until the next PTS, up to a second later. The seek table has its time. */
+    if (p->entry_pts) {
+        if (u->pts == PS_NO_TS && info.slice_type == H264_SLICE_I)
+            pts = p->entry_pts;
+        p->entry_pts = 0;
+    }
     if (!p->have_sps) {
         if (!p->h264.sps.valid || !p->h264.pps_size)
             return;
         vtiming_reset(&p->vt, &p->h264.sps);
     }
-    id = vtiming_push(&p->vt, &info, u->pts);
+    id = vtiming_push(&p->vt, &info, pts);
 
     plat_mutex_lock(p->lock);
     if (!p->have_sps) {
@@ -779,6 +793,7 @@ static void restart_reader(player *p, uint64_t target, int audio, int sub)
         if (demux_select_mask(p->dmx, amask, smask) < 0)
             plat_log("not enough memory for all subtitle tracks\n");
     }
+    p->entry_pts = p->clip.ep_count ? ep.pts : 0;
     demux_seek(p->dmx, ep.sector);
     p->reader = plat_thread_start(reader_main, p, "reader");
 }
@@ -832,13 +847,16 @@ static void seek_chapter(player *p, int step)
 static void toast(player *p, icon_id icon, const char *fmt, ...)
 {
     va_list ap;
+    char text[sizeof(p->toast)];
 
-    p->toast_icon = icon;
     va_start(ap, fmt);
-    vsnprintf(p->toast, sizeof(p->toast), fmt, ap);
+    vsnprintf(text, sizeof(text), fmt, ap);
     va_end(ap);
+    if (strcmp(text, p->toast) != 0 || icon != p->toast_icon || plat_time_us() >= p->toast_until)
+        plat_log("%s\n", text);
+    p->toast_icon = icon;
+    memcpy(p->toast, text, sizeof(text));
     p->toast_until = plat_time_us() + TOAST_US;
-    plat_log("%s\n", p->toast);
 }
 
 static const char *language(const char *code)
@@ -1010,7 +1028,7 @@ static int update_subtitle(player *p, uint64_t now)
 /* Builds what the OSD should show now. */
 static void build_osd(player *p, osd_view *v)
 {
-    uint64_t now = now_or_shown(p), len = p->title->end_pts - p->title->start_pts;
+    uint64_t now = p->scrubbing ? (uint64_t)p->scrub_target : now_or_shown(p), len = p->title->end_pts - p->title->start_pts;
     char a[24], b[24];
 
     memset(v, 0, sizeof(*v));
@@ -1302,13 +1320,14 @@ static void play_input(player *p, uint32_t pressed)
         p->menu_chapter = current_chapter(p);
         return;
     }
-    if (pressed & PLAT_BTN_RIGHT) {
-        seek_to(p, (int64_t)now_or_shown(p) + SEEK_STEP, "forward");
-        toast(p, ICON_FORWARD, "+10 s");
-    }
-    if (pressed & PLAT_BTN_LEFT) {
-        seek_to(p, (int64_t)now_or_shown(p) - SEEK_STEP, "back");
-        toast(p, ICON_BACK, "-10 s");
+    if (pressed & (PLAT_BTN_RIGHT | PLAT_BTN_LEFT)) {
+        int dir = (pressed & PLAT_BTN_RIGHT) ? 1 : -1;
+        seek_to(p, (int64_t)now_or_shown(p) + dir * SEEK_STEP, dir > 0 ? "forward" : "back");
+        toast(p, dir > 0 ? ICON_FORWARD : ICON_BACK, dir > 0 ? "+10 s" : "-10 s");
+        p->scrub_dir = dir;
+        p->scrubbing = 0;
+        p->scrub_start_us = p->scrub_last_us = plat_time_us();
+        p->scrub_target = (int64_t)p->min_pts;
     }
     if (pressed & PLAT_BTN_UP)
         seek_chapter(p, 1);
@@ -1324,6 +1343,38 @@ static void play_input(player *p, uint32_t pressed)
         toggle_pause(p);
     if (pressed & (PLAT_BTN_CIRCLE | PLAT_BTN_START))
         p->leave = 1;
+}
+
+/* Left or right held: the target moves faster the longer the button is held, and the bar
+   shows it. The player seeks once, on release, since every seek restarts the decoder. */
+static void scrub(player *p)
+{
+    uint32_t held = plat_buttons();
+    uint64_t t = plat_time_us(), elapsed = t - p->scrub_start_us;
+    int64_t first = p->title->start_pts, last = (int64_t)p->title->end_pts - 90000;
+    int speed;
+
+    if (!p->scrub_dir)
+        return;
+    if (!(held & (p->scrub_dir > 0 ? PLAT_BTN_RIGHT : PLAT_BTN_LEFT)) || p->menu_open) {
+        if (p->scrubbing)
+            seek_to(p, p->scrub_target, "scrub");
+        p->scrub_dir = 0;
+        p->scrubbing = 0;
+        return;
+    }
+    if (elapsed < SCRUB_DELAY)
+        return;
+    speed = elapsed < 2500000 ? 30 : elapsed < 5000000 ? 90 : 240;   /* movie seconds per second */
+    p->scrubbing = 1;
+    p->scrub_target += (int64_t)p->scrub_dir * speed * (int64_t)(t - p->scrub_last_us) * 9 / 100;
+    if (p->scrub_target < first)
+        p->scrub_target = first;
+    if (p->scrub_target > last)
+        p->scrub_target = last;
+    p->scrub_last_us = t;
+    toast(p, p->scrub_dir > 0 ? ICON_FORWARD : ICON_BACK, "%dx", speed);
+    p->bar_until = p->toast_until;
 }
 
 static void save_resume(player *p)
@@ -1496,6 +1547,7 @@ int player_update(player *p, uint32_t pressed)
         menu_input(p, pressed);
     else
         play_input(p, pressed);
+    scrub(p);
     if (p->leave)
         return 0;
     if (!p->paused && plat_time_us() - p->last_awake_us > 1000000) {
@@ -1555,6 +1607,8 @@ int player_update(player *p, uint32_t pressed)
                  p->vq_count ? (p->vq[p->vq_first].state == AU_PENDING ? "pending" : "ready") : "-", p->pcm_count,
                  p->audio_started ? "started" : "waiting", p->have_audio_pts ? "" : " (no audio yet)", p->eof, p->seeking,
                  have_clock ? "on" : "off", (double)c / 90000.0, (double)p->shown_pts / 90000.0);
+        plat_log("stall: audio queue %u, reader waits pcm %u vq %u, want 0x%02x\n", p->aq[p->want_audio % DEMUX_AUDIO_TRACKS].count,
+                 p->reader_wait_pcm, p->reader_wait_vq, p->want_audio);
         plat_mutex_unlock(p->lock);
         if (p->frame_count)
             plat_log("stall: queued frames at %.2f .. %.2f s\n", (double)p->frames[0].pts / 90000.0,
