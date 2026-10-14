@@ -14,7 +14,7 @@ all: $(TOOLS)
 $(BIN)/umdinfo: umdinfo.c host_source.c $(CORE)/iso9660.c $(CORE)/sfo.c $(CORE)/umdv.c $(CORE)/mpeg_ps.c | $(BIN)
 	$(CC) $(CFLAGS) -o $@ $^
 
-$(BIN)/umddemux: umddemux.c host_source.c $(CORE)/iso9660.c $(CORE)/umdv.c $(CORE)/mpeg_ps.c $(CORE)/demux.c | $(BIN)
+$(BIN)/umddemux: umddemux.c host_source.c $(CORE)/iso9660.c $(CORE)/umdv.c $(CORE)/mpeg_ps.c $(CORE)/demux.c $(CORE)/h264.c $(CORE)/vtiming.c | $(BIN)
 	$(CC) $(CFLAGS) -o $@ $^
 
 $(BIN)/at3pdec: at3pdec.c $(AT3P) $(wildcard $(CORE)/atrac3p/*.h) | $(BIN)

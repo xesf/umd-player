@@ -5,6 +5,8 @@
    -a  audio substream, 0x00-0x0F (default 0)
    -s  subtitle substream, 0x80-0x9F (default: none)
    -n  stop after this many seconds (default: whole title)
+   -d  print the H.264 header fields of the first N access units
+   -T  check video timestamps: predict every PES PTS from the frames before it
 
    Writes <outdir>/video.264, <outdir>/audio_XX.oma, and for subtitles
    <outdir>/sub_XX/NNNN.png with <outdir>/sub_XX/index.txt. */
@@ -16,8 +18,10 @@
 
 #include "host_source.h"
 #include "../src/core/demux.h"
+#include "../src/core/h264.h"
 #include "../src/core/iso9660.h"
 #include "../src/core/umdv.h"
+#include "../src/core/vtiming.h"
 
 #define OMA_HEADER_SIZE 96
 
@@ -85,7 +89,12 @@ int main(int argc, char **argv)
     uint8_t *pl_buf, *clp_buf;
     uint32_t size;
     FILE *fv, *fa = NULL, *fs = NULL;
-    int title = -1, audio = 0, sub = DEMUX_NONE, i, r;
+    static h264_parser h264;
+    static vtiming vt;
+    int check_timing = 0, vt_started = 0;
+    uint32_t vt_resolved = 0, vt_dropped = 0, vt_checked = 0, vt_exact = 0, vt_last_id = 0;
+    int64_t vt_max_err = 0;
+    int title = -1, audio = 0, sub = DEMUX_NONE, dump = 0, i, r;
     double seconds = 0;
     uint64_t limit = PS_NO_TS, first_pts = PS_NO_TS, last_audio = PS_NO_TS;
     uint32_t n_video = 0, n_video_pts = 0, n_audio = 0, n_audio_pts = 0, n_sub = 0, audio_gaps = 0;
@@ -95,11 +104,21 @@ int main(int argc, char **argv)
         fprintf(stderr, "usage: umddemux <iso> <outdir> [-t title] [-a audio] [-s subtitle] [-n seconds]\n");
         return 2;
     }
-    for (i = 3; i + 1 < argc; i += 2) {
+    for (i = 3; i < argc; i += 2) {
+        if (strcmp(argv[i], "-T") == 0) {
+            check_timing = 1;
+            i--;
+            continue;
+        }
+        if (i + 1 >= argc) {
+            fprintf(stderr, "option %s needs a value\n", argv[i]);
+            return 2;
+        }
         if (strcmp(argv[i], "-t") == 0) title = (int)parse_num(argv[i + 1]);
         else if (strcmp(argv[i], "-a") == 0) audio = (int)parse_num(argv[i + 1]);
         else if (strcmp(argv[i], "-s") == 0) sub = (int)parse_num(argv[i + 1]);
         else if (strcmp(argv[i], "-n") == 0) seconds = atof(argv[i + 1]);
+        else if (strcmp(argv[i], "-d") == 0) dump = (int)parse_num(argv[i + 1]);
         else {
             fprintf(stderr, "unknown option %s\n", argv[i]);
             return 2;
@@ -157,6 +176,7 @@ int main(int argc, char **argv)
 
     printf("title %d \"%s\" clip %s, audio 0x%02x, subtitle %s\n", title, ti->name, ti->clip, audio,
            sub == DEMUX_NONE ? "none" : "selected");
+    h264_parser_init(&h264);
     demux_init(&dmx, read_mps, &rd);
     demux_select(&dmx, audio, sub);
     while ((r = demux_next(&dmx, &u)) > 0) {
@@ -164,7 +184,59 @@ int main(int argc, char **argv)
             break;
         if (first_pts == PS_NO_TS && u.pts != PS_NO_TS)
             first_pts = u.pts;
-        if (u.type == DEMUX_VIDEO) {
+        if (u.type == DEMUX_VIDEO && check_timing) {
+            h264_au_info au;
+            if (h264_parse_au(&h264, u.data, u.size, &au) == 0) {
+                uint32_t id;
+                if (!vt_started) {
+                    vtiming_reset(&vt, &h264.sps);
+                    vt_started = 1;
+                }
+                id = vtiming_push(&vt, &au, u.pts);
+                /* Collect entries that just settled. */
+                for (;;) {
+                    uint64_t pts;
+                    int r2 = vtiming_get(&vt, vt_last_id, &pts);
+                    int64_t pred, anchor;
+                    if (vt_last_id > id || r2 == 0)
+                        break;
+                    pred = vtiming_predicted(&vt, vt_last_id);
+                    anchor = vtiming_anchor(&vt, vt_last_id);
+                    if (r2 == 1) {
+                        vt_resolved++;
+                        if (anchor >= 0 && pred >= 0) {
+                            int64_t err = anchor - pred;
+                            if (err < 0) err = -err;
+                            if (err > vt_max_err) vt_max_err = err;
+                            vt_exact += err <= 1;
+                            vt_checked++;
+                            if (err > 1 && getenv("VT_DEBUG"))
+                                printf("anchor au %u at %.3f s differs from the chain by %+.1f fields\n", vt_last_id,
+                                       (double)(anchor - ti->start_pts) / UMDV_PTS_HZ, (double)(anchor - pred) / 1501.5);
+                        }
+                    } else {
+                        vt_dropped++;
+                    }
+                    vt_last_id++;
+                }
+            }
+        } else if (u.type == DEMUX_VIDEO) {
+            if (n_video < (uint32_t)dump) {
+                static const char types[] = "PBI";
+                h264_au_info au;
+                if (h264_parse_au(&h264, u.data, u.size, &au) == 0) {
+                    if (au.has_sps)
+                        printf("SPS %dx%d sar %d:%d frame_mbs_only %d poc_type %d tick %u/%u pic_struct_present %d\n",
+                               h264.sps.width, h264.sps.height, h264.sps.sar_w, h264.sps.sar_h, h264.sps.frame_mbs_only,
+                               h264.sps.poc_type, h264.sps.num_units_in_tick, h264.sps.time_scale, h264.sps.pic_struct_present);
+                    printf("au %5u %c%s ref %d %s poc %4d pic_struct %2d size %6u", n_video, types[au.slice_type],
+                           au.is_idr ? " IDR" : "    ", au.nal_ref_idc, au.field_pic ? (au.bottom_field ? "bot " : "top ") : "frame",
+                           au.poc, au.pic_struct, u.size);
+                    if (u.pts != PS_NO_TS)
+                        printf("  pts %.4f", (double)(u.pts - ti->start_pts) / UMDV_PTS_HZ);
+                    printf("\n");
+                }
+            }
             fwrite(u.data, 1, u.size, fv);
             n_video++;
             n_video_pts += u.pts != PS_NO_TS;
@@ -198,6 +270,10 @@ int main(int argc, char **argv)
     }
     if (r < 0)
         fprintf(stderr, "read error\n");
+    if (check_timing)
+        printf("timing:   %u resolved, %u never resolved; %u PES PTS predicted, %u within 1 tick, max error %lld ticks; "
+               "%u outliers ignored, %u jumps accepted\n",
+               vt_resolved, vt_dropped, vt_checked, vt_exact, (long long)vt_max_err, vt.outliers, vt.jumps);
     fclose(fv);
     if (fa) fclose(fa);
     if (fs) fclose(fs);

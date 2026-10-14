@@ -158,6 +158,21 @@ H.264 in Annex B format, Main profile (77), level 3.0, 720x480, and 2 reference 
 - Only 1 access unit in 12 (film) to 1 in 29 (field-coded) gets a PTS and DTS from its PES header. The PTS applies to the first access unit that starts in that packet. The player must work out the times of the other frames from frame durations.
 - Field-coded discs have one access unit per field, so 59.94 access units per second.
 
+#### Frame timing
+
+Status: verified on all 5 discs with `umddemux <iso> <dir> -T`.
+
+The SPS timing is `num_units_in_tick = 4004`, `time_scale = 240000`: one field lasts 1/59.94 s, which is 1501.5 ticks at 90 kHz. The SEI `pic_struct` is present on every access unit:
+
+| Coding | `pic_struct` | Fields per access unit |
+|---|---|---|
+| Film, 3:2 pulldown | 3, 4 (two fields), 5, 6 (three fields), cycling | 2 or 3 |
+| Field pictures | 1 (top), 2 (bottom) | 1 |
+
+Picture order count (POC) type 0 increases by 1 per frame (film) or per field (field pictures), and restarts at each IDR. Film discs use B-frames one frame deep; field-coded discs reorder by two fields.
+
+To time an access unit without a PES PTS, take its display-order predecessor (the next lower POC, or the last picture before the IDR) and add that picture's field count times 1501.5 ticks. Of 62,443 PES PTS values on the 5 discs, the chain predicts all but 13 within 1 tick. Each of the 13 is a single PTS that the muxer tied to a neighbouring access unit; the next PTS agrees with the chain again. `src/core/vtiming.c` uses the chain and ignores such outliers.
+
 The SPS always has `frame_mbs_only_flag = 0`. The discs use two coding modes:
 
 | Mode | Discs | Coding | What the player must do |
