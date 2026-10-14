@@ -307,18 +307,17 @@ def film_background(c, band, hole_w, hole_h, step):
 
 def bg(path):
     """LiveArea background. With style a1 the start image (280x158) and its Start button sit in
-    the middle, about x 280-560 and y 170-400, so the title goes along the top of the picture."""
+    the middle, about x 280-560 and y 170-400; the title group sits at the lower left."""
     c = Canvas(840, 500, ss=3)
     film_background(c, 54, 34, 22, 60)
     title, by, scale = 'UMD Player', 'by xesf', 3
     icon, gap = 64, 18
-    width = icon + gap + text_width(title, scale)
-    x = (840 - width) // 2
-    emblem(c, x + icon * 0.48, 104, icon * 0.86)
+    x, y = 15, 340                       # top left of the title group
+    emblem(c, x + icon * 0.48, y + 32, icon * 0.86)
     tx = x + icon + gap
-    c.text(title, tx, 80, scale, WHITE)
-    c.rect(tx, 108, text_width(title, scale), 3, ACCENT)
-    c.text(by, tx, 118, 2, (0.70, 0.78, 0.92))
+    c.text(title, tx, y + 8, scale, WHITE)
+    c.rect(tx, y + 36, text_width(title, scale), 3, ACCENT)
+    c.text(by, tx, y + 46, 2, (0.70, 0.78, 0.92))
     save(c, path)
 
 
@@ -333,7 +332,7 @@ def startup(path):
 
 
 TEMPLATE = '''<?xml version="1.0" encoding="utf-8"?>
-<livearea style="a1" format-ver="01.00" content-rev="3">
+<livearea style="a1" format-ver="01.00" content-rev="4">
   <livearea-background>
     <image>bg.png</image>
   </livearea-background>
