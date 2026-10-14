@@ -192,8 +192,10 @@ static int decoder_create(plat_video *v)
     if (sceAvcdecQueryDecoderMemSize(SCE_VIDEODEC_TYPE_HW_AVCDEC, &query, &info) < 0)
         goto fail;
     mem = alloc_block("avcdec", SCE_KERNEL_MEMBLOCK_TYPE_USER_MAIN_PHYCONT_NC_RW, info.frameMemSize, 1024 * 1024, &v->mem_uid);
-    if (!mem)
+    if (!mem) {
+        plat_log("cannot allocate %u bytes of decoder memory (0x%08x)\n", (unsigned)info.frameMemSize, v->mem_uid);
         goto fail;
+    }
     memset(&v->ctrl, 0, sizeof(v->ctrl));
     v->ctrl.frameBuf.pBuf = mem;
     v->ctrl.frameBuf.size = ALIGN(info.frameMemSize, 1024 * 1024);
@@ -336,13 +338,29 @@ void plat_frame_release(plat_frame *f)
 }
 
 /* sceAvcdec has no documented flush, and pictures left in its reorder buffer would come out
-   after a seek, so start a new decoder instead (a few milliseconds). */
+   after a seek, so start a new decoder instead. Its memory is kept: freeing and allocating
+   physically contiguous memory on every seek fails after a few seeks. */
 void plat_video_flush(plat_video *v)
 {
+    SceAvcdecQueryDecoderInfo query;
+    int r;
+
     while (v->out_count > 0)
         v->out[--v->out_count].frame->app_ref = 0;
-    decoder_destroy(v);
-    decoder_create(v);
+    if (!v->ready)
+        return;
+    sceAvcdecDeleteDecoder(&v->ctrl);
+    memset(&query, 0, sizeof(query));
+    query.horizontal = 720;
+    query.vertical = 480;
+    query.numOfRefFrames = REF_FRAMES;
+    v->ctrl.handle = 0;
+    if ((r = sceAvcdecCreateDecoder(SCE_VIDEODEC_TYPE_HW_AVCDEC, &v->ctrl, &query)) < 0) {
+        plat_log("flush: sceAvcdecCreateDecoder 0x%08x\n", r);
+        sceKernelFreeMemBlock(v->mem_uid);
+        sceVideodecTermLibrary(SCE_VIDEODEC_TYPE_HW_AVCDEC);
+        v->ready = 0;
+    }
 }
 
 void plat_video_close(plat_video *v)

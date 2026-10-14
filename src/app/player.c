@@ -70,6 +70,7 @@ struct player {
     int quit, eof;
     int stop;                        /* the reader should stop for a seek */
     uint64_t min_pts;                /* frames and audio before this time are dropped (after a seek) */
+    int seeking;                     /* no frame shown since the last seek: the position is min_pts */
     uint8_t *vq_data;
     uint32_t vq_write;               /* next free byte when the ring is not empty */
     vq_entry vq[VQ_MAX];
@@ -551,6 +552,7 @@ static void restart_reader(player *p, uint64_t target, int audio, int sub)
     p->sub_first = p->sub_count = 0;
     plat_mutex_unlock(p->lock);
     p->sub_sub = sub;
+    p->seeking = 1;
 
     p->audio_open = 0;               /* re-measure the audio clock base at the next start */
     p->clk_raw = p->clk_last = 0;
@@ -571,8 +573,11 @@ static void restart_reader(player *p, uint64_t target, int audio, int sub)
     p->reader = plat_thread_start(reader_main, p, "reader");
 }
 
+/* The current position: the seek target until a frame from after the seek is on screen. */
 static uint64_t now_or_shown(player *p)
 {
+    if (p->seeking)
+        return p->min_pts;
     return p->clk_last ? p->clk_last : (p->shown_pts ? p->shown_pts : p->title->start_pts);
 }
 
@@ -638,7 +643,14 @@ static void next_audio_track(player *p)
 /* Cycles subtitles: off, then each subtitle track of the clip, then off again. */
 static void next_subtitle_track(player *p)
 {
-    int next = DEMUX_NONE, take = p->sub_sub == DEMUX_NONE;
+    int next = DEMUX_NONE, take = p->sub_sub == DEMUX_NONE, any = 0;
+
+    for (int i = 0; i < p->clip.stream_count; i++)
+        any |= p->clip.streams[i].kind == UMDV_STREAM_SUBTITLE;
+    if (!any) {
+        plat_log("this title has no subtitles\n");
+        return;
+    }
 
     for (int i = 0; i < p->clip.stream_count; i++) {
         const umdv_stream *st = &p->clip.streams[i];
@@ -837,6 +849,7 @@ int player_update(player *p, uint32_t pressed)
                 plat_frame_release(p->shown);
             p->shown = p->frames[best].frame;
             p->shown_pts = p->frames[best].pts;
+            p->seeking = 0;
             p->frames_shown++;
             memmove(&p->frames[0], &p->frames[best + 1], (size_t)(p->frame_count - best - 1) * sizeof(p->frames[0]));
             p->frame_count -= best + 1;
