@@ -1,5 +1,6 @@
 #include "demux.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #define NAL_AUD 9
@@ -61,6 +62,22 @@ static demux_pts_mark *take_mark(demux_pts_mark *marks, uint32_t *count, uint64_
     return NULL;
 }
 
+static void reset_audio(struct demux_audio *a)
+{
+    a->len = a->discard = 0;
+    a->pos = 0;
+    a->last_pts = PS_NO_TS;
+    a->synced = 0;
+    a->mark_count = 0;
+}
+
+static void reset_sub(struct demux_sub *t)
+{
+    t->len = t->discard = 0;
+    t->pts = PS_NO_TS;
+    t->open = 0;
+}
+
 static void reset_streams(demux *d)
 {
     d->in_pos = d->in_len = 0;
@@ -70,14 +87,10 @@ static void reset_streams(demux *d)
     d->video_pos = 0;
     d->video_synced = 0;
     d->video_mark_count = 0;
-    d->audio_len = d->audio_discard = 0;
-    d->audio_pos = 0;
-    d->audio_last_pts = PS_NO_TS;
-    d->audio_synced = 0;
-    d->audio_mark_count = 0;
-    d->sub_len = d->sub_discard = 0;
-    d->sub_pts = PS_NO_TS;
-    d->sub_open = 0;
+    for (int i = 0; i < DEMUX_AUDIO_TRACKS; i++)
+        reset_audio(&d->audio[i]);
+    for (int i = 0; i < DEMUX_SUB_TRACKS; i++)
+        reset_sub(&d->sub[i]);
 }
 
 void demux_init(demux *d, demux_read_fn read, void *user)
@@ -85,25 +98,46 @@ void demux_init(demux *d, demux_read_fn read, void *user)
     d->read = read;
     d->user = user;
     d->file_pos = 0;
-    d->audio_sub = 0;
-    d->sub_sub = DEMUX_NONE;
+    d->audio_mask = 1;
+    d->sub_mask = 0;
+    d->next_audio = d->next_sub = 0;
+    for (int i = 0; i < DEMUX_SUB_TRACKS; i++)
+        d->sub[i].buf = NULL;
     memset(&d->stats, 0, sizeof(d->stats));
     reset_streams(d);
 }
 
+void demux_free(demux *d)
+{
+    for (int i = 0; i < DEMUX_SUB_TRACKS; i++) {
+        free(d->sub[i].buf);
+        d->sub[i].buf = NULL;
+    }
+    d->sub_mask = 0;
+}
+
+int demux_select_mask(demux *d, uint32_t audio_mask, uint32_t sub_mask)
+{
+    for (int i = 0; i < DEMUX_AUDIO_TRACKS; i++)
+        if (((audio_mask ^ d->audio_mask) >> i) & 1)
+            reset_audio(&d->audio[i]);
+    for (int i = 0; i < DEMUX_SUB_TRACKS; i++) {
+        if (!(((sub_mask ^ d->sub_mask) >> i) & 1))
+            continue;
+        reset_sub(&d->sub[i]);
+        if (((sub_mask >> i) & 1) && !d->sub[i].buf && !(d->sub[i].buf = malloc(DEMUX_SUB_SIZE)))
+            return -1;
+    }
+    d->audio_mask = audio_mask & 0xFFFF;
+    d->sub_mask = sub_mask;
+    return 0;
+}
+
 void demux_select(demux *d, int audio_sub, int sub_sub)
 {
-    if (audio_sub != d->audio_sub) {
-        d->audio_len = d->audio_discard = 0;
-        d->audio_synced = 0;
-        d->audio_mark_count = 0;
-    }
-    if (sub_sub != d->sub_sub) {
-        d->sub_len = d->sub_discard = 0;
-        d->sub_open = 0;
-    }
-    d->audio_sub = audio_sub;
-    d->sub_sub = sub_sub;
+    demux_select_mask(d, audio_sub >= 0 && audio_sub < DEMUX_AUDIO_TRACKS ? 1u << audio_sub : 0,
+                      sub_sub >= DEMUX_SUB_FIRST && sub_sub < DEMUX_SUB_FIRST + DEMUX_SUB_TRACKS
+                          ? 1u << (sub_sub - DEMUX_SUB_FIRST) : 0);
 }
 
 void demux_seek(demux *d, uint32_t sector)
@@ -233,7 +267,7 @@ static int try_video(demux *d, demux_unit *out)
     return 0;
 }
 
-static void push_audio(demux *d, const ps_packet *pkt)
+static void push_audio(demux *d, struct demux_audio *a, const ps_packet *pkt)
 {
     const uint8_t *p = pkt->data + AUDIO_HEADER;
     uint32_t n, first;
@@ -243,113 +277,132 @@ static void push_audio(demux *d, const ps_packet *pkt)
         return;
     n = pkt->size - AUDIO_HEADER;
     first = be16(&pkt->data[2]);
-    if (!d->audio_synced) {
+    if (!a->synced) {
         if (first >= n)
             return;
         p += first;
         n -= first;
         first = 0;
-        d->audio_synced = 1;
+        a->synced = 1;
     }
-    if (d->audio_len + n > DEMUX_AUDIO_SIZE) {
-        d->stats.audio_dropped += d->audio_len;
-        d->audio_pos += d->audio_len;
-        d->audio_len = 0;
-        d->audio_synced = 0;
+    if (a->len + n > DEMUX_AUDIO_SIZE) {
+        d->stats.audio_dropped += a->len;
+        a->pos += a->len;
+        a->len = 0;
+        a->synced = 0;
         return;
     }
-    start = d->audio_pos + d->audio_len;
+    start = a->pos + a->len;
     if (pkt->pts != PS_NO_TS && first < n)
-        add_mark(d->audio_marks, &d->audio_mark_count, start + first, start + first + 1, pkt->pts, pkt->pts);
-    memcpy(d->audio + d->audio_len, p, n);
-    d->audio_len += n;
+        add_mark(a->marks, &a->mark_count, start + first, start + first + 1, pkt->pts, pkt->pts);
+    memcpy(a->buf + a->len, p, n);
+    a->len += n;
+}
+
+static int try_audio_track(demux *d, int track, demux_unit *out)
+{
+    struct demux_audio *a = &d->audio[track];
+    uint32_t size, i;
+    demux_pts_mark *m;
+
+    if (a->len < AT3P_HEADER_SIZE)
+        return 0;
+    if ((size = at3p_frame_size(a->buf)) == 0) {
+        for (i = 1; i + AT3P_HEADER_SIZE <= a->len && at3p_frame_size(&a->buf[i]) == 0; i++)
+            ;
+        memmove(a->buf, a->buf + i, a->len - i);
+        a->len -= i;
+        a->pos += i;
+        d->stats.audio_dropped += i;
+        a->last_pts = PS_NO_TS;
+        return 0;
+    }
+    if (a->len < size)
+        return 0;
+    m = take_mark(a->marks, &a->mark_count, a->pos);
+    out->type = DEMUX_AUDIO;
+    out->sub_id = (uint8_t)track;
+    out->data = a->buf;
+    out->size = size;
+    if (m)
+        out->pts = m->pts;
+    else if (a->last_pts != PS_NO_TS)
+        out->pts = a->last_pts + at3p_frame_ticks(a->buf);
+    else
+        out->pts = PS_NO_TS;
+    out->dts = out->pts;
+    a->last_pts = out->pts;
+    a->discard = size;
+    return 1;
 }
 
 static int try_audio(demux *d, demux_unit *out)
 {
-    uint32_t size, i;
-    demux_pts_mark *m;
-
-    if (d->audio_len < AT3P_HEADER_SIZE)
-        return 0;
-    if ((size = at3p_frame_size(d->audio)) == 0) {
-        for (i = 1; i + AT3P_HEADER_SIZE <= d->audio_len && at3p_frame_size(&d->audio[i]) == 0; i++)
-            ;
-        memmove(d->audio, d->audio + i, d->audio_len - i);
-        d->audio_len -= i;
-        d->audio_pos += i;
-        d->stats.audio_dropped += i;
-        d->audio_last_pts = PS_NO_TS;
-        return 0;
+    for (int k = 0; k < DEMUX_AUDIO_TRACKS; k++) {
+        int t = (d->next_audio + k) % DEMUX_AUDIO_TRACKS;
+        if (((d->audio_mask >> t) & 1) && try_audio_track(d, t, out)) {
+            d->next_audio = (t + 1) % DEMUX_AUDIO_TRACKS;
+            return 1;
+        }
     }
-    if (d->audio_len < size)
-        return 0;
-    m = take_mark(d->audio_marks, &d->audio_mark_count, d->audio_pos);
-    out->type = DEMUX_AUDIO;
-    out->sub_id = (uint8_t)d->audio_sub;
-    out->data = d->audio;
-    out->size = size;
-    if (m)
-        out->pts = m->pts;
-    else if (d->audio_last_pts != PS_NO_TS)
-        out->pts = d->audio_last_pts + at3p_frame_ticks(d->audio);
-    else
-        out->pts = PS_NO_TS;
-    out->dts = out->pts;
-    d->audio_last_pts = out->pts;
-    d->audio_discard = size;
-    return 1;
+    return 0;
 }
 
-static void push_sub(demux *d, const ps_packet *pkt)
+static void push_sub(demux *d, struct demux_sub *t, const ps_packet *pkt)
 {
     const uint8_t *p;
     uint32_t n;
 
     if (pkt->pts != PS_NO_TS) {
-        if (d->sub_open)
-            d->stats.sub_dropped += d->sub_len;
+        if (t->open)
+            d->stats.sub_dropped += t->len;
         if (pkt->size < SUB_FIRST_HEADER)
             return;
-        d->sub_len = 0;
-        d->sub_open = 1;
-        d->sub_pts = pkt->pts;
+        t->len = 0;
+        t->open = 1;
+        t->pts = pkt->pts;
         p = pkt->data + SUB_FIRST_HEADER;
         n = pkt->size - SUB_FIRST_HEADER;
     } else {
-        if (!d->sub_open || pkt->size < SUB_NEXT_HEADER)
+        if (!t->open || pkt->size < SUB_NEXT_HEADER)
             return;
         p = pkt->data + SUB_NEXT_HEADER;
         n = pkt->size - SUB_NEXT_HEADER;
     }
-    if (d->sub_len + n > DEMUX_SUB_SIZE) {
-        d->stats.sub_dropped += d->sub_len + n;
-        d->sub_len = 0;
-        d->sub_open = 0;
+    if (t->len + n > DEMUX_SUB_SIZE) {
+        d->stats.sub_dropped += t->len + n;
+        t->len = 0;
+        t->open = 0;
         return;
     }
-    memcpy(d->sub + d->sub_len, p, n);
-    d->sub_len += n;
+    memcpy(t->buf + t->len, p, n);
+    t->len += n;
 }
 
 static int try_sub(demux *d, demux_unit *out)
 {
-    uint32_t size;
+    for (int k = 0; k < DEMUX_SUB_TRACKS; k++) {
+        int i = (d->next_sub + k) % DEMUX_SUB_TRACKS;
+        struct demux_sub *t = &d->sub[i];
+        uint32_t size;
 
-    if (!d->sub_open || d->sub_len < 2)
-        return 0;
-    size = 2u + be16(d->sub);
-    if (d->sub_len < size)
-        return 0;
-    out->type = DEMUX_SUBTITLE;
-    out->sub_id = (uint8_t)d->sub_sub;
-    out->data = d->sub;
-    out->size = size;
-    out->pts = d->sub_pts;
-    out->dts = d->sub_pts;
-    d->sub_open = 0;
-    d->sub_discard = d->sub_len;
-    return 1;
+        if (!((d->sub_mask >> i) & 1) || !t->open || t->len < 2)
+            continue;
+        size = 2u + be16(t->buf);
+        if (t->len < size)
+            continue;
+        out->type = DEMUX_SUBTITLE;
+        out->sub_id = (uint8_t)(DEMUX_SUB_FIRST + i);
+        out->data = t->buf;
+        out->size = size;
+        out->pts = t->pts;
+        out->dts = t->pts;
+        t->open = 0;
+        t->discard = t->len;
+        d->next_sub = (i + 1) % DEMUX_SUB_TRACKS;
+        return 1;
+    }
+    return 0;
 }
 
 static void apply_discards(demux *d)
@@ -361,15 +414,20 @@ static void apply_discards(demux *d)
         d->video_discard = 0;
         d->video_scan = 5;
     }
-    if (d->audio_discard) {
-        memmove(d->audio, d->audio + d->audio_discard, d->audio_len - d->audio_discard);
-        d->audio_len -= d->audio_discard;
-        d->audio_pos += d->audio_discard;
-        d->audio_discard = 0;
+    for (int i = 0; i < DEMUX_AUDIO_TRACKS; i++) {
+        struct demux_audio *a = &d->audio[i];
+        if (!a->discard)
+            continue;
+        memmove(a->buf, a->buf + a->discard, a->len - a->discard);
+        a->len -= a->discard;
+        a->pos += a->discard;
+        a->discard = 0;
     }
-    if (d->sub_discard) {
-        d->sub_len = 0;
-        d->sub_discard = 0;
+    for (int i = 0; i < DEMUX_SUB_TRACKS; i++) {
+        if (d->sub[i].discard) {
+            d->sub[i].len = 0;
+            d->sub[i].discard = 0;
+        }
     }
 }
 
@@ -395,10 +453,11 @@ int demux_next(demux *d, demux_unit *out)
         if (pkt.stream_id == PS_STREAM_VIDEO0)
             push_video(d, &pkt);
         else if (pkt.stream_id == PS_STREAM_PRIVATE1 && pkt.size > 0) {
-            if (pkt.sub_id == d->audio_sub)
-                push_audio(d, &pkt);
-            else if (pkt.sub_id == d->sub_sub && pkt.sub_id <= SUB_MAX_SUBSTREAM)
-                push_sub(d, &pkt);
+            int id = pkt.sub_id;
+            if (id < DEMUX_AUDIO_TRACKS && ((d->audio_mask >> id) & 1))
+                push_audio(d, &d->audio[id], &pkt);
+            else if (id >= DEMUX_SUB_FIRST && id <= SUB_MAX_SUBSTREAM && ((d->sub_mask >> (id - DEMUX_SUB_FIRST)) & 1))
+                push_sub(d, &d->sub[id - DEMUX_SUB_FIRST], &pkt);
         }
     }
 }

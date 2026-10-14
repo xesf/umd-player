@@ -2,8 +2,8 @@
    umddemux <iso> <outdir> [-t title] [-a audio] [-s subtitle] [-n seconds]
 
    -t  title index from umdinfo (default: the longest title)
-   -a  audio substream, 0x00-0x0F (default 0)
-   -s  subtitle substream, 0x80-0x9F (default: none)
+   -a  audio substream, 0x00-0x0F, or "all" (default 0)
+   -s  subtitle substream, 0x80-0x9F, or "all" (default: none)
    -n  stop after this many seconds (default: whole title)
    -d  print the H.264 header fields of the first N access units
    -T  check video timestamps: predict every PES PTS from the frames before it
@@ -88,7 +88,10 @@ int main(int argc, char **argv)
     char path[1024];
     uint8_t *pl_buf, *clp_buf;
     uint32_t size;
-    FILE *fv, *fa = NULL, *fs = NULL;
+    FILE *fv, *fa[DEMUX_AUDIO_TRACKS] = {NULL}, *fs[DEMUX_SUB_TRACKS] = {NULL};
+    uint32_t sub_count[DEMUX_SUB_TRACKS] = {0};
+    uint64_t last_audio_pts[DEMUX_AUDIO_TRACKS];
+    uint32_t audio_mask = 0, sub_mask = 0;
     static h264_parser h264;
     static vtiming vt;
     int check_timing = 0, vt_started = 0;
@@ -96,7 +99,7 @@ int main(int argc, char **argv)
     int64_t vt_max_err = 0;
     int title = -1, audio = 0, sub = DEMUX_NONE, dump = 0, i, r;
     double seconds = 0;
-    uint64_t limit = PS_NO_TS, first_pts = PS_NO_TS, last_audio = PS_NO_TS;
+    uint64_t limit = PS_NO_TS, first_pts = PS_NO_TS;
     uint32_t n_video = 0, n_video_pts = 0, n_audio = 0, n_audio_pts = 0, n_sub = 0, audio_gaps = 0;
     uint64_t video_bytes = 0;
 
@@ -115,8 +118,8 @@ int main(int argc, char **argv)
             return 2;
         }
         if (strcmp(argv[i], "-t") == 0) title = (int)parse_num(argv[i + 1]);
-        else if (strcmp(argv[i], "-a") == 0) audio = (int)parse_num(argv[i + 1]);
-        else if (strcmp(argv[i], "-s") == 0) sub = (int)parse_num(argv[i + 1]);
+        else if (strcmp(argv[i], "-a") == 0) audio = strcmp(argv[i + 1], "all") == 0 ? -2 : (int)parse_num(argv[i + 1]);
+        else if (strcmp(argv[i], "-s") == 0) sub = strcmp(argv[i + 1], "all") == 0 ? -2 : (int)parse_num(argv[i + 1]);
         else if (strcmp(argv[i], "-n") == 0) seconds = atof(argv[i + 1]);
         else if (strcmp(argv[i], "-d") == 0) dump = (int)parse_num(argv[i + 1]);
         else {
@@ -165,20 +168,34 @@ int main(int argc, char **argv)
     }
     snprintf(path, sizeof(path), "%s/video.264", argv[2]);
     fv = fopen(path, "wb");
-    if (sub != DEMUX_NONE) {
-        snprintf(path, sizeof(path), "%s/sub_%02x", argv[2], sub);
-        mkdir(path, 0755);
-        snprintf(path, sizeof(path), "%s/sub_%02x/index.txt", argv[2], sub);
-        fs = fopen(path, "w");
+    for (i = 0; i < clip.stream_count; i++) {
+        const umdv_stream *st = &clip.streams[i];
+        if (st->kind == UMDV_STREAM_AUDIO && (audio == -2 || audio == st->sub_id))
+            audio_mask |= 1u << st->sub_id;
+        if (st->kind == UMDV_STREAM_SUBTITLE && (sub == -2 || sub == st->sub_id))
+            sub_mask |= 1u << (st->sub_id - DEMUX_SUB_FIRST);
     }
+    for (i = 0; i < DEMUX_SUB_TRACKS; i++) {
+        if (!((sub_mask >> i) & 1))
+            continue;
+        snprintf(path, sizeof(path), "%s/sub_%02x", argv[2], DEMUX_SUB_FIRST + i);
+        mkdir(path, 0755);
+        snprintf(path, sizeof(path), "%s/sub_%02x/index.txt", argv[2], DEMUX_SUB_FIRST + i);
+        fs[i] = fopen(path, "w");
+    }
+    for (i = 0; i < DEMUX_AUDIO_TRACKS; i++)
+        last_audio_pts[i] = PS_NO_TS;
     if (seconds > 0)
         limit = ti->start_pts + (uint64_t)(seconds * UMDV_PTS_HZ);
 
-    printf("title %d \"%s\" clip %s, audio 0x%02x, subtitle %s\n", title, ti->name, ti->clip, audio,
-           sub == DEMUX_NONE ? "none" : "selected");
+    printf("title %d \"%s\" clip %s, audio tracks 0x%04x, subtitle tracks 0x%08x\n", title, ti->name, ti->clip,
+           audio_mask, sub_mask);
     h264_parser_init(&h264);
     demux_init(&dmx, read_mps, &rd);
-    demux_select(&dmx, audio, sub);
+    if (demux_select_mask(&dmx, audio_mask, sub_mask) < 0) {
+        fprintf(stderr, "out of memory\n");
+        return 1;
+    }
     while ((r = demux_next(&dmx, &u)) > 0) {
         if (limit != PS_NO_TS && u.pts != PS_NO_TS && u.pts > limit)
             break;
@@ -244,26 +261,28 @@ int main(int argc, char **argv)
             n_video_pts += u.pts != PS_NO_TS;
             video_bytes += u.size;
         } else if (u.type == DEMUX_AUDIO) {
-            if (!fa) {
-                snprintf(path, sizeof(path), "%s/audio_%02x.oma", argv[2], audio);
-                fa = fopen(path, "wb");
-                write_oma_header(fa, u.data);
+            FILE **f = &fa[u.sub_id];
+            if (!*f) {
+                snprintf(path, sizeof(path), "%s/audio_%02x.oma", argv[2], u.sub_id);
+                *f = fopen(path, "wb");
+                write_oma_header(*f, u.data);
             }
-            fwrite(u.data + AT3P_HEADER_SIZE, 1, u.size - AT3P_HEADER_SIZE, fa);
-            if (last_audio != PS_NO_TS && u.pts != last_audio + 3840)
+            fwrite(u.data + AT3P_HEADER_SIZE, 1, u.size - AT3P_HEADER_SIZE, *f);
+            if (last_audio_pts[u.sub_id] != PS_NO_TS && u.pts != last_audio_pts[u.sub_id] + 3840)
                 audio_gaps++;
-            last_audio = u.pts;
+            last_audio_pts[u.sub_id] = u.pts;
             n_audio++;
             n_audio_pts += u.pts != PS_NO_TS;
         } else if (u.type == DEMUX_SUBTITLE && u.size > 18) {
             const uint8_t *h = u.data;
             FILE *png;
-            snprintf(path, sizeof(path), "%s/sub_%02x/%04u.png", argv[2], sub, n_sub);
+            int t = u.sub_id - DEMUX_SUB_FIRST;
+            snprintf(path, sizeof(path), "%s/sub_%02x/%04u.png", argv[2], u.sub_id, sub_count[t]);
             if ((png = fopen(path, "wb")) != NULL) {
                 fwrite(u.data + 18, 1, u.size - 18, png);
                 fclose(png);
             }
-            fprintf(fs, "%04u pts %.3f dur %.3f x %u y %u\n", n_sub,
+            fprintf(fs[t], "%04u pts %.3f dur %.3f x %u y %u\n", sub_count[t]++,
                     (double)(u.pts - ti->start_pts) / UMDV_PTS_HZ,
                     (double)((uint32_t)h[6] << 24 | h[7] << 16 | h[8] << 8 | h[9]) / UMDV_PTS_HZ,
                     h[12] << 8 | h[13], h[14] << 8 | h[15]);
@@ -277,8 +296,11 @@ int main(int argc, char **argv)
                "%u outliers ignored, %u jumps accepted\n",
                vt_resolved, vt_dropped, vt_checked, vt_exact, (long long)vt_max_err, vt.outliers, vt.jumps);
     fclose(fv);
-    if (fa) fclose(fa);
-    if (fs) fclose(fs);
+    for (i = 0; i < DEMUX_AUDIO_TRACKS; i++)
+        if (fa[i]) fclose(fa[i]);
+    for (i = 0; i < DEMUX_SUB_TRACKS; i++)
+        if (fs[i]) fclose(fs[i]);
+    demux_free(&dmx);
 
     printf("video:    %u access units (%u with PTS), %.1f MB\n", n_video, n_video_pts, video_bytes / 1e6);
     printf("audio:    %u frames (%u with PTS), %u timestamp gaps, %.1f s\n", n_audio, n_audio_pts, audio_gaps,
