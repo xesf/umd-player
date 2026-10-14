@@ -282,22 +282,25 @@ def icon0(path):
 
 
 def bg(path):
+    """LiveArea background. With style a1 the start image (280x158) and its Start button sit in
+    the middle, about x 280-560 and y 170-400, so the text goes along the top and the emblem
+    to the left, where nothing covers them."""
     c = Canvas(840, 500, ss=3)
     background(c)
-    emblem(c, 220, 222, 310)
-    x = 452
-    c.text('UMD Player', x, 196, 4, WHITE)
-    c.rect(x, 242, text_width('UMD Player', 4), 4, ACCENT)
-    c.text('by xesf', x, 264, 3, (0.70, 0.78, 0.92))
+    title, by = 'UMD Player', 'by xesf'
+    tw = text_width(title, 5)
+    c.text(title, (840 - tw) // 2, 34, 5, WHITE)
+    c.rect((840 - tw) // 2, 82, tw, 4, ACCENT)
+    c.text(by, (840 - text_width(by, 3)) // 2, 100, 3, (0.70, 0.78, 0.92))
+    emblem(c, 128, 318, 196)
     save(c, path)
 
 
 def startup(path):
+    """The start image: the bubble icon's background and emblem, no text."""
     c = Canvas(280, 158, ss=3)
     background(c)
-    emblem(c, 64, 70, 96)
-    c.text('UMD', 132, 52, 3, WHITE)
-    c.text('Player', 132, 84, 3, WHITE)
+    emblem(c, 136, 68, 112)
     save(c, path)
 
 
