@@ -139,5 +139,8 @@ enum {
     PLAT_BTN_L = 1 << 8, PLAT_BTN_R = 1 << 9, PLAT_BTN_START = 1 << 10, PLAT_BTN_SELECT = 1 << 11
 };
 uint32_t plat_buttons(void);            /* buttons held now */
+/* The front touch screen: 1 while a finger is on it, with its position in 960x544 screen
+   pixels. 0 on platforms without one. */
+int plat_touch(int *x, int *y);
 
 #endif

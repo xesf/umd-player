@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <psp2/ctrl.h>
+#include <psp2/touch.h>
 #include <psp2/display.h>
 #include <psp2/io/dirent.h>
 #include <psp2/io/fcntl.h>
@@ -24,6 +25,18 @@ static uint32_t held;
 uint32_t plat_buttons(void)
 {
     return held;
+}
+
+int plat_touch(int *x, int *y)
+{
+    SceTouchData t;
+
+    memset(&t, 0, sizeof(t));
+    if (sceTouchPeek(SCE_TOUCH_PORT_FRONT, &t, 1) < 1 || t.reportNum < 1)
+        return 0;
+    *x = t.report[0].x / 2;              /* the panel reports 1920x1088 */
+    *y = t.report[0].y / 2;
+    return 1;
 }
 
 static uint32_t read_buttons(void)
@@ -54,6 +67,7 @@ int main(int argc, char **argv)
     sceIoRemove(LOG_DIR "/log.txt");
     scePowerSetArmClockFrequency(444);
     sceCtrlSetSamplingMode(SCE_CTRL_MODE_DIGITAL);
+    sceTouchSetSamplingState(SCE_TOUCH_PORT_FRONT, SCE_TOUCH_SAMPLING_STATE_START);
 
     if (vita_video_init() < 0) {
         plat_log("cannot allocate video memory\n");

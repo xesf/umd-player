@@ -23,10 +23,12 @@ The player starts in the disc library: the disc images (`.iso`, `.cso` or `.zso`
 | Cross | Play the disc | Pause or play | Go to the chosen chapter |
 | Circle | | Back to the library | Close the panel |
 | Triangle | | Open the options panel | Close it |
-| Left, Right | | Back or forward 10 s | Change the value |
+| Left, Right | | Back or forward 10 s; hold to rewind or fast-forward | Change the value |
 | Square | Play the disc from the start | Next screen mode | |
 | Select | | Show the title and time | |
 | Start | Quit | Back to the library | |
+
+On the touch screen, a tap shows or hides the time bar. While the bar shows, touch it and slide to pick a position; playback jumps there when you lift your finger.
 
 The options panel also shows the date, time, and battery level. While a movie plays, the Vita does not dim the screen or go to sleep.
 

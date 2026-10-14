@@ -107,6 +107,13 @@ uint32_t plat_buttons(void)
     return held_buttons;
 }
 
+int plat_touch(int *x, int *y)
+{
+    (void)x;
+    (void)y;
+    return 0;
+}
+
 static CGRect screen_rect(plat_rect r)
 {
     CGRect b = content_view.bounds;

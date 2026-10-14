@@ -94,6 +94,13 @@ static void draw_menu(const osd_view *v, canvas *c)
     canvas_text(c, x + PAD, y + PAD + 24, 1, TEXT_DIM, "Up/Down: choose     Left/Right: change");
 }
 
+void osd_bar_area(int w, int h, int *top, int *x0, int *x1)
+{
+    *top = h - (PAD + ICON + 10 + 8 + PAD);
+    *x0 = 32;
+    *x1 = w - 32;
+}
+
 static void draw_bar(const osd_view *v, canvas *c)
 {
     int h = PAD + ICON + 10 + 8 + PAD, y = c->h - h, bw = c->w - 2 * 32;

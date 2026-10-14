@@ -40,6 +40,10 @@ void osd_draw(const osd_view *v, canvas *c);
 /* The clock and battery box, also used by the library. Returns its width. */
 int osd_draw_status(canvas *c, int right, int top, const char *clock, int battery, int charging);
 
+/* Where draw_bar puts the time bar on a w x h layer: the bar box starts at row *top, and the
+   track runs from x0 to x1. */
+void osd_bar_area(int w, int h, int *top, int *x0, int *x1);
+
 /* A key hint: a button icon followed by text. Returns the width drawn. */
 int osd_draw_hint(canvas *c, int x, int y, icon_id button, const char *text);
 

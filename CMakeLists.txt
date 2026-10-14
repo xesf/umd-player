@@ -64,6 +64,7 @@ target_link_libraries(umdplayer
   SceSysmodule_stub
   SceDisplay_stub
   SceCtrl_stub
+  SceTouch_stub
   SceAudio_stub
   ScePower_stub
   SceRtc_stub

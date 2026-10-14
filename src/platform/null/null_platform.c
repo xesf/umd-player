@@ -266,6 +266,14 @@ void plat_audio_close(void)
 uint32_t null_buttons;
 uint32_t plat_buttons(void) { return null_buttons; }
 
+int null_touch_down, null_touch_x, null_touch_y;
+int plat_touch(int *x, int *y)
+{
+    *x = null_touch_x;
+    *y = null_touch_y;
+    return null_touch_down;
+}
+
 void plat_keep_awake(void)
 {
 }

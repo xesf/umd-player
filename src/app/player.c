@@ -172,6 +172,9 @@ struct player {
     int scrub_dir;                   /* left or right held: -1 or 1, else 0 */
     int scrubbing;                   /* held long enough to scrub; the seek happens on release */
     uint64_t scrub_start_us, scrub_last_us;
+    int touch_down, touch_drag, touch_x, touch_y;   /* a finger on the screen, where it went down */
+    int touch_moved;                 /* it moved too far to count as a tap */
+    uint64_t touch_us;
     int64_t scrub_target;
     uint64_t bar_until;              /* the time bar shows until then after a chapter change */
     uint64_t last_save_us;
@@ -1377,6 +1380,48 @@ static void scrub(player *p)
     p->bar_until = p->toast_until;
 }
 
+/* The touch screen. A tap shows the time bar, or hides it (and the options panel). While the
+   bar shows, a finger on it picks a position; the player seeks there when the finger lifts. */
+static void touch_input(player *p)
+{
+    int x, y, down = plat_touch(&x, &y), top, x0, x1;
+    uint64_t t = plat_time_us(), len = p->title->end_pts - p->title->start_pts;
+    int bar_visible = p->menu_open || t < p->bar_until;
+
+    osd_bar_area(UI_W, UI_H, &top, &x0, &x1);
+    if (down && !p->touch_down) {
+        p->touch_down = 1;
+        p->touch_x = x;
+        p->touch_y = y;
+        p->touch_us = t;
+        p->touch_moved = 0;
+        p->touch_drag = bar_visible && !p->menu_open && y >= top - 24;
+    }
+    if (down && abs(p->touch_x - x) + abs(p->touch_y - y) > 30)
+        p->touch_moved = 1;
+    if (down && p->touch_drag) {
+        int64_t at = x < x0 ? 0 : x > x1 ? x1 - x0 : x - x0;
+        p->scrub_dir = 0;
+        p->scrubbing = 1;
+        p->scrub_target = (int64_t)p->title->start_pts + (int64_t)(len * (uint64_t)at / (uint64_t)(x1 - x0));
+        p->bar_until = t + TOAST_US;
+    }
+    if (!down && p->touch_down) {
+        p->touch_down = 0;
+        if (p->touch_drag) {
+            seek_to(p, p->scrub_target, "touch");
+            p->scrubbing = 0;
+            p->touch_drag = 0;
+            p->bar_until = t + TOAST_US;
+        } else if (!p->touch_moved && t - p->touch_us < 600000) {
+            if (p->menu_open)
+                p->menu_open = 0;
+            else
+                p->bar_until = bar_visible ? 0 : t + 2 * TOAST_US;
+        }
+    }
+}
+
 static void save_resume(player *p)
 {
     resume_entry e;
@@ -1548,6 +1593,7 @@ int player_update(player *p, uint32_t pressed)
     else
         play_input(p, pressed);
     scrub(p);
+    touch_input(p);
     if (p->leave)
         return 0;
     if (!p->paused && plat_time_us() - p->last_awake_us > 1000000) {
