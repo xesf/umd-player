@@ -1032,6 +1032,10 @@ static int update_subtitle(player *p, uint64_t now)
 static void build_osd(player *p, osd_view *v)
 {
     uint64_t now = p->scrubbing ? (uint64_t)p->scrub_target : now_or_shown(p), len = p->title->end_pts - p->title->start_pts;
+
+    /* While choosing a chapter, the time bar shows where it starts. */
+    if (p->menu_open && p->menu_row == ROW_CHAPTER && p->menu_chapter != current_chapter(p))
+        now = p->playlist.chapters[p->title->first_chapter + p->menu_chapter].pts;
     char a[24], b[24];
 
     memset(v, 0, sizeof(*v));
@@ -1059,8 +1063,11 @@ static void build_osd(player *p, osd_view *v)
         snprintf(v->rows[ROW_SCREEN].label, sizeof(v->rows[0].label), "Screen");
         snprintf(v->rows[ROW_SCREEN].value, sizeof(v->rows[0].value), "%s", screen_mode_name(p->mode));
         snprintf(v->rows[ROW_CHAPTER].label, sizeof(v->rows[0].label), "Chapter");
-        snprintf(v->rows[ROW_CHAPTER].value, sizeof(v->rows[0].value), "%d / %d", p->menu_chapter + 1,
-                 p->title->chapter_count);
+        {
+            uint64_t at = p->playlist.chapters[p->title->first_chapter + p->menu_chapter].pts;
+            format_time(b, sizeof(b), at > p->title->start_pts ? at - p->title->start_pts : 0);
+            snprintf(v->rows[ROW_CHAPTER].value, sizeof(v->rows[0].value), "%d  %s", p->menu_chapter + 1, b);
+        }
     }
     if (p->menu_open) {
         static const char *days[7] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
