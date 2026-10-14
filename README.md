@@ -2,7 +2,7 @@
 
 A player for UMD Video ISO dumps, for the PS Vita and macOS. It reads the disc structure, decodes H.264 video with the platform hardware decoder, and decodes ATRAC3plus audio in software. It does not need Adrenaline or the PSP firmware.
 
-Status: the disc format is decoded (see the format reference). Playback is not written yet.
+Status: plays UMD Video discs on the PS Vita, from `.iso`, `.cso` or `.zso` files. The macOS build is parked: VideoToolbox cannot decode the field-coded H.264 that some discs use.
 
 To inspect a disc on macOS or Linux:
 
@@ -10,7 +10,10 @@ To inspect a disc on macOS or Linux:
 make -C tools
 ./build/host/umdinfo umd/movie.iso        # titles, chapters, streams
 ./tools/check_corpus.sh umd             # check every disc in a folder
+./tools/image_check.sh                  # check the CSO and ZSO readers (no disc needed)
 ```
+
+GitHub Actions (`.github/workflows/build.yml`) builds the host tools and the Vita VPK on every push, and runs the checks that need no disc. A tag named `v*` publishes a release with the VPK.
 
 ## Controls
 

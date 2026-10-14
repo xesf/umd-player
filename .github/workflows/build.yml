@@ -1,0 +1,54 @@
+# Builds the host tools and the Vita VPK on every push and pull request. A tag named v*
+# also publishes a GitHub release with the VPK.
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+jobs:
+  host:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install test tools
+        run: sudo apt-get update && sudo apt-get install -y clang lz4
+      - name: Build the host tools
+        run: make -C tools CC=clang
+      - name: Check the CSO and ZSO readers
+        run: sh tools/image_check.sh
+      - name: Run the app with an empty library
+        run: |
+          mkdir -p empty
+          ./build/host/playtest empty 1
+
+  vita:
+    runs-on: ubuntu-24.04
+    container: vitasdk/vitasdk:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the VPK
+        run: |
+          cmake -S . -B build/vita
+          cmake --build build/vita
+      - uses: actions/upload-artifact@v4
+        with:
+          name: umdplayer-vpk
+          path: build/vita/umdplayer.vpk
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [host, vita]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: umdplayer-vpk
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" umdplayer.vpk --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes

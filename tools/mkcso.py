@@ -42,7 +42,7 @@ def cso_blocks(f, block):
 
 def zso_blocks(path, block):
     """Runs lz4 with independent 64 KiB blocks and takes the blocks out of its frame."""
-    p = subprocess.run(["lz4", "-9", "-B4", "-BI", "--no-frame-crc", "-c", path], check=True, stdout=subprocess.PIPE)
+    p = subprocess.run(["lz4", "-q", "-9", "-B4", "-BI", "--no-frame-crc", "-c", path], check=True, stdout=subprocess.PIPE)
     data = p.stdout
     assert data[:4] == b"\x04\x22\x4d\x18", "not an LZ4 frame"
     flg = data[4]
