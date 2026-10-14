@@ -6,14 +6,17 @@
 
    Field-coded discs: with interlaced mode on, each output holds both fields of a frame as two
    half-height pictures, one above the other (checked with frame dumps on hardware). They are
-   decoded into a scratch buffer and DMA-copied into two framebuffers, one per field, each line
-   doubled ("bob"). The second field is shown one field period (1/59.94 s) after the first. */
+   decoded into a scratch buffer and copied into two framebuffers, one per field, each line
+   doubled ("bob"). The second field is shown one field period (1/59.94 s) after the first.
+   The copy uses the GPU transfer engine: one strided copy per field and line parity, 4 per frame.
+   (Per-line sceDmacMemcpy took 47 ms per frame on hardware, too slow for 30 frames a second.) */
 #include "../platform.h"
 #include "vita_video.h"
 
 #include <stdio.h>
 #include <string.h>
 #include <psp2/display.h>
+#include <psp2/gxm.h>
 #include <psp2/kernel/dmac.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/sysmem.h>
@@ -57,6 +60,34 @@ static SceUID pool_uid = -1, es_uid = -1, scratch_uid = -1;
 static uint8_t *es_buf, *scratch;
 static uint64_t bob_us_total;
 static uint32_t bob_count;
+static int gxm_ready;
+
+static void display_queue_cb(const void *data)
+{
+    (void)data;
+}
+
+static int gxm_init(void *pool_base, SceSize pool_size)
+{
+    SceGxmInitializeParams params;
+    int r;
+
+    memset(&params, 0, sizeof(params));
+    params.displayQueueMaxPendingCount = 2;
+    params.displayQueueCallback = display_queue_cb;
+    params.displayQueueCallbackDataSize = 4;
+    params.parameterBufferSize = SCE_GXM_DEFAULT_PARAMETER_BUFFER_SIZE;
+    if ((r = sceGxmInitialize(&params)) < 0) {
+        plat_log("sceGxmInitialize: 0x%08x; fields are copied with DMA\n", r);
+        return 0;
+    }
+    if ((r = sceGxmMapMemory(pool_base, pool_size, SCE_GXM_MEMORY_ATTRIB_RW)) < 0 ||
+        (r = sceGxmMapMemory(scratch, ALIGN(FB_BYTES, FB_ALIGN), SCE_GXM_MEMORY_ATTRIB_RW)) < 0) {
+        plat_log("sceGxmMapMemory: 0x%08x; fields are copied with DMA\n", r);
+        return 0;
+    }
+    return 1;
+}
 static plat_frame *displayed;
 static int decode_errors;
 static uint32_t outputs;
@@ -85,6 +116,7 @@ int vita_video_init(void)
     memset(base, 0, POOL * ALIGN(FB_BYTES, FB_ALIGN));
     for (int i = 0; i < POOL; i++)
         pool[i].pixels = base + i * ALIGN(FB_BYTES, FB_ALIGN);
+    gxm_ready = gxm_init(base, POOL * ALIGN(FB_BYTES, FB_ALIGN));
     return 0;
 }
 
@@ -96,12 +128,29 @@ static plat_frame *pool_get(const plat_frame *not_this)
     return NULL;
 }
 
+/* Queues a GPU copy of rows rows of the field to every other line of the picture, from line y. */
+static void transfer_rows(uint8_t *pic, const uint8_t *field, int y, int rows)
+{
+    sceGxmTransferCopy(PIC_W, (uint32_t)rows, 0, 0, SCE_GXM_TRANSFER_COLORKEY_NONE,
+                       SCE_GXM_TRANSFER_FORMAT_U8U8U8U8_ABGR, SCE_GXM_TRANSFER_LINEAR, field, 0, 0, SCREEN_W * 4,
+                       SCE_GXM_TRANSFER_FORMAT_U8U8U8U8_ABGR, SCE_GXM_TRANSFER_LINEAR,
+                       pic + (size_t)y * SCREEN_W * 4, 0, 0, 2 * SCREEN_W * 4, NULL, 0, NULL);
+}
+
 /* Line-doubles one field (240 rows of the scratch buffer) into a framebuffer. A bottom field
-   sits one line lower than a top field, so the picture does not bounce between fields. */
+   sits one line lower than a top field, so the picture does not bounce between fields.
+   With the GPU the copies are only queued; call sceGxmTransferFinish before showing the frame. */
 static void bob_field(plat_frame *dst, const uint8_t *field, int bottom)
 {
     uint8_t *pic = dst->pixels + (PIC_Y * SCREEN_W + PIC_X) * 4;
 
+    if (gxm_ready) {
+        transfer_rows(pic, field, bottom, FIELD_H);
+        transfer_rows(pic, field, bottom + 1, bottom ? FIELD_H - 1 : FIELD_H);
+        if (bottom)
+            transfer_rows(pic, field, 0, 1);
+        return;
+    }
     for (int r = 0; r < FIELD_H; r++) {
         const uint8_t *src = field + (size_t)r * SCREEN_W * 4;
         int y = 2 * r + bottom;
@@ -226,9 +275,12 @@ int plat_video_decode(plat_video *v, const uint8_t *au, uint32_t size, uint64_t 
                 return 0;
             bob_field(target, scratch, first_bottom);
             bob_field(second, scratch + (size_t)FIELD_H * SCREEN_W * 4, !first_bottom);
+            if (gxm_ready)
+                sceGxmTransferFinish();   /* the scratch buffer is reused by the next decode */
             bob_us_total += sceKernelGetProcessTimeWide() - t0;
             if (++bob_count % 600 == 0)
-                plat_log("field split: %.2f ms per frame\n", bob_us_total / 1000.0 / bob_count);
+                plat_log("field split (%s): %.2f ms per frame\n", gxm_ready ? "GPU" : "DMA",
+                         bob_us_total / 1000.0 / bob_count);
             target->app_ref = 1;
             second->app_ref = 1;
             v->out[v->out_count].frame = target;

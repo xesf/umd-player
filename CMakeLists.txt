@@ -47,6 +47,7 @@ target_link_libraries(umdplayer
   m
   SceVideodec_stub
   SceKernelDmacMgr_stub
+  SceGxm_stub
   SceSysmodule_stub
   SceDisplay_stub
   SceCtrl_stub
