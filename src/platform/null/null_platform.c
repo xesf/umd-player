@@ -5,6 +5,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "../platform.h"
 
+#include <dirent.h>
 #include <pthread.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -178,11 +179,22 @@ int plat_frame_lock(plat_frame *f, const uint8_t **pixels, int *stride)
 void plat_frame_unlock(plat_frame *f) { (void)f; }
 
 uint32_t null_presents;
+/* With NULL_DUMP_UI=<file> set, saves the UI layer of every present as raw RGBA, for checking
+   what the app drew. */
 void plat_present(plat_frame *frame, const plat_present_info *info)
 {
+    const char *dump = getenv("NULL_DUMP_UI");
+
     (void)frame;
-    (void)info;
     null_presents++;
+    if (dump && info->ui_rgba) {
+        FILE *f = fopen(dump, "wb");
+        if (f) {
+            for (int y = 0; y < info->ui_h; y++)
+                fwrite(info->ui_rgba + (size_t)y * info->ui_stride, 4, (size_t)info->ui_w, f);
+            fclose(f);
+        }
+    }
 }
 
 void plat_screen_size(int *w, int *h)
@@ -259,4 +271,18 @@ void plat_get_status(plat_status *s)
     s->minute = tm.tm_min;
     s->battery = -1;
     s->charging = 0;
+}
+
+int plat_list_dir(const char *dir, plat_dir_fn fn, void *user)
+{
+    DIR *d = opendir(dir);
+    struct dirent *e;
+
+    if (!d)
+        return -1;
+    while ((e = readdir(d)) != NULL)
+        if (e->d_name[0] != '.')
+            fn(user, e->d_name);
+    closedir(d);
+    return 0;
 }

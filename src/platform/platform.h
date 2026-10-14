@@ -20,6 +20,10 @@ void plat_iso_close(umd_source *src);
 /* ---- Logging: stdout on macOS, ux0:data/umdplayer/log.txt on the Vita ---- */
 void plat_log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 
+/* Calls fn for each entry of a directory. Returns 0, or -1 if it cannot be read. */
+typedef void (*plat_dir_fn)(void *user, const char *name);
+int plat_list_dir(const char *dir, plat_dir_fn fn, void *user);
+
 /* ---- Threads and time ---- */
 typedef struct plat_thread plat_thread;
 typedef struct plat_mutex plat_mutex;

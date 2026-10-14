@@ -2,6 +2,7 @@
 #define _DARWIN_C_SOURCE
 #include "../platform.h"
 
+#include <dirent.h>
 #include <pthread.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -143,4 +144,18 @@ void plat_get_status(plat_status *s)
     s->minute = tm.tm_min;
     s->battery = -1;
     s->charging = 0;
+}
+
+int plat_list_dir(const char *dir, plat_dir_fn fn, void *user)
+{
+    DIR *d = opendir(dir);
+    struct dirent *e;
+
+    if (!d)
+        return -1;
+    while ((e = readdir(d)) != NULL)
+        if (e->d_name[0] != '.')
+            fn(user, e->d_name);
+    closedir(d);
+    return 0;
 }

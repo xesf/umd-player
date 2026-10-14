@@ -18,5 +18,9 @@ void canvas_rect(canvas *c, int x, int y, int w, int h, uint32_t rgba);
    Returns the width drawn. Characters outside ASCII draw as '?'. */
 int canvas_text(canvas *c, int x, int y, int scale, uint32_t rgba, const char *s);
 int canvas_text_width(const char *s, int scale);
+/* Draws an RGBA image scaled to dw x dh (nearest pixel), blended by its alpha. */
+void canvas_blit(canvas *c, const uint8_t *rgba, int sw, int sh, int sstride, int x, int y, int dw, int dh);
+/* Multiplies the colours in a rectangle by level / 256, to darken a band behind text. */
+void canvas_darken(canvas *c, int x, int y, int w, int h, int level);
 
 #endif

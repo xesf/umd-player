@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <psp2/io/dirent.h>
 #include <psp2/io/fcntl.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
@@ -164,4 +165,18 @@ void plat_get_status(plat_status *s)
     s->minute = t.minute;
     s->battery = scePowerGetBatteryLifePercent();
     s->charging = scePowerIsBatteryCharging() ? 1 : 0;
+}
+
+int plat_list_dir(const char *dir, plat_dir_fn fn, void *user)
+{
+    SceIoDirent ent;
+    SceUID d = sceIoDopen(dir);
+
+    if (d < 0)
+        return -1;
+    while (sceIoDread(d, &ent) > 0)
+        if (ent.d_name[0] != '.')
+            fn(user, ent.d_name);
+    sceIoDclose(d);
+    return 0;
 }

@@ -1,5 +1,5 @@
-/* Vita: input and the main loop. Until a disc library exists it plays the ISOs in ux0:umd/
-   in name order: L and R switch discs, START quits. Logs go to ux0:data/umdplayer/log.txt. */
+/* Vita: input and the main loop. Starts the disc library on ux0:umd/.
+   Logs go to ux0:data/umdplayer/log.txt. */
 #include "../platform.h"
 #include "vita_video.h"
 
@@ -44,46 +44,9 @@ static uint32_t read_buttons(void)
     return b;
 }
 
-#define MAX_ISOS 64
-
-static char isos[MAX_ISOS][256];
-static int iso_count;
-
-static int compare_names(const void *a, const void *b)
-{
-    return strcmp((const char *)a, (const char *)b);
-}
-
-/* Lists the ISO files in ux0:umd/, sorted by name. */
-static void list_isos(void)
-{
-    SceIoDirent ent;
-    SceUID dir = sceIoDopen(ISO_DIR);
-
-    iso_count = 0;
-    if (dir < 0)
-        return;
-    while (iso_count < MAX_ISOS && sceIoDread(dir, &ent) > 0) {
-        size_t n = strlen(ent.d_name);
-        if (n > 4 && (strcmp(ent.d_name + n - 4, ".iso") == 0 || strcmp(ent.d_name + n - 4, ".ISO") == 0))
-            snprintf(isos[iso_count++], sizeof(isos[0]), ISO_DIR "/%s", ent.d_name);
-    }
-    sceIoDclose(dir);
-    qsort(isos, (size_t)iso_count, sizeof(isos[0]), compare_names);
-}
-
-static int open_iso(int index)
-{
-    char *args[2] = {"umdplayer", isos[index]};
-
-    plat_log("\n=== %s\n", isos[index]);
-    return app_init(2, args) == 0;
-}
-
 int main(int argc, char **argv)
 {
-    uint32_t prev = 0;
-    int current = 0, playing;
+    char *args[2] = {"umdplayer", ISO_DIR};
 
     (void)argc;
     (void)argv;
@@ -97,36 +60,13 @@ int main(int argc, char **argv)
         sceKernelExitProcess(0);
         return 0;
     }
-    list_isos();
-    if (iso_count == 0) {
-        plat_log("no ISO files in " ISO_DIR "/\n");
-        sceKernelExitProcess(0);
-        return 0;
-    }
-    /* L and R switch to the previous or next ISO; START quits. */
-    playing = open_iso(current);
-    for (;;) {
-        uint32_t pressed;
-
-        held = read_buttons();
-        pressed = held & ~prev;
-        prev = held;
-        if (held & PLAT_BTN_START)
-            break;
-        if (pressed & (PLAT_BTN_L | PLAT_BTN_R)) {
-            if (playing)
-                app_shutdown();
-            current = (current + (pressed & PLAT_BTN_R ? 1 : iso_count - 1)) % iso_count;
-            playing = open_iso(current);
-        } else if (playing && !app_frame()) {
-            app_shutdown();
-            playing = 0;
-            plat_log("end of title; press L or R for another disc\n");
-        }
-        sceDisplayWaitVblankStart();
-    }
-    if (playing)
+    if (app_init(2, args) == 0) {
+        do {
+            held = read_buttons();
+            sceDisplayWaitVblankStart();
+        } while (app_frame());
         app_shutdown();
+    }
     plat_log("exit\n");
     sceKernelExitProcess(0);
     return 0;

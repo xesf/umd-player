@@ -14,17 +14,20 @@ make -C tools
 
 ## Controls
 
-| Button | During playback | In the options panel |
-|---|---|---|
-| Triangle | Open the options panel | Close it |
-| Cross | Pause or play | Go to the chosen chapter |
-| Circle | | Close the panel |
-| Left, Right | Back or forward 10 s | Change the value |
-| Up, Down | Next or previous chapter | Choose a row |
-| Square | Next screen mode | |
-| Select | Show the title and time | |
-| L, R | Previous or next disc in `ux0:umd/` | |
-| Start | Quit | |
+The player starts in the disc library: the ISO files in `ux0:umd/` (on macOS, the folder given on the command line). Like the PSP's menu, the selected disc shows its background art, its animated icon, and plays its sound.
+
+| Button | Library | During playback | In the options panel |
+|---|---|---|---|
+| Up, Down | Choose a disc | Next or previous chapter | Choose a row |
+| Cross | Play the disc | Pause or play | Go to the chosen chapter |
+| Circle | | Back to the library | Close the panel |
+| Triangle | | Open the options panel | Close it |
+| Left, Right | | Back or forward 10 s | Change the value |
+| Square | | Next screen mode | |
+| Select | | Show the title and time | |
+| Start | Quit | Back to the library | |
+
+The options panel also shows the date, time, and battery level. While a movie plays, the Vita does not dim the screen or go to sleep.
 
 Screen modes:
 

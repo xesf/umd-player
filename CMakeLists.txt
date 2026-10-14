@@ -30,6 +30,7 @@ add_executable(umdplayer
   src/app/player.c
   src/app/screen.c
   src/app/osd.c
+  src/app/library.c
   src/core/iso9660.c
   src/core/umdv.c
   src/core/mpeg_ps.c
@@ -41,6 +42,7 @@ add_executable(umdplayer
   src/core/canvas.c
   src/core/font8x8.c
   src/core/cropdetect.c
+  src/core/sfo.c
   ${AT3P_SOURCES}
   src/platform/vita/vita_main.c
   src/platform/vita/vita_sys.c

@@ -156,6 +156,7 @@ struct player {
     char toast[64];
     uint64_t toast_until;
     int paused, audio_open;
+    int leave;                       /* circle or start: back to the library */
     uint64_t audio_base_played;      /* plat_audio_played() when playback started */
     uint64_t clk_raw, clk_us, clk_last;  /* last audio clock reading, when it changed, last value given */
     uint64_t wall_base_us, wall_base_pts;
@@ -1250,6 +1251,8 @@ static void play_input(player *p, uint32_t pressed)
         toast(p, "%s", p->title->name);
     if (pressed & PLAT_BTN_CROSS)
         toggle_pause(p);
+    if (pressed & (PLAT_BTN_CIRCLE | PLAT_BTN_START))
+        p->leave = 1;
 }
 
 player *player_open(const player_options *opt)
@@ -1359,6 +1362,8 @@ int player_update(player *p, uint32_t pressed)
         menu_input(p, pressed);
     else
         play_input(p, pressed);
+    if (p->leave)
+        return 0;
     if (!p->paused && plat_time_us() - p->last_awake_us > 1000000) {
         p->last_awake_us = plat_time_us();
         plat_keep_awake();
