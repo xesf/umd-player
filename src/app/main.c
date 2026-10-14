@@ -1,5 +1,5 @@
 /* umdplayer: browse the UMD Video ISOs in a folder and play them.
-   umdplayer <folder>             disc library (on the Vita: ux0:umd)
+   umdplayer <folder>             disc library (on the Vita: ux0:umd and ux0:pspemu/ISO/VIDEO)
    umdplayer <iso> [-t n] [-a n]  play one disc directly, then quit */
 #include <stdio.h>
 #include <stdlib.h>

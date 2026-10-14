@@ -9,7 +9,8 @@
 
 typedef struct library library;
 
-/* Lists the .iso files in dir. Returns NULL if there are none. */
+/* Lists the .iso files in dir, a folder or several separated by ';'. Returns NULL if there are
+   none. */
 library *library_open(const char *dir);
 
 /* Call once per display refresh. Returns the index of the disc to play when the user picks

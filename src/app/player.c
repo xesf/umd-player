@@ -26,6 +26,7 @@
 #define AQ_TARGET     48                 /* the reader pauses when the playing track has 2 s queued */
 #define AUDIO_RATE    48000
 #define START_AUDIO   (AUDIO_RATE / 5)   /* audio buffered before playback starts */
+#define STALL_RESTART 3000000            /* us without a new frame before the player restarts reading */
 #define FRAMES_AHEAD  4                  /* decoded frames kept ahead of the clock */
 #define MAX_DECODED   8
 #define RESOLVE_SPAN  (3 * VTIMING_SETTLE + 2)
@@ -174,6 +175,8 @@ struct player {
     uint64_t wall_base_us, wall_base_pts;
     uint64_t last_report_us;
     uint64_t last_awake_us;
+    uint64_t last_frame_us, last_stall_log_us;   /* for the stall log */
+    int stall_retries;               /* stall restarts since the last frame shown */
     uint32_t frames_shown, frames_late;
     uint32_t wait_pending, wait_empty;  /* decode_ahead found the queue head unresolved or empty */
     uint32_t reader_wait_pcm, reader_wait_vq;
@@ -469,6 +472,11 @@ static int reader_needs_data(player *p)
 {
     const audio_queue *q = &p->aq[p->want_audio % DEMUX_AUDIO_TRACKS];
     int audio_short = !p->has_audio || !q->frames || q->count < AQ_TARGET;
+    /* Video that cannot be timed yet needs the next PTS further on in the stream. Without this,
+       a full audio queue (audio not started, so not drained) would wait for video forever. */
+    int video_starved = p->vq_count == 0 || p->vq[p->vq_first].state == AU_PENDING;
+    if (video_starved && (!q->frames || q->count < AQ_FRAMES - 8))
+        audio_short = 1;
     return audio_short && p->vq_count < VQ_MAX / 2;
 }
 
@@ -1140,11 +1148,14 @@ static void present(player *p)
     p->dirty = 0;
 }
 
-#define PROBES 8
+#define PROBES 6
 
 /* Before the first frame: decodes one picture at PROBES seek points across the title and
    combines their detected picture areas, so Zoom has its final geometry from the start
-   instead of growing it during playback. Uses its own demuxer and leaves the decoder flushed. */
+   instead of growing it during playback. Uses its own demuxer and leaves the decoder flushed.
+   Every seek point starts with an I picture, so the decoder is not reset between probes (on the
+   Vita a reset recreates the decoder, which made 8 probes take 1.2 s); a picture left over from
+   the previous probe is still a picture of this title, so it is as good for the area. */
 static void probe_borders(player *p)
 {
     demux *d = calloc(1, sizeof(demux));
@@ -1199,8 +1210,8 @@ static void probe_borders(player *p)
             }
             plat_frame_release(f);
         }
-        plat_video_flush(p->video);
     }
+    plat_video_flush(p->video);
     demux_free(d);
     free(d);
     if (p->have_active)
@@ -1330,6 +1341,7 @@ static void save_resume(player *p)
     e.screen = (int)p->mode;
     resume_save(&e);
     p->last_save_us = plat_time_us();
+    p->last_frame_us = plat_time_us();
 }
 
 static int has_stream(const player *p, int kind, int sub_id)
@@ -1476,6 +1488,7 @@ int player_update(player *p, uint32_t pressed)
             return 0;
         if (p->video)
             probe_borders(p);
+        p->last_frame_us = plat_time_us();   /* the probe's time is not a stall */
     }
     if (p->menu_open)
         menu_input(p, pressed);
@@ -1506,7 +1519,9 @@ int player_update(player *p, uint32_t pressed)
             p->shown = p->frames[best].frame;
             p->shown_pts = p->frames[best].pts;
             p->seeking = 0;
+            p->last_frame_us = plat_time_us();
             p->frames_shown++;
+            p->stall_retries = 0;
             memmove(&p->frames[0], &p->frames[best + 1], (size_t)(p->frame_count - best - 1) * sizeof(p->frames[0]));
             p->frame_count -= best + 1;
             update_subtitle(p, now);
@@ -1523,6 +1538,33 @@ int player_update(player *p, uint32_t pressed)
                    p->frames_shown, p->frames_late, p->frame_count, p->vq_count, p->pcm_count / 48000.0,
                    p->wait_empty, p->wait_pending, p->reader_wait_pcm, p->reader_wait_vq);
             plat_mutex_unlock(p->lock);
+        }
+    }
+    /* Stall log: while playing, if no new frame has been shown for a second, say why once a
+       second (queues, audio, clock) so a freeze on hardware can be diagnosed from the log. */
+    if (!p->paused && p->video && plat_time_us() - p->last_frame_us > 1000000 &&
+        plat_time_us() - p->last_stall_log_us > 1000000) {
+        uint64_t c = 0;
+        int have_clock = clock_now(p, &c);
+        p->last_stall_log_us = plat_time_us();
+        plat_mutex_lock(p->lock);
+        plat_log("stall: frames %d, au %u (head %s), pcm %u, audio %s%s, eof %d, seeking %d, clock %s %.2f s, "
+                 "shown %.2f s\n", p->frame_count, p->vq_count,
+                 p->vq_count ? (p->vq[p->vq_first].state == AU_PENDING ? "pending" : "ready") : "-", p->pcm_count,
+                 p->audio_started ? "started" : "waiting", p->have_audio_pts ? "" : " (no audio yet)", p->eof, p->seeking,
+                 have_clock ? "on" : "off", (double)c / 90000.0, (double)p->shown_pts / 90000.0);
+        plat_mutex_unlock(p->lock);
+        if (p->frame_count)
+            plat_log("stall: queued frames at %.2f .. %.2f s\n", (double)p->frames[0].pts / 90000.0,
+                     (double)p->frames[p->frame_count - 1].pts / 90000.0);
+        plat_log("stall: played %llu, base %llu, silence %llu, first pts %.2f s, clk_last %.2f s\n",
+                 (unsigned long long)plat_audio_played(), (unsigned long long)p->audio_base_played,
+                 (unsigned long long)p->silence_frames, (double)p->pcm_first_pts / 90000.0, (double)p->clk_last / 90000.0);
+        /* Still frozen after STALL_RESTART: restart reading a little further on, as a seek would. */
+        if (plat_time_us() - p->last_frame_us > STALL_RESTART) {
+            p->stall_retries++;
+            seek_to(p, (int64_t)now_or_shown(p) + (int64_t)p->stall_retries * 90000, "stall");
+            p->last_frame_us = plat_time_us();
         }
     }
     detect_borders(p);

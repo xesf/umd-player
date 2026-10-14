@@ -172,18 +172,29 @@ typedef struct list_ctx {
     const char *dir;
 } list_ctx;
 
+static const char *file_name(const char *path)
+{
+    const char *slash = strrchr(path, '/');
+    return slash ? slash + 1 : path;
+}
+
 static void on_entry(void *user, const char *name)
 {
     list_ctx *c = (list_ctx *)user;
     size_t n = strlen(name);
 
-    if (c->l->count < LIB_MAX && n > 4 && (strcmp(name + n - 4, ".iso") == 0 || strcmp(name + n - 4, ".ISO") == 0))
-        snprintf(c->l->discs[c->l->count++].path, sizeof(c->l->discs[0].path), "%s/%s", c->dir, name);
+    if (c->l->count >= LIB_MAX || n <= 4 || (strcmp(name + n - 4, ".iso") != 0 && strcmp(name + n - 4, ".ISO") != 0))
+        return;
+    /* The same file in two folders shows once; resume data is keyed by the file name. */
+    for (int i = 0; i < c->l->count; i++)
+        if (strcmp(file_name(c->l->discs[i].path), name) == 0)
+            return;
+    snprintf(c->l->discs[c->l->count++].path, sizeof(c->l->discs[0].path), "%s/%s", c->dir, name);
 }
 
 static int compare_discs(const void *a, const void *b)
 {
-    return strcmp(((const lib_disc *)a)->path, ((const lib_disc *)b)->path);
+    return strcmp(file_name(((const lib_disc *)a)->path), file_name(((const lib_disc *)b)->path));
 }
 
 /* Reads the title and ICON0.PNG of every disc; the rest loads when a disc is selected. */
@@ -750,8 +761,15 @@ library *library_open(const char *dir)
     if (!l)
         return NULL;
     ctx.l = l;
-    ctx.dir = dir;
-    plat_list_dir(dir, on_entry, &ctx);
+    for (const char *p = dir; *p;) {
+        char one[256];
+        size_t n = strcspn(p, ";");
+        snprintf(one, sizeof(one), "%.*s", (int)(n < sizeof(one) ? n : sizeof(one) - 1), p);
+        ctx.dir = one;
+        if (n)
+            plat_list_dir(one, on_entry, &ctx);
+        p += n + (p[n] == ';');
+    }
     if (l->count == 0) {
         plat_log("no ISO files in %s\n", dir);
         free(l);

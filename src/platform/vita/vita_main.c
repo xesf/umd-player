@@ -1,4 +1,4 @@
-/* Vita: input and the main loop. Starts the disc library on ux0:umd/.
+/* Vita: input and the main loop. Starts the disc library on ux0:umd/ and ux0:pspemu/ISO/VIDEO/.
    Logs go to ux0:data/umdplayer/log.txt. */
 #include "../platform.h"
 #include "vita_video.h"
@@ -14,7 +14,7 @@
 #include <psp2/kernel/processmgr.h>
 #include <psp2/power.h>
 
-#define ISO_DIR "ux0:umd"
+#define ISO_DIR "ux0:umd;ux0:pspemu/ISO/VIDEO"
 #define LOG_DIR "ux0:data/umdplayer"
 
 int _newlib_heap_size_user = 96 * 1024 * 1024;
