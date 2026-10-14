@@ -4,7 +4,7 @@ CFLAGS ?= -std=c99 -O2 -g -Wall -Wextra -Wpedantic -D_POSIX_C_SOURCE=200809L
 CORE = ../src/core
 BIN = ../build/host
 
-TOOLS = $(BIN)/umdinfo $(BIN)/umddemux $(BIN)/at3pdec $(BIN)/h264prog $(BIN)/pngdec
+TOOLS = $(BIN)/umdinfo $(BIN)/umddemux $(BIN)/at3pdec $(BIN)/h264prog $(BIN)/pngdec $(BIN)/playtest
 AT3P = $(wildcard $(CORE)/atrac3p/*.c)
 # The FFmpeg-derived files keep upstream's style; silence the warnings it triggers.
 AT3P_CFLAGS = -Wno-pointer-sign -Wno-unused-parameter -Wno-sign-compare -Wno-shift-op-parentheses -Wno-parentheses
@@ -25,6 +25,13 @@ $(BIN)/h264prog: h264prog.c $(CORE)/h264.c ../src/platform/macos/h264_progressiv
 
 $(BIN)/pngdec: pngdec.c $(CORE)/png.c | $(BIN)
 	$(CC) $(CFLAGS) -o $@ $^
+
+PLAYER_CORE = $(CORE)/iso9660.c $(CORE)/umdv.c $(CORE)/mpeg_ps.c $(CORE)/demux.c $(CORE)/h264.c $(CORE)/vtiming.c \
+              $(CORE)/png.c $(CORE)/canvas.c $(CORE)/font8x8.c $(CORE)/cropdetect.c
+$(BIN)/playtest: playtest.c ../src/app/player.c ../src/app/screen.c ../src/app/osd.c ../src/platform/null/null_platform.c \
+                 $(PLAYER_CORE) $(AT3P) $(wildcard ../src/app/*.h ../src/core/*.h) | $(BIN)
+	$(CC) $(CFLAGS) $(AT3P_CFLAGS) -o $@ playtest.c ../src/app/player.c ../src/app/screen.c ../src/app/osd.c \
+	    ../src/platform/null/null_platform.c $(PLAYER_CORE) $(AT3P) -lm -lpthread
 
 $(BIN):
 	mkdir -p $@
