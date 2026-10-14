@@ -1,8 +1,8 @@
 /* Vita: H.264 decoding with sceAvcdec straight into display framebuffers, and presentation.
 
    Every decoded frame is a whole 960x544 framebuffer in CDRAM with the picture at a fixed
-   offset, so showing a frame is one sceDisplaySetFrameBuf call and no copy. The picture is not
-   scaled yet (720x480 in the middle of the screen); scaling to the display aspect needs sceGxm.
+   offset. vita_gfx.c draws it to the screen at the display aspect ratio with the GPU; without
+   the GPU, the framebuffer itself is shown unscaled.
 
    Field-coded discs: with interlaced mode on, each output holds both fields of a frame as two
    half-height pictures, one above the other (checked with frame dumps on hardware). They are
@@ -12,6 +12,7 @@
    (Per-line sceDmacMemcpy took 47 ms per frame on hardware, too slow for 30 frames a second.) */
 #include "../platform.h"
 #include "vita_video.h"
+#include "vita_gfx.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -60,7 +61,7 @@ static SceUID pool_uid = -1, es_uid = -1, scratch_uid = -1;
 static uint8_t *es_buf, *scratch;
 static uint64_t bob_us_total;
 static uint32_t bob_count;
-static int gxm_ready;
+static int gxm_ready, gfx_ready;
 
 static void display_queue_cb(const void *data)
 {
@@ -86,6 +87,7 @@ static int gxm_init(void *pool_base, SceSize pool_size)
         plat_log("sceGxmMapMemory: 0x%08x; fields are copied with DMA\n", r);
         return 0;
     }
+    gfx_ready = vita_gfx_init() == 0;
     return 1;
 }
 static plat_frame *displayed;
@@ -335,9 +337,21 @@ void plat_present(plat_frame *frame, const plat_present_info *info)
 {
     SceDisplayFrameBuf fb;
 
-    (void)info;   /* aspect scaling and deinterlacing need sceGxm: not done yet */
     if (!frame || frame == displayed)
         return;
+    if (gfx_ready) {
+        float aspect = (float)info->width / (float)info->height;
+        if (info->sar_w > 0 && info->sar_h > 0)
+            aspect *= (float)info->sar_w / (float)info->sar_h;
+        /* The GPU has finished reading the frame when this returns, so no display reference. */
+        if (vita_gfx_present(frame->pixels, SCREEN_W, SCREEN_H, PIC_X, PIC_Y, info->width, info->height, aspect) == 0) {
+            if (displayed)
+                displayed->display_ref = 0;
+            displayed = NULL;
+            return;
+        }
+    }
+    /* Fallback without the GPU: show the decoded framebuffer as it is, unscaled. */
     memset(&fb, 0, sizeof(fb));
     fb.size = sizeof(fb);
     fb.base = frame->pixels;

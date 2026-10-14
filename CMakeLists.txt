@@ -39,6 +39,8 @@ add_executable(umdplayer
   src/platform/vita/vita_main.c
   src/platform/vita/vita_sys.c
   src/platform/vita/vita_video.c
+  src/platform/vita/vita_gfx.c
+  src/platform/vita/vita_shaders.c
   src/platform/vita/vita_audio.c
   src/platform/vita/vita_source.c
 )
