@@ -29,6 +29,12 @@ def load_font():
 FONT = load_font()
 
 
+def app_version():
+    src = open(os.path.join(ROOT, 'src', 'app', 'version.h')).read()
+    m = re.search(r'#define UMDPLAYER_VERSION "([^"]+)"', src)
+    return m.group(1) if m else '?'
+
+
 # ---- a tiny RGBA canvas with supersampled shapes ----
 
 class Canvas:
@@ -318,6 +324,9 @@ def bg(path):
     c.text(title, tx, y + 8, scale, WHITE)
     c.rect(tx, y + 36, text_width(title, scale), 3, ACCENT)
     c.text(by, tx, y + 46, 2, (0.70, 0.78, 0.92))
+    # the version at the far right, just above the bottom strip
+    version = 'v' + app_version()
+    c.text(version, 840 - 16 - text_width(version, 2), 500 - 54 - 8 - 16, 2, (0.70, 0.78, 0.92))
     save(c, path)
 
 
@@ -332,7 +341,7 @@ def startup(path):
 
 
 TEMPLATE = '''<?xml version="1.0" encoding="utf-8"?>
-<livearea style="a1" format-ver="01.00" content-rev="4">
+<livearea style="a1" format-ver="01.00" content-rev="5">
   <livearea-background>
     <image>bg.png</image>
   </livearea-background>
