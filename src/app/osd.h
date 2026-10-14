@@ -18,6 +18,8 @@ typedef struct osd_row {
 
 typedef struct osd_view {
     int menu_open, menu_row, row_count;
+    char header[64];          /* panel title: the disc name */
+    char subheader[64];       /* the title being played, when the disc has several */
     osd_row rows[OSD_ROWS];
     icon_id toast_icon;
     char toast[64];           /* short message, top left; empty for none */

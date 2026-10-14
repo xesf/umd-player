@@ -22,8 +22,11 @@ typedef struct player_options {
 } player_options;
 
 player *player_open(const player_options *opt);
-/* Call once per display refresh. Returns 0 when the title has ended. */
+/* Call once per display refresh. Returns 0 when the player should close: the title ended,
+   the user left, or the user asked for another title (see player_next_title). */
 int player_update(player *p, uint32_t pressed);
+/* After player_update returned 0: the title to open next on the same disc, or -1. */
+int player_next_title(const player *p);
 void player_close(player *p);
 
 #endif

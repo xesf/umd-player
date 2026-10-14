@@ -11,6 +11,7 @@
 
 static library *lib;
 static player *current;
+static char current_path[512];
 static player_options direct = {NULL, -1, -1, NULL};
 
 static const char *base_name(const char *path)
@@ -43,8 +44,9 @@ int app_init(int argc, char **argv)
         return 1;
     }
     if (is_iso(path)) {
-        direct.iso_path = path;
-        direct.resume_key = base_name(path);
+        snprintf(current_path, sizeof(current_path), "%s", path);
+        direct.iso_path = current_path;
+        direct.resume_key = base_name(current_path);
         current = player_open(&direct);
         return current ? 0 : 1;
     }
@@ -59,17 +61,30 @@ int app_frame(void)
 
     prev_buttons = held;
     if (current) {
+        int next;
         if (player_update(current, pressed))
             return 1;
+        next = player_next_title(current);
         player_close(current);
         current = NULL;
+        if (next >= 0) {
+            /* L or R: another title of the same disc. */
+            player_options opt = {current_path, next, -1, base_name(current_path)};
+            if ((current = player_open(&opt)) != NULL)
+                return 1;
+        }
         return lib != NULL;   /* back to the library, or quit after a direct play */
     }
     pick = library_update(lib, pressed);
     if (pick == -2)
         return 0;
     if (pick >= 0) {
-        player_options opt = {library_path(lib, pick), -1, -1, base_name(library_path(lib, pick))};
+        player_options opt;
+        snprintf(current_path, sizeof(current_path), "%s", library_path(lib, pick));
+        opt.iso_path = current_path;
+        opt.title = -1;
+        opt.audio = -1;
+        opt.resume_key = base_name(current_path);
         library_suspend(lib);
         current = player_open(&opt);
         if (!current)

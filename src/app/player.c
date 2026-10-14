@@ -10,6 +10,7 @@
 #include "../core/h264.h"
 #include "../core/iso9660.h"
 #include "../core/png.h"
+#include "../core/sfo.h"
 #include "../core/umdv.h"
 #include "../core/vtiming.h"
 #include "../platform/platform.h"
@@ -44,6 +45,7 @@
 #define DETECT_US     500000             /* border detection interval */
 #define MENU_ROWS     4
 #define SAVE_US       10000000           /* save the resume point every 10 s while playing */
+#define MIN_TITLE     (60 * 90000)       /* L and R skip shorter titles: menus, logos, warnings */
 #define RESUME_TAIL   (30 * 90000)       /* within 30 s of the end, start over next time */
 enum { ROW_AUDIO, ROW_SUBTITLES, ROW_SCREEN, ROW_CHAPTER };
 
@@ -162,6 +164,9 @@ struct player {
     int paused, audio_open;
     int leave;                       /* circle or start: back to the library */
     char resume_key[128];            /* empty: do not remember */
+    char disc_title[96];             /* PARAM.SFO TITLE */
+    int next_title;                  /* L or R: the title to switch to, or -1 */
+    uint64_t bar_until;              /* the time bar shows until then after a chapter change */
     uint64_t last_save_us;
     int ended;
     uint64_t audio_base_played;      /* plat_audio_played() when playback started */
@@ -772,6 +777,7 @@ static void restart_reader(player *p, uint64_t target, int audio, int sub)
 
 /* The current position: the seek target until a frame from after the seek is on screen. */
 static void toast(player *p, icon_id icon, const char *fmt, ...) __attribute__((format(printf, 3, 4)));
+static int count_long_titles(const player *p);
 
 static uint64_t now_or_shown(player *p)
 {
@@ -812,6 +818,7 @@ static void seek_chapter(player *p, int step)
     }
     seek_to(p, ch[cur].pts, "chapter");
     toast(p, step < 0 ? ICON_PREV_CHAPTER : ICON_NEXT_CHAPTER, "Chapter %d of %d", cur + 1, n);
+    p->bar_until = p->toast_until;
 }
 
 static void toast(player *p, icon_id icon, const char *fmt, ...)
@@ -1043,7 +1050,12 @@ static void build_osd(player *p, osd_view *v)
         v->charging = st.charging;
         v->show_status = 1;
     }
-    v->show_bar = p->menu_open || v->toast[0] || p->paused;
+    v->show_bar = p->menu_open || plat_time_us() < p->bar_until;
+    if (p->menu_open) {
+        snprintf(v->header, sizeof(v->header), "%.60s", p->disc_title[0] ? p->disc_title : p->title->name);
+        if (count_long_titles(p) > 1)
+            snprintf(v->subheader, sizeof(v->subheader), "%.60s", p->title->name);
+    }
     if (v->show_bar) {
         v->paused = p->paused;
         snprintf(v->title, sizeof(v->title), "%.40s", p->title->name);
@@ -1224,7 +1236,39 @@ static void menu_input(player *p, uint32_t pressed)
         seek_to(p, p->playlist.chapters[p->title->first_chapter + p->menu_chapter].pts, "chapter");
         p->menu_open = 0;
         toast(p, ICON_CHAPTERS, "Chapter %d of %d", p->menu_chapter + 1, p->title->chapter_count);
+        p->bar_until = p->toast_until;
     }
+}
+
+static int count_long_titles(const player *p)
+{
+    int n = 0;
+    for (int i = 0; i < p->playlist.title_count; i++)
+        n += p->playlist.titles[i].end_pts - p->playlist.titles[i].start_pts >= MIN_TITLE;
+    return n;
+}
+
+/* L and R: the previous or next title of the disc that is at least MIN_TITLE long (episodes,
+   extras). The app reopens the player on it. */
+static void switch_title(player *p, int dir)
+{
+    int cur = (int)(p->title - p->playlist.titles), n = p->playlist.title_count;
+
+    for (int k = 1; k < n; k++) {
+        int i = ((cur + dir * k) % n + n) % n;
+        const umdv_title *t = &p->playlist.titles[i];
+        if (t->end_pts - t->start_pts >= MIN_TITLE) {
+            p->next_title = i;
+            p->leave = 1;
+            return;
+        }
+    }
+    toast(p, ICON_CHAPTERS, "This disc has one title");
+}
+
+int player_next_title(const player *p)
+{
+    return p ? p->next_title : -1;
 }
 
 static void toggle_pause(player *p)
@@ -1255,10 +1299,12 @@ static void play_input(player *p, uint32_t pressed)
         seek_to(p, (int64_t)now_or_shown(p) - SEEK_STEP, "back");
         toast(p, ICON_BACK, "-10 s");
     }
-    if (pressed & (PLAT_BTN_UP | PLAT_BTN_R))
+    if (pressed & PLAT_BTN_UP)
         seek_chapter(p, 1);
-    if (pressed & (PLAT_BTN_DOWN | PLAT_BTN_L))
+    if (pressed & PLAT_BTN_DOWN)
         seek_chapter(p, -1);
+    if (pressed & (PLAT_BTN_L | PLAT_BTN_R))
+        switch_title(p, (pressed & PLAT_BTN_R) ? 1 : -1);
     if (pressed & PLAT_BTN_SQUARE)
         cycle_screen(p, 1);
     if (pressed & PLAT_BTN_SELECT)
@@ -1316,6 +1362,11 @@ player *player_open(const player_options *opt)
         goto fail;
     }
     free(buf);
+    p->next_title = -1;
+    if ((buf = read_file(p, "UMD_VIDEO/PARAM.SFO", &size)) != NULL) {
+        sfo_get_string(buf, size, "TITLE", p->disc_title, sizeof(p->disc_title));
+        free(buf);
+    }
     if (opt->resume_key) {
         snprintf(p->resume_key, sizeof(p->resume_key), "%s", opt->resume_key);
         have_resume = resume_load(opt->resume_key, &resume) == 0;
@@ -1394,6 +1445,8 @@ player *player_open(const player_options *opt)
     restart_reader(p, start, p->audio_sub, sub);
     if (!p->reader)
         goto fail;
+    if (opt->title >= 0 && count_long_titles(p) > 1)
+        toast(p, ICON_CHAPTERS, "%.40s", p->title->name);
     if (start != p->title->start_pts) {
         char t[24];
         format_time(t, sizeof(t), start - p->title->start_pts);

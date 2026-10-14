@@ -60,12 +60,20 @@ int osd_visible(const osd_view *v)
 
 static void draw_menu(const osd_view *v, canvas *c)
 {
-    int h = PAD + LINE + PAD + v->row_count * ROW_H + PAD + 2 * 20 + PAD;
+    int sub = v->subheader[0] != 0;
+    int h = PAD + LINE + (sub ? 14 : 0) + PAD + v->row_count * ROW_H + PAD + 2 * 20 + PAD;
     int x = c->w - PANEL_W - 24, y = (c->h - h) / 2 - 10, hx;
+    char head[32];
 
+    /* The disc name, cut to the panel width. */
+    snprintf(head, sizeof(head), "%s", v->header[0] ? v->header : "OPTIONS");
+    if ((int)strlen(head) > (PANEL_W - 2 * PAD) / LINE)
+        head[(PANEL_W - 2 * PAD) / LINE] = 0;
     canvas_rect(c, x, y, PANEL_W, h, BG);
-    canvas_text(c, x + PAD, y + PAD, SCALE, TEXT_DIM, "OPTIONS");
-    y += PAD + LINE + PAD;
+    canvas_text(c, x + PAD, y + PAD, SCALE, TEXT, head);
+    if (sub)
+        canvas_text(c, x + PAD, y + PAD + LINE + 4, 1, TEXT_DIM, v->subheader);
+    y += PAD + LINE + (sub ? 14 : 0) + PAD;
     for (int i = 0; i < v->row_count; i++, y += ROW_H) {
         const osd_row *r = &v->rows[i];
         int ty = y + (ROW_H - 4 - LINE) / 2, vw = canvas_text_width(r->value, SCALE);
