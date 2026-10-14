@@ -98,15 +98,23 @@ static void resolve(vtiming *v)
             vtiming_entry *x = &v->e[i];
             const vtiming_entry *p;
 
-            if (x->t != VTIMING_UNKNOWN || !settled(v, x))
+            if (x->t != VTIMING_UNKNOWN || x->lost || !settled(v, x))
                 continue;
             p = predecessor(v, x);
+            if (p && p->lost)
+                p = NULL;            /* a lost predecessor: only our own PTS can time us */
             if (p && p->t == VTIMING_UNKNOWN)
                 continue;
-            if (p)
+            if (p) {
                 x->predicted = p->t + (int64_t)p->fields * v->field_ticks;
-            else if (!x->anchored)
+            } else if (!x->anchored) {
+                /* Nothing before it to count from and no PTS: a leading picture after a seek or at
+                   the start (an open GOP's B pictures shown before their I picture). It can never
+                   be timed. Marking it lost lets the pictures after it fall back on their PTS. */
+                x->lost = 1;
+                changed = 1;
                 continue;
+            }
             decide(v, x);
             changed = 1;
         }
@@ -132,6 +140,7 @@ uint32_t vtiming_push(vtiming *v, const h264_au_info *info, uint64_t pes_pts)
     x->anchor = x->anchored ? (int64_t)pes_pts * 2 : VTIMING_UNKNOWN;
     x->t = VTIMING_UNKNOWN;
     x->predicted = VTIMING_UNKNOWN;
+    x->lost = 0;
     resolve(v);
     return x->id;
 }
@@ -146,6 +155,8 @@ int vtiming_get(const vtiming *v, uint32_t id, uint64_t *pts90)
         *pts90 = (uint64_t)(x->t / 2);
         return 1;
     }
+    if (x->lost)
+        return -1;
     /* A chain through not-yet-settled pictures can take a few more pushes; after 3 windows it is lost. */
     return v->next_id - x->id > 3 * VTIMING_SETTLE ? -1 : 0;
 }

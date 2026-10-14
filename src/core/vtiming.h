@@ -25,6 +25,7 @@ typedef struct vtiming_entry {
     int poc;
     uint8_t fields;
     uint8_t anchored;         /* has a PES PTS */
+    uint8_t lost;             /* can never be timed: no PTS and nothing before it in display order */
     int64_t anchor;           /* the PES PTS in 180 kHz ticks */
     int64_t t;                /* 180 kHz ticks, VTIMING_UNKNOWN until resolved */
     int64_t predicted;        /* what the chain predicted, VTIMING_UNKNOWN if it had no predecessor */
@@ -47,7 +48,8 @@ void vtiming_reset(vtiming *v, const h264_sps *sps);
 uint32_t vtiming_push(vtiming *v, const h264_au_info *info, uint64_t pes_pts);
 
 /* 1: *pts90 is the display time (90 kHz). 0: not known yet, ask again after more pushes.
-   -1: will never be known (for example a leading picture after a seek); do not display it. */
+   -1: will never be known (for example a leading picture after a seek, reported as soon as it
+   is settled); do not display it. */
 int vtiming_get(const vtiming *v, uint32_t id, uint64_t *pts90);
 
 /* For tests: the predicted time of an entry (90 kHz), or -1 if it had no prediction. */
