@@ -127,8 +127,8 @@ plat_video *plat_video_open(const plat_video_config *cfg)
     memset(&v, 0, sizeof(v));
     if (cfg->width > 720 || cfg->height > 480)
         return NULL;
-    if (cfg->interlaced)
-        sceAvcdecSetInterlacedStreamMode(SCE_VIDEODEC_TYPE_HW_AVCDEC, 1);
+    /* Set every time: the mode outlives the decoder when switching discs. */
+    sceAvcdecSetInterlacedStreamMode(SCE_VIDEODEC_TYPE_HW_AVCDEC, cfg->interlaced ? 1 : 0);
     memset(&init, 0, sizeof(init));
     init.size = sizeof(init);
     init.horizontal = 720;
