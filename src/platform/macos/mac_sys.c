@@ -125,3 +125,22 @@ void plat_log(const char *fmt, ...)
     va_end(ap);
     fflush(stdout);
 }
+
+void plat_keep_awake(void)
+{
+}
+
+void plat_get_status(plat_status *s)
+{
+    time_t now = time(NULL);
+    struct tm tm;
+
+    localtime_r(&now, &tm);
+    s->year = tm.tm_year + 1900;
+    s->month = tm.tm_mon + 1;
+    s->day = tm.tm_mday;
+    s->hour = tm.tm_hour;
+    s->minute = tm.tm_min;
+    s->battery = -1;
+    s->charging = 0;
+}

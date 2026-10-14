@@ -111,6 +111,18 @@ void plat_screen_size(int *w, int *h);
 int plat_frame_lock(plat_frame *f, const uint8_t **pixels, int *stride);
 void plat_frame_unlock(plat_frame *f);
 
+/* ---- System ---- */
+/* Called about once a second while a movie plays: keeps the screen from dimming and the console
+   from going to sleep, as if the user had pressed a button. */
+void plat_keep_awake(void);
+
+typedef struct plat_status {
+    int year, month, day, hour, minute;   /* local time */
+    int battery;                          /* percent, or -1 when there is no battery */
+    int charging;
+} plat_status;
+void plat_get_status(plat_status *s);
+
 /* ---- Input, as Vita buttons on every platform ---- */
 enum {
     PLAT_BTN_UP = 1 << 0, PLAT_BTN_DOWN = 1 << 1, PLAT_BTN_LEFT = 1 << 2, PLAT_BTN_RIGHT = 1 << 3,

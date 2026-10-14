@@ -17,7 +17,7 @@
 
 int osd_visible(const osd_view *v)
 {
-    return v->menu_open || v->toast[0] || v->show_bar;
+    return v->menu_open || v->toast[0] || v->show_bar || v->status[0];
 }
 
 static void draw_menu(const osd_view *v, canvas *c)
@@ -64,6 +64,11 @@ void osd_draw(const osd_view *v, canvas *c)
         int w = canvas_text_width(v->toast, SCALE) + 2 * PAD;
         canvas_rect(c, 24, 24, w, LINE + 2 * 12, BG);
         canvas_text(c, 24 + PAD, 24 + 12, SCALE, TEXT, v->toast);
+    }
+    if (v->status[0]) {
+        int w = canvas_text_width(v->status, SCALE) + 2 * PAD;
+        canvas_rect(c, c->w - 24 - w, 24, w, LINE + 2 * 12, BG);
+        canvas_text(c, c->w - 24 - w + PAD, 24 + 12, SCALE, TEXT, v->status);
     }
     if (v->menu_open)
         draw_menu(v, c);

@@ -6,9 +6,12 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <psp2/io/fcntl.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
+#include <psp2/power.h>
+#include <psp2/rtc.h>
 
 #define THREAD_PRIORITY 0x10000100
 #define THREAD_STACK    (256 * 1024)
@@ -141,4 +144,24 @@ void plat_log(const char *fmt, ...)
         sceIoWrite(fd, line, n);
         sceIoClose(fd);
     }
+}
+
+void plat_keep_awake(void)
+{
+    sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DEFAULT);
+}
+
+void plat_get_status(plat_status *s)
+{
+    SceDateTime t;
+
+    if (sceRtcGetCurrentClockLocalTime(&t) < 0)
+        memset(&t, 0, sizeof(t));
+    s->year = t.year;
+    s->month = t.month;
+    s->day = t.day;
+    s->hour = t.hour;
+    s->minute = t.minute;
+    s->battery = scePowerGetBatteryLifePercent();
+    s->charging = scePowerIsBatteryCharging() ? 1 : 0;
 }

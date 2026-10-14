@@ -160,6 +160,7 @@ struct player {
     uint64_t clk_raw, clk_us, clk_last;  /* last audio clock reading, when it changed, last value given */
     uint64_t wall_base_us, wall_base_pts;
     uint64_t last_report_us;
+    uint64_t last_awake_us;
     uint32_t frames_shown, frames_late;
     uint32_t wait_pending, wait_empty;  /* decode_ahead found the queue head unresolved or empty */
     uint32_t reader_wait_pcm, reader_wait_vq;
@@ -1011,6 +1012,24 @@ static void build_osd(player *p, osd_view *v)
         snprintf(v->hint[0], sizeof(v->hint[0]), "Up/Down: choose    Left/Right: change");
         snprintf(v->hint[1], sizeof(v->hint[1]), "X: go to chapter   O or Triangle: close");
     }
+    if (p->menu_open) {
+        static const char *days[7] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+        static const char *months[12] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+        static const int offsets[12] = {0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4};
+        plat_status st;
+        int y, wd, m;
+        char battery[32] = "";
+
+        plat_get_status(&st);
+        m = st.month >= 1 && st.month <= 12 ? st.month : 1;
+        y = st.year - (m < 3);
+        wd = (y + y / 4 - y / 100 + y / 400 + offsets[m - 1] + st.day) % 7;   /* Sakamoto's method */
+        if (st.battery >= 0)
+            snprintf(battery, sizeof(battery), "   %s %d%%", st.charging ? "Charging" : "Battery", st.battery);
+        snprintf(v->status, sizeof(v->status), "%s %d %s  %02d:%02d%s", days[wd], st.day, months[m - 1], st.hour,
+                 st.minute, battery);
+    }
     v->show_bar = p->menu_open || v->toast[0] || p->paused;
     if (v->show_bar) {
         snprintf(v->title, sizeof(v->title), "%s%.40s", p->paused ? "Paused  " : "", p->title->name);
@@ -1340,6 +1359,10 @@ int player_update(player *p, uint32_t pressed)
         menu_input(p, pressed);
     else
         play_input(p, pressed);
+    if (!p->paused && plat_time_us() - p->last_awake_us > 1000000) {
+        p->last_awake_us = plat_time_us();
+        plat_keep_awake();
+    }
     if (p->video_disabled)
         drain_video(p);
     else

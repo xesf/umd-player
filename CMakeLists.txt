@@ -61,6 +61,7 @@ target_link_libraries(umdplayer
   SceCtrl_stub
   SceAudio_stub
   ScePower_stub
+  SceRtc_stub
 )
 
 vita_create_self(umdplayer.self umdplayer)

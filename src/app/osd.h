@@ -18,6 +18,7 @@ typedef struct osd_view {
     osd_row rows[OSD_ROWS];
     char hint[2][48];         /* key help under the panel, two lines */
     char toast[64];           /* short message, top left; empty for none */
+    char status[48];          /* date, time, and battery, top right; empty for none */
     int show_bar;             /* time bar at the bottom */
     char title[64];
     char time_text[48];
