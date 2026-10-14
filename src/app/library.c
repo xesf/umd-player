@@ -9,6 +9,7 @@
 #include "../core/disc_image.h"
 #include "../core/demux.h"
 #include "../core/h264.h"
+#include "../core/icons.h"
 #include "../core/iso9660.h"
 #include "../core/png.h"
 #include "../core/sfo.h"
@@ -76,6 +77,7 @@ typedef struct media {
 } media;
 
 struct library {
+    char dirs[512];                  /* the folders to list, separated by ';' */
     lib_disc discs[LIB_MAX];
     int count, sel;
     int loaded;                      /* disc whose media is in use, or -1 */
@@ -169,7 +171,8 @@ static uint8_t *decode_png(const uint8_t *png, uint32_t size, int *w, int *h, in
 }
 
 typedef struct list_ctx {
-    library *l;
+    lib_disc *discs;
+    int count;
     const char *dir;
 } list_ctx;
 
@@ -184,13 +187,14 @@ static void on_entry(void *user, const char *name)
     list_ctx *c = (list_ctx *)user;
     size_t n = strlen(name);
 
-    if (c->l->count >= LIB_MAX || n <= 4 || !image_name_supported(name))
+    if (c->count >= LIB_MAX || n <= 4 || !image_name_supported(name))
         return;
     /* The same file in two folders shows once; resume data is keyed by the file name. */
-    for (int i = 0; i < c->l->count; i++)
-        if (strcmp(file_name(c->l->discs[i].path), name) == 0)
+    for (int i = 0; i < c->count; i++)
+        if (strcmp(file_name(c->discs[i].path), name) == 0)
             return;
-    snprintf(c->l->discs[c->l->count++].path, sizeof(c->l->discs[0].path), "%s/%s", c->dir, name);
+    memset(&c->discs[c->count], 0, sizeof(c->discs[0]));
+    snprintf(c->discs[c->count++].path, sizeof(c->discs[0].path), "%s/%s", c->dir, name);
 }
 
 static int compare_discs(const void *a, const void *b)
@@ -754,15 +758,17 @@ static int advance_icon(library *l)
 
 /* ---- public ---- */
 
-library *library_open(const char *dir)
+/* Lists the disc images in every folder. Only called while the library is empty, so the
+   worker has nothing to read; the count is published under cache_lock. */
+static void scan(library *l)
 {
-    library *l = calloc(1, sizeof(*l));
+    static lib_disc found[LIB_MAX];
     list_ctx ctx;
+    int count;
 
-    if (!l)
-        return NULL;
-    ctx.l = l;
-    for (const char *p = dir; *p;) {
+    ctx.discs = found;
+    ctx.count = 0;
+    for (const char *p = l->dirs; *p;) {
         char one[256];
         size_t n = strcspn(p, ";");
         snprintf(one, sizeof(one), "%.*s", (int)(n < sizeof(one) ? n : sizeof(one) - 1), p);
@@ -771,14 +777,28 @@ library *library_open(const char *dir)
             plat_list_dir(one, on_entry, &ctx);
         p += n + (p[n] == ';');
     }
-    if (l->count == 0) {
-        plat_log("no ISO files in %s\n", dir);
-        free(l);
+    count = ctx.count;
+    qsort(found, (size_t)count, sizeof(found[0]), compare_discs);
+    for (int i = 0; i < count; i++)
+        read_disc_info(&found[i]);
+    memcpy(l->discs, found, (size_t)count * sizeof(found[0]));
+    if (l->cache_lock)
+        plat_mutex_lock(l->cache_lock);
+    l->count = count;
+    l->sel = 0;
+    if (l->cache_lock)
+        plat_mutex_unlock(l->cache_lock);
+    plat_log("library: %d discs in %s\n", count, l->dirs);
+}
+
+library *library_open(const char *dir)
+{
+    library *l = calloc(1, sizeof(*l));
+
+    if (!l)
         return NULL;
-    }
-    qsort(l->discs, (size_t)l->count, sizeof(l->discs[0]), compare_discs);
-    for (int i = 0; i < l->count; i++)
-        read_disc_info(&l->discs[i]);
+    snprintf(l->dirs, sizeof(l->dirs), "%s", dir);
+    scan(l);
     l->lock = plat_mutex_create();
     l->at3p = malloc(at3p_decoder_size());
     l->ui.w = UI_W;
@@ -800,8 +820,50 @@ library *library_open(const char *dir)
     l->info.video_h = ICON_H;
     l->info.dst = (plat_rect){(float)BIG_X / UI_W, (float)BIG_Y / UI_H, 2.0f * ICON_W / UI_W, 2.0f * ICON_H / UI_H};
     l->worker = plat_thread_start(worker_main, l, "library");
-    plat_log("library: %d discs in %s\n", l->count, dir);
     return l;
+}
+
+/* No discs: say where to put them. × lists the folders again. */
+static void draw_empty(library *l)
+{
+    canvas *c = &l->ui;
+    const char *title = "No movies found";
+    int y = 150;
+
+    for (int row = 0; row < UI_H; row++)
+        canvas_rect(c, 0, row, UI_W, 1, RGBA(12 + row * 20 / UI_H, 18 + row * 30 / UI_H, 40 + row * 60 / UI_H, 255));
+    canvas_text(c, (UI_W - canvas_text_width(title, 3)) / 2, y, 3, RGBA(255, 255, 255, 255), title);
+    y += 60;
+    canvas_text(c, (UI_W - canvas_text_width("Copy .iso, .cso or .zso UMD Video images to:", 2)) / 2, y, 2, TEXT_DIM,
+                "Copy .iso, .cso or .zso UMD Video images to:");
+    y += 40;
+    for (const char *p = l->dirs; *p;) {
+        char one[256];
+        size_t n = strcspn(p, ";");
+        snprintf(one, sizeof(one), "%.*s/", (int)(n < sizeof(one) - 1 ? n : sizeof(one) - 2), p);
+        if (n) {
+            canvas_text(c, (UI_W - canvas_text_width(one, 2)) / 2, y, 2, RGBA(255, 255, 255, 255), one);
+            y += 28;
+        }
+        p += n + (p[n] == ';');
+    }
+    y += 40;
+    {
+        const char *again = "Look again", *quit = "START  Quit";
+        int w = ICON_SIZE * 2 + 10 + canvas_text_width(again, 2) + 60 + canvas_text_width(quit, 2);
+        int x = (UI_W - w) / 2;
+        canvas_icon(c, ICON_BUTTON_CROSS, x, y - 8, 2, COLOR_CROSS);
+        x += ICON_SIZE * 2 + 10;
+        x += canvas_text(c, x, y, 2, TEXT_DIM, again) + 60;
+        canvas_text(c, x, y, 2, TEXT_DIM, quit);
+    }
+    canvas_text(c, UI_W - 20 - canvas_text_width("v" UMDPLAYER_VERSION, 1), UI_H - 18, 1, TEXT_DIM, "v" UMDPLAYER_VERSION);
+    l->info.ui_rgba = c->rgba;
+    l->info.ui_w = c->w;
+    l->info.ui_h = c->h;
+    l->info.ui_stride = c->stride;
+    l->info.ui_id++;
+    l->ui_dirty = 0;
 }
 
 int library_update(library *l, uint32_t pressed)
@@ -810,6 +872,22 @@ int library_update(library *l, uint32_t pressed)
 
     if (pressed & PLAT_BTN_START)
         return -2;
+    if (l->count == 0) {
+        if (pressed & PLAT_BTN_CROSS) {
+            scan(l);
+            l->loaded = -1;
+            l->ui_dirty = 1;
+            if (l->count)
+                tell_worker(l, 0);
+        }
+        if (l->count == 0) {
+            if (l->ui_dirty) {
+                draw_empty(l);
+                plat_present(NULL, &l->info);
+            }
+            return -1;
+        }
+    }
     if (pressed & PLAT_BTN_CROSS)
         return l->sel;
     if ((pressed & PLAT_BTN_UP) && l->sel > 0)
