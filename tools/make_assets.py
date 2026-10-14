@@ -318,7 +318,9 @@ def bg(path):
     film_background(c, 54, 34, 22, 60)
     title, by, scale = 'UMD Player', 'by xesf', 3
     icon, gap = 64, 18
-    x, y = 15, 355                       # top left of the title group
+    version_y = 500 - 54 - 8 - 16        # the version line, just above the bottom strip
+    group_h = 46 + 16                    # from the group's top to the bottom of "by xesf"
+    x, y = 15, version_y + 16 - group_h  # bottoms aligned with the version
     emblem(c, x + icon * 0.48, y + 32, icon * 0.86)
     tx = x + icon + gap
     c.text(title, tx, y + 8, scale, WHITE)
@@ -326,7 +328,7 @@ def bg(path):
     c.text(by, tx, y + 46, 2, (0.70, 0.78, 0.92))
     # the version at the far right, just above the bottom strip
     version = 'v' + app_version()
-    c.text(version, 840 - 16 - text_width(version, 2), 500 - 54 - 8 - 16, 2, (0.70, 0.78, 0.92))
+    c.text(version, 840 - 16 - text_width(version, 2), version_y, 2, (0.70, 0.78, 0.92))
     save(c, path)
 
 
@@ -341,7 +343,7 @@ def startup(path):
 
 
 TEMPLATE = '''<?xml version="1.0" encoding="utf-8"?>
-<livearea style="a1" format-ver="01.00" content-rev="6">
+<livearea style="a1" format-ver="01.00" content-rev="7">
   <livearea-background>
     <image>bg.png</image>
   </livearea-background>
