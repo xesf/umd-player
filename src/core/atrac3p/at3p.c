@@ -6,7 +6,7 @@
  *
  * Changes for umd-player (c) 2026 umd-player contributors: removed the AVCodec framework,
  * mono and stereo only, and added the VLC builder, float vector helpers, sine windows,
- * and inverse MDCT that FFmpeg provides in other files.
+ * and an FFT-based inverse MDCT in place of the ones FFmpeg provides in other files.
  *
  * This file is part of the ATRAC3+ decoder in umd-player, which is derived from FFmpeg.
  * It is free software; you can redistribute it and/or modify it under the terms of the
@@ -109,46 +109,113 @@ void ff_init_ff_sine_windows(int index)
 }
 
 /* ---- Inverse MDCT with av_tx conventions ----
-   For len input coefficients and n = 2 * len, FFmpeg's av_tx inverse MDCT computes
+   For M = len input coefficients and n = 2M, FFmpeg's av_tx inverse MDCT computes
      full[i] = -scale * sum_k in[k] * cos(pi / (2n) * (2i + 1 + n/2) * (2k + 1)),  0 <= i < n
-   and the half transform returns full[n/4 .. n/4 + len). Measured against libavutil 60 with
-   impulse inputs: the error is at float precision. This direct form is O(len * n); a fast
-   version can replace it as long as tools/at3p_check.sh still passes. */
+   and the half transform returns full[M/2 .. M/2 + M). This was measured against libavutil 60
+   with impulse inputs; the error is at float precision.
+
+   full[] is a DCT-IV of size M, unfolded:
+     c[j]     = sum_k in[k] * cos(pi / M * (j + 1/2) * (k + 1/2))
+     full[i]  =  c[i + M/2]          for i <  M/2
+     full[i]  = -c[3M/2 - 1 - i]     for M/2 <= i < 3M/2   (so half[j] = -c[M - 1 - j])
+     full[i]  = -c[i - 3M/2]         for i >= 3M/2
+   and the DCT-IV is computed with an M/2-point complex FFT:
+     v[k] = (in[2k] + i * in[M-1-2k]) * exp(-i pi (4k + 1) / (4M)),  V = FFT(v),
+     w[j] = V[j] * exp(-i pi j / M),  c[2j] = Re w[j],  c[M-1-2j] = -Im w[j]. */
 
 #define TX_MAX_LEN 128
+#define TX_MAX_FFT (TX_MAX_LEN / 2)
 
 struct AVTXContext {
     int len;
     int full;
-    float cos_tab[8 * TX_MAX_LEN]; /* cos(pi * m / (2n)) for m in [0, 4n), times -scale */
+    float pre_re[TX_MAX_FFT], pre_im[TX_MAX_FFT];
+    float post_re[TX_MAX_FFT], post_im[TX_MAX_FFT];  /* include the -scale gain */
+    float tw_re[TX_MAX_FFT / 2], tw_im[TX_MAX_FFT / 2];
+    uint8_t bitrev[TX_MAX_FFT];
 };
 
-static void imdct_direct(AVTXContext *s, void *out_v, void *in_v, ptrdiff_t stride)
+static void fft_inplace(const AVTXContext *s, float *re, float *im, int n)
+{
+    for (int i = 0; i < n; i++) {
+        int j = s->bitrev[i];
+        if (i < j) {
+            float t = re[i]; re[i] = re[j]; re[j] = t;
+            t = im[i]; im[i] = im[j]; im[j] = t;
+        }
+    }
+    for (int size = 2, step = n / 2; size <= n; size <<= 1, step >>= 1) {
+        int half = size >> 1;
+        for (int base = 0; base < n; base += size) {
+            for (int k = 0; k < half; k++) {
+                float wr = s->tw_re[k * step], wi = s->tw_im[k * step];
+                int a = base + k, b = a + half;
+                float xr = re[b] * wr - im[b] * wi;
+                float xi = re[b] * wi + im[b] * wr;
+                re[b] = re[a] - xr;
+                im[b] = im[a] - xi;
+                re[a] += xr;
+                im[a] += xi;
+            }
+        }
+    }
+}
+
+static void imdct_fast(AVTXContext *s, void *out_v, void *in_v, ptrdiff_t stride)
 {
     const float *in = (const float *)in_v;
     float *out = (float *)out_v;
-    int len = s->len, n = 2 * len, m4 = 4 * n;
-    int first = s->full ? 0 : n / 4, count = s->full ? n : len;
+    float re[TX_MAX_FFT], im[TX_MAX_FFT], c[TX_MAX_LEN];
+    int m = s->len, h = m / 2;
 
     (void)stride;
-    for (int i = 0; i < count; i++) {
-        int a = 2 * (i + first) + 1 + n / 2;
-        float acc = 0.0f;
-        for (int k = 0; k < len; k++)
-            acc += in[k] * s->cos_tab[(a * (2 * k + 1)) % m4];
-        out[i] = acc;
+    for (int k = 0; k < h; k++) {
+        float a = in[2 * k], b = in[m - 1 - 2 * k];
+        re[k] = a * s->pre_re[k] - b * s->pre_im[k];
+        im[k] = a * s->pre_im[k] + b * s->pre_re[k];
+    }
+    fft_inplace(s, re, im, h);
+    for (int j = 0; j < h; j++) {
+        c[2 * j] = re[j] * s->post_re[j] - im[j] * s->post_im[j];
+        c[m - 1 - 2 * j] = -(re[j] * s->post_im[j] + im[j] * s->post_re[j]);
+    }
+    if (s->full) {
+        for (int i = 0; i < h; i++)
+            out[i] = c[i + h];
+        for (int i = h; i < 3 * h; i++)
+            out[i] = -c[3 * h - 1 - i];
+        for (int i = 3 * h; i < 2 * m; i++)
+            out[i] = -c[i - 3 * h];
+    } else {
+        for (int j = 0; j < m; j++)
+            out[j] = -c[m - 1 - j];
     }
 }
 
 static void tx_init(AVTXContext *s, int len, float scale, int full)
 {
-    int n = 2 * len;
+    int h = len / 2, bits = 0;
 
-    assert(len <= TX_MAX_LEN);
+    assert(len <= TX_MAX_LEN && (len & (len - 1)) == 0);
     s->len = len;
     s->full = full;
-    for (int m = 0; m < 4 * n; m++)
-        s->cos_tab[m] = (float)(-scale * cos(M_PI * m / (2.0 * n)));
+    while ((1 << bits) < h)
+        bits++;
+    for (int k = 0; k < h; k++) {
+        double a = -M_PI * (4 * k + 1) / (4.0 * len), b = -M_PI * k / len;
+        int r = 0;
+        s->pre_re[k] = (float)cos(a);
+        s->pre_im[k] = (float)sin(a);
+        s->post_re[k] = (float)(-scale * cos(b));
+        s->post_im[k] = (float)(-scale * sin(b));
+        for (int i = 0; i < bits; i++)
+            r |= ((k >> i) & 1) << (bits - 1 - i);
+        s->bitrev[k] = (uint8_t)r;
+    }
+    for (int k = 0; k < h / 2; k++) {
+        s->tw_re[k] = (float)cos(-2 * M_PI * k / h);
+        s->tw_im[k] = (float)sin(-2 * M_PI * k / h);
+    }
 }
 
 /* ---- libavcodec/atrac3plusdec.c ---- */
@@ -289,7 +356,7 @@ static void reconstruct_frame(at3p_decoder *ctx, Atrac3pChanUnitCtx *ch_unit, in
     for (ch = 0; ch < num_channels; ch++) {
         for (sb = 0; sb < ch_unit->num_subbands; sb++) {
             /* inverse transform and windowing */
-            ff_atrac3p_imdct(fdsp, &ctx->mdct_ctx, imdct_direct,
+            ff_atrac3p_imdct(fdsp, &ctx->mdct_ctx, imdct_fast,
                              &ctx->samples[ch][sb * ATRAC3P_SUBBAND_SAMPLES],
                              &ctx->mdct_buf[ch][sb * ATRAC3P_SUBBAND_SAMPLES],
                              (ch_unit->channels[ch].wnd_shape_prev[sb] << 1) +
@@ -323,7 +390,7 @@ static void reconstruct_frame(at3p_decoder *ctx, Atrac3pChanUnitCtx *ch_unit, in
         }
 
         /* subband synthesis and acoustic signal output */
-        ff_atrac3p_ipqf(&ctx->ipqf_dct_ctx, imdct_direct,
+        ff_atrac3p_ipqf(&ctx->ipqf_dct_ctx, imdct_fast,
                         &ch_unit->ipqf_ctx[ch], &ctx->time_buf[ch][0],
                         &ctx->outp_buf[ch][0]);
     }
