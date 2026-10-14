@@ -129,7 +129,7 @@ static int64_t vq_alloc(player *p, uint32_t size)
             return p->vq_write;
         return size < oldest ? 0 : -1;
     }
-    return oldest - p->vq_write > size ? p->vq_write : -1;
+    return oldest - p->vq_write > size ? (int64_t)p->vq_write : -1;
 }
 
 static void vq_resolve(player *p, int at_end)

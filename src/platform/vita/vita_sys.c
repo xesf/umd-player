@@ -1,0 +1,119 @@
+/* Vita: files, threads, and time. */
+#include "../platform.h"
+#include "vita_source.h"
+
+#include <malloc.h>
+#include <stdlib.h>
+#include <psp2/kernel/processmgr.h>
+#include <psp2/kernel/threadmgr.h>
+
+#define THREAD_PRIORITY 0x10000100
+#define THREAD_STACK    (256 * 1024)
+#define COND_POLL_US    2000
+
+int plat_iso_open(const char *path, umd_source *out)
+{
+    return vita_source_open(out, path);
+}
+
+void plat_iso_close(umd_source *src)
+{
+    vita_source_close(src);
+}
+
+struct plat_thread { SceUID id; void (*fn)(void *); void *user; };
+struct plat_mutex { SceKernelLwMutexWork work; };
+struct plat_cond { SceUID sema; };
+
+static int thread_entry(SceSize args, void *argp)
+{
+    plat_thread *t = *(plat_thread **)argp;
+    (void)args;
+    t->fn(t->user);
+    return 0;
+}
+
+plat_thread *plat_thread_start(void (*fn)(void *), void *user, const char *name)
+{
+    plat_thread *t = calloc(1, sizeof(*t));
+
+    if (!t)
+        return NULL;
+    t->fn = fn;
+    t->user = user;
+    t->id = sceKernelCreateThread(name, thread_entry, THREAD_PRIORITY, THREAD_STACK, 0, 0, NULL);
+    if (t->id < 0 || sceKernelStartThread(t->id, sizeof(t), &t) < 0) {
+        free(t);
+        return NULL;
+    }
+    return t;
+}
+
+void plat_thread_join(plat_thread *t)
+{
+    if (!t)
+        return;
+    sceKernelWaitThreadEnd(t->id, NULL, NULL);
+    sceKernelDeleteThread(t->id);
+    free(t);
+}
+
+plat_mutex *plat_mutex_create(void)
+{
+    plat_mutex *m = memalign(8, sizeof(*m));
+    if (m && sceKernelCreateLwMutex(&m->work, "umd", 0, 0, NULL) < 0) {
+        free(m);
+        return NULL;
+    }
+    return m;
+}
+
+void plat_mutex_lock(plat_mutex *m) { sceKernelLockLwMutex(&m->work, 1, NULL); }
+void plat_mutex_unlock(plat_mutex *m) { sceKernelUnlockLwMutex(&m->work, 1); }
+
+void plat_mutex_destroy(plat_mutex *m)
+{
+    if (!m)
+        return;
+    sceKernelDeleteLwMutex(&m->work);
+    free(m);
+}
+
+/* A condition variable as a semaphore with a short timeout. Callers always re-check their
+   condition in a loop, so a missed or spurious wake-up only costs one poll interval. */
+plat_cond *plat_cond_create(void)
+{
+    plat_cond *c = calloc(1, sizeof(*c));
+    if (c && (c->sema = sceKernelCreateSema("umd", 0, 0, 1, NULL)) < 0) {
+        free(c);
+        return NULL;
+    }
+    return c;
+}
+
+void plat_cond_wait(plat_cond *c, plat_mutex *m)
+{
+    SceUInt timeout = COND_POLL_US;
+
+    plat_mutex_unlock(m);
+    sceKernelWaitSema(c->sema, 1, &timeout);
+    plat_mutex_lock(m);
+}
+
+void plat_cond_broadcast(plat_cond *c)
+{
+    sceKernelSignalSema(c->sema, 1);
+}
+
+void plat_cond_destroy(plat_cond *c)
+{
+    if (!c)
+        return;
+    sceKernelDeleteSema(c->sema);
+    free(c);
+}
+
+uint64_t plat_time_us(void)
+{
+    return sceKernelGetProcessTimeWide();
+}
