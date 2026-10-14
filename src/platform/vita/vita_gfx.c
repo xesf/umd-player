@@ -18,6 +18,8 @@
 #define ALIGN(x, a) (((x) + ((a) - 1)) & ~((a) - 1))
 #define PATCHER_BUFFER (64 * 1024)
 #define PATCHER_USSE   (64 * 1024)
+#define OVERLAY_MAX_W  720
+#define OVERLAY_MAX_H  480
 
 typedef struct vertex {
     float x, y, z;
@@ -29,7 +31,10 @@ static SceGxmContext *context;
 static SceGxmRenderTarget *target;
 static SceGxmShaderPatcher *patcher;
 static SceGxmVertexProgram *vprog;
-static SceGxmFragmentProgram *fprog;
+static SceGxmFragmentProgram *fprog, *fprog_blend;
+static uint8_t *overlay_tex;
+static uint32_t overlay_id;
+static int overlay_w, overlay_h;
 static const SceGxmProgramParameter *wvp_param;
 static uint8_t *display[DISPLAY_BUFFERS];
 static SceGxmColorSurface surface[DISPLAY_BUFFERS];
@@ -162,6 +167,22 @@ int vita_gfx_init(void)
     attrs[1].regIndex = (unsigned short)sceGxmProgramParameterGetResourceIndex(sceGxmProgramFindParameterByName(vp, "aTexcoord"));
     stream.stride = sizeof(vertex);
     stream.indexSource = SCE_GXM_INDEX_SOURCE_INDEX_16BIT;
+    {
+        static SceGxmBlendInfo blend;
+        blend.colorMask = SCE_GXM_COLOR_MASK_ALL;
+        blend.colorFunc = SCE_GXM_BLEND_FUNC_ADD;
+        blend.alphaFunc = SCE_GXM_BLEND_FUNC_ADD;
+        blend.colorSrc = SCE_GXM_BLEND_FACTOR_SRC_ALPHA;
+        blend.colorDst = SCE_GXM_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        blend.alphaSrc = SCE_GXM_BLEND_FACTOR_ONE;
+        blend.alphaDst = SCE_GXM_BLEND_FACTOR_ZERO;
+        r = sceGxmShaderPatcherCreateFragmentProgram(patcher, fid, SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
+                                                     SCE_GXM_MULTISAMPLE_NONE, &blend, vp, &fprog_blend);
+        if (r < 0) {
+            plat_log("gfx: cannot create the blending program: 0x%08x\n", r);
+            return -1;
+        }
+    }
     if ((r = sceGxmShaderPatcherCreateVertexProgram(patcher, vid, attrs, 2, &stream, 1, &vprog)) < 0 ||
         (r = sceGxmShaderPatcherCreateFragmentProgram(patcher, fid, SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
                                                       SCE_GXM_MULTISAMPLE_NONE, NULL, vp, &fprog)) < 0) {
@@ -170,9 +191,11 @@ int vita_gfx_init(void)
     }
     wvp_param = sceGxmProgramFindParameterByName(vp, "wvp");
 
-    vertices = gpu_alloc(SCE_KERNEL_MEMBLOCK_TYPE_USER_RW_UNCACHE, 4 * sizeof(vertex), 4096, SCE_GXM_MEMORY_ATTRIB_READ, 1);
+    vertices = gpu_alloc(SCE_KERNEL_MEMBLOCK_TYPE_USER_RW_UNCACHE, 8 * sizeof(vertex), 4096, SCE_GXM_MEMORY_ATTRIB_READ, 1);
+    overlay_tex = gpu_alloc(SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW, OVERLAY_MAX_W * OVERLAY_MAX_H * 4, 256 * 1024,
+                            SCE_GXM_MEMORY_ATTRIB_READ, 1);
     indices = gpu_alloc(SCE_KERNEL_MEMBLOCK_TYPE_USER_RW_UNCACHE, 4 * sizeof(uint16_t), 4096, SCE_GXM_MEMORY_ATTRIB_READ, 1);
-    if (!vertices || !indices)
+    if (!vertices || !indices || !overlay_tex)
         return -1;
     for (int i = 0; i < 4; i++)
         indices[i] = (uint16_t)i;
@@ -181,8 +204,26 @@ int vita_gfx_init(void)
     return 0;
 }
 
+/* Copies the overlay into GPU memory with rows 8-pixel aligned, as linear textures need. */
+static int upload_overlay(const vita_overlay *ov)
+{
+    int stride;
+
+    if (ov->id == overlay_id)
+        return 0;
+    if (ov->w > OVERLAY_MAX_W || ov->h > OVERLAY_MAX_H)
+        return -1;
+    stride = ALIGN(ov->w, 8) * 4;
+    for (int y = 0; y < ov->h; y++)
+        memcpy(overlay_tex + (size_t)y * stride, ov->rgba + (size_t)y * ov->stride, (size_t)ov->w * 4);
+    overlay_id = ov->id;
+    overlay_w = ov->w;
+    overlay_h = ov->h;
+    return 0;
+}
+
 int vita_gfx_present(const uint8_t *image, int image_w, int image_h, int src_x, int src_y, int src_w, int src_h,
-                     float display_aspect)
+                     float display_aspect, const vita_overlay *overlay)
 {
     static const float identity[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
     SceGxmTexture tex;
@@ -229,6 +270,29 @@ int vita_gfx_present(const uint8_t *image, int image_w, int image_h, int src_x, 
     sceGxmSetFragmentTexture(context, 0, &tex);
     sceGxmSetVertexStream(context, 0, vertices);
     sceGxmDraw(context, SCE_GXM_PRIMITIVE_TRIANGLE_STRIP, SCE_GXM_INDEX_FORMAT_U16, indices, 4);
+
+    if (overlay && overlay->rgba && upload_overlay(overlay) == 0) {
+        SceGxmTexture otex;
+        /* Map the overlay's place in source pixels onto the video rectangle. */
+        float sx = (x1 - x0) / src_w, sy = (y1 - y0) / src_h;
+        float ox0 = x0 + overlay->x * sx, ox1 = x0 + (overlay->x + overlay_w) * sx;
+        float oy1 = y1 - overlay->y * sy, oy0 = y1 - (overlay->y + overlay_h) * sy;
+        vertices[4] = (vertex){ox0, oy1, 0.5f, 0.0f, 0.0f};
+        vertices[5] = (vertex){ox1, oy1, 0.5f, 1.0f, 0.0f};
+        vertices[6] = (vertex){ox0, oy0, 0.5f, 0.0f, 1.0f};
+        vertices[7] = (vertex){ox1, oy0, 0.5f, 1.0f, 1.0f};
+        if (sceGxmTextureInitLinear(&otex, overlay_tex, SCE_GXM_TEXTURE_FORMAT_A8B8G8R8, (unsigned)overlay_w,
+                                    (unsigned)overlay_h, 0) == 0) {
+            sceGxmTextureSetMinFilter(&otex, SCE_GXM_TEXTURE_FILTER_LINEAR);
+            sceGxmTextureSetMagFilter(&otex, SCE_GXM_TEXTURE_FILTER_LINEAR);
+            sceGxmSetFragmentProgram(context, fprog_blend);
+            sceGxmReserveVertexDefaultUniformBuffer(context, &uniforms);
+            sceGxmSetUniformDataF(uniforms, wvp_param, 0, 16, identity);
+            sceGxmSetFragmentTexture(context, 0, &otex);
+            sceGxmSetVertexStream(context, 0, &vertices[4]);
+            sceGxmDraw(context, SCE_GXM_PRIMITIVE_TRIANGLE_STRIP, SCE_GXM_INDEX_FORMAT_U16, indices, 4);
+        }
+    }
     sceGxmEndScene(context, NULL, NULL);
     sceGxmFinish(context);
 

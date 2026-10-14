@@ -35,6 +35,7 @@ add_executable(umdplayer
   src/core/h264.c
   src/core/vtiming.c
   src/core/deint.c
+  src/core/png.c
   ${AT3P_SOURCES}
   src/platform/vita/vita_main.c
   src/platform/vita/vita_sys.c

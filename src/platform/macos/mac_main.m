@@ -10,7 +10,8 @@
 #define WINDOW_H 544
 
 static uint32_t held_buttons;
-static CALayer *video_layer;
+static CALayer *video_layer, *overlay_layer;
+static uint32_t overlay_id;
 static NSView *content_view;
 
 static uint32_t button_for_key(unsigned short code)
@@ -71,6 +72,9 @@ static uint32_t button_for_key(unsigned short code)
     video_layer.contentsGravity = kCAGravityResize;
     video_layer.magnificationFilter = kCAFilterLinear;
     [content_view.layer addSublayer:video_layer];
+    overlay_layer = [CALayer layer];
+    overlay_layer.contentsGravity = kCAGravityResize;
+    [content_view.layer addSublayer:overlay_layer];
     self.window.contentView = content_view;
     [self.window center];
     [self.window makeKeyAndOrderFront:nil];
@@ -127,6 +131,32 @@ void plat_present(plat_frame *frame, const plat_present_info *info)
             w = h * aspect;
         }
         video_layer.frame = CGRectMake((bounds.size.width - w) / 2, (bounds.size.height - h) / 2, w, h);
+    }
+    if (!frame || !info->overlay_rgba) {
+        overlay_layer.contents = nil;
+        overlay_id = 0;
+    } else {
+        CGRect v = video_layer.frame;
+        double sx = v.size.width / info->width, sy = v.size.height / info->height;
+        if (info->overlay_id != overlay_id) {
+            /* Copy the pixels: the app reuses its buffer for the next subtitle. */
+            CFDataRef data = CFDataCreate(NULL, info->overlay_rgba, (CFIndex)info->overlay_stride * info->overlay_h);
+            CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
+            CGDataProviderRef dp = CGDataProviderCreateWithCFData(data);
+            CGImageRef img = CGImageCreate((size_t)info->overlay_w, (size_t)info->overlay_h, 8, 32,
+                                           (size_t)info->overlay_stride, cs, kCGImageAlphaLast | kCGBitmapByteOrderDefault,
+                                           dp, NULL, false, kCGRenderingIntentDefault);
+            overlay_layer.contents = (__bridge id)img;
+            CGImageRelease(img);
+            CFRelease(data);
+            CGDataProviderRelease(dp);
+            CGColorSpaceRelease(cs);
+            overlay_id = info->overlay_id;
+        }
+        /* Layer coordinates start at the bottom left; overlay positions at the top left. */
+        overlay_layer.frame = CGRectMake(v.origin.x + info->overlay_x * sx,
+                                         v.origin.y + v.size.height - (info->overlay_y + info->overlay_h) * sy,
+                                         info->overlay_w * sx, info->overlay_h * sy);
     }
     [CATransaction commit];
 }

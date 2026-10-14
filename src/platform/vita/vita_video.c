@@ -358,14 +358,17 @@ void plat_present(plat_frame *frame, const plat_present_info *info)
 {
     SceDisplayFrameBuf fb;
 
-    if (!frame || frame == displayed)
+    if (!frame || (frame == displayed && !gfx_ready))
         return;
     if (gfx_ready) {
         float aspect = (float)info->width / (float)info->height;
         if (info->sar_w > 0 && info->sar_h > 0)
             aspect *= (float)info->sar_w / (float)info->sar_h;
         /* The GPU has finished reading the frame when this returns, so no display reference. */
-        if (vita_gfx_present(frame->pixels, SCREEN_W, SCREEN_H, PIC_X, PIC_Y, info->width, info->height, aspect) == 0) {
+        vita_overlay ov = {info->overlay_rgba, info->overlay_w, info->overlay_h, info->overlay_x, info->overlay_y,
+                           info->overlay_stride, info->overlay_id};
+        if (vita_gfx_present(frame->pixels, SCREEN_W, SCREEN_H, PIC_X, PIC_Y, info->width, info->height, aspect,
+                             info->overlay_rgba ? &ov : NULL) == 0) {
             if (displayed)
                 displayed->display_ref = 0;
             displayed = NULL;

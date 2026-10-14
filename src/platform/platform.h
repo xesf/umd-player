@@ -77,12 +77,18 @@ void plat_audio_close(void);
 
 /* ---- Screen ----
    Draws the frame scaled to the window at the display aspect ratio (sar_w:sar_h is the
-   sample aspect ratio from the SPS), or black when frame is NULL. deinterlace blends the
-   two fields of a frame. */
+   sample aspect ratio from the SPS), with the subtitle overlay on top, or black when frame
+   is NULL. deinterlace blends the two fields of a frame. The app calls it again with the
+   same frame when only the overlay changed. */
 typedef struct plat_present_info {
     int width, height;
     int sar_w, sar_h;
     int deinterlace;
+    /* Subtitle overlay: RGBA with straight alpha, placed in video pixels (0..width, 0..height).
+       overlay_rgba is NULL when there is none; overlay_id changes whenever the image changes. */
+    const uint8_t *overlay_rgba;
+    int overlay_w, overlay_h, overlay_x, overlay_y, overlay_stride;
+    uint32_t overlay_id;
 } plat_present_info;
 
 void plat_present(plat_frame *frame, const plat_present_info *info);

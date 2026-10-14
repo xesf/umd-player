@@ -8,6 +8,7 @@
 #include "../core/demux.h"
 #include "../core/h264.h"
 #include "../core/iso9660.h"
+#include "../core/png.h"
 #include "../core/umdv.h"
 #include "../core/vtiming.h"
 #include "../platform/platform.h"
@@ -25,7 +26,21 @@
 #define CHAPTER_BACK  (3 * 90000)        /* "previous chapter" within this of a chapter start restarts it */
 #define CLOCK_LEAD    (2 * 1024 * 90000 / AUDIO_RATE)  /* two audio buffers, in 90 kHz */
 
+#define SUBQ          8                  /* queued subtitle units */
+#define SUB_PNG_MAX   (128 * 1024)
+#define SUB_HEADER    18                 /* size, "0088", duration, ?, x, y, 0; then the PNG */
+#define VIDEO_W       720
+#define VIDEO_H       480
+
 enum { AU_PENDING, AU_READY, AU_DROP };
+
+typedef struct sub_unit {
+    uint64_t pts;
+    uint32_t duration;               /* 90 kHz */
+    int x, y;
+    uint32_t size, seq;
+    uint8_t *png;
+} sub_unit;
 
 typedef struct vq_entry {
     uint32_t off, size, id;
@@ -65,6 +80,8 @@ struct player {
     uint32_t sps_size, pps_size;
     int16_t *pcm;
     uint32_t pcm_read, pcm_count;    /* in sample frames */
+    sub_unit subs[SUBQ];
+    uint32_t sub_first, sub_count, sub_seq;
     uint64_t pcm_first_pts;
     int have_audio_pts, audio_started;
     uint64_t silence_frames;         /* frames of silence the callback produced: not on the clock */
@@ -77,6 +94,7 @@ struct player {
     at3p_decoder *at3p;
     int at3p_channels;
     int audio_sub;
+    int sub_sub;                     /* subtitle substream or DEMUX_NONE */
 
     /* Main thread only. */
     plat_video *video;
@@ -86,6 +104,8 @@ struct player {
     plat_frame *shown;
     uint64_t shown_pts;
     plat_present_info present;
+    uint8_t *sub_rgba, *sub_work;    /* decoded subtitle image and PNG scratch */
+    uint32_t sub_shown_seq;          /* seq of the unit in sub_rgba, 0 for none */
     int paused, audio_open;
     uint64_t audio_base_played;      /* plat_audio_played() when playback started */
     uint64_t clk_raw, clk_us, clk_last;  /* last audio clock reading, when it changed, last value given */
@@ -263,6 +283,34 @@ static void push_audio(player *p, const demux_unit *u)
     plat_mutex_unlock(p->lock);
 }
 
+static uint32_t be32(const uint8_t *p) { return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3]; }
+
+static void push_sub(player *p, const demux_unit *u)
+{
+    sub_unit *s;
+    uint32_t size;
+
+    if (u->size <= SUB_HEADER || u->pts == PS_NO_TS)
+        return;
+    size = u->size - SUB_HEADER;
+    if (size > SUB_PNG_MAX)
+        return;
+    plat_mutex_lock(p->lock);
+    if (p->sub_count == SUBQ) {      /* subtitles are sparse; drop the oldest rather than wait */
+        p->sub_first = (p->sub_first + 1) % SUBQ;
+        p->sub_count--;
+    }
+    s = &p->subs[(p->sub_first + p->sub_count++) % SUBQ];
+    s->pts = u->pts;
+    s->duration = be32(u->data + 6);
+    s->x = u->data[12] << 8 | u->data[13];
+    s->y = u->data[14] << 8 | u->data[15];
+    s->size = size;
+    s->seq = ++p->sub_seq;
+    memcpy(s->png, u->data + SUB_HEADER, size);
+    plat_mutex_unlock(p->lock);
+}
+
 static void reader_main(void *user)
 {
     player *p = (player *)user;
@@ -273,6 +321,8 @@ static void reader_main(void *user)
             push_video(p, &u);
         else if (u.type == DEMUX_AUDIO)
             push_audio(p, &u);
+        else if (u.type == DEMUX_SUBTITLE)
+            push_sub(p, &u);
     }
     plat_mutex_lock(p->lock);
     vq_resolve(p, 1);
@@ -469,7 +519,7 @@ static void maybe_start(player *p)
 
 /* Stops the reader, drops everything queued, and restarts reading at the seek point at or
    before target (90 kHz) with the given audio track. */
-static void restart_reader(player *p, uint64_t target, int audio)
+static void restart_reader(player *p, uint64_t target, int audio, int sub)
 {
     umdv_ep ep;
     uint32_t index;
@@ -498,7 +548,9 @@ static void restart_reader(player *p, uint64_t target, int audio)
     p->audio_started = 0;
     p->silence_frames = 0;
     p->min_pts = target;
+    p->sub_first = p->sub_count = 0;
     plat_mutex_unlock(p->lock);
+    p->sub_sub = sub;
 
     p->audio_open = 0;               /* re-measure the audio clock base at the next start */
     p->clk_raw = p->clk_last = 0;
@@ -514,7 +566,7 @@ static void restart_reader(player *p, uint64_t target, int audio)
     if (p->clip.ep_count)
         umdv_clip_ep(&p->clip, index, &ep);
     demux_init(p->dmx, read_mps, p);
-    demux_select(p->dmx, p->has_audio ? audio : DEMUX_NONE, DEMUX_NONE);
+    demux_select(p->dmx, p->has_audio ? audio : DEMUX_NONE, sub);
     demux_seek(p->dmx, ep.sector);
     p->reader = plat_thread_start(reader_main, p, "reader");
 }
@@ -533,7 +585,7 @@ static void seek_to(player *p, int64_t target, const char *why)
     if (target > last)
         target = last;
     plat_log("%s: seek to %.1f s\n", why, (double)(target - first) / 90000.0);
-    restart_reader(p, (uint64_t)target, p->audio_sub);
+    restart_reader(p, (uint64_t)target, p->audio_sub, p->sub_sub);
 }
 
 static void seek_chapter(player *p, int step)
@@ -580,7 +632,79 @@ static void next_audio_track(player *p)
     if (found < 0 || p->clip.streams[found].sub_id == p->audio_sub)
         return;
     plat_log("audio track 0x%02x (%.2s)\n", p->clip.streams[found].sub_id, p->clip.streams[found].lang);
-    restart_reader(p, now_or_shown(p), p->clip.streams[found].sub_id);
+    restart_reader(p, now_or_shown(p), p->clip.streams[found].sub_id, p->sub_sub);
+}
+
+/* Cycles subtitles: off, then each subtitle track of the clip, then off again. */
+static void next_subtitle_track(player *p)
+{
+    int next = DEMUX_NONE, take = p->sub_sub == DEMUX_NONE;
+
+    for (int i = 0; i < p->clip.stream_count; i++) {
+        const umdv_stream *st = &p->clip.streams[i];
+        if (st->kind != UMDV_STREAM_SUBTITLE)
+            continue;
+        if (take) {
+            next = st->sub_id;
+            break;
+        }
+        if (st->sub_id == p->sub_sub)
+            take = 1;
+    }
+    if (next == DEMUX_NONE) {
+        plat_log("subtitles off\n");
+    } else {
+        for (int i = 0; i < p->clip.stream_count; i++)
+            if (p->clip.streams[i].kind == UMDV_STREAM_SUBTITLE && p->clip.streams[i].sub_id == next)
+                plat_log("subtitles 0x%02x (%.2s)\n", next, p->clip.streams[i].lang);
+    }
+    restart_reader(p, now_or_shown(p), p->audio_sub, next);
+}
+
+/* Picks the subtitle unit active at now and decodes it if it changed. Returns 1 if the overlay
+   changed, so the frame has to be presented again. */
+static int update_subtitle(player *p, uint64_t now)
+{
+    const sub_unit *active = NULL;
+    uint32_t seq = 0;
+    int changed;
+
+    plat_mutex_lock(p->lock);
+    /* Expired units go, except the newest, which may still be on screen. */
+    while (p->sub_count > 1 && p->subs[p->sub_first].pts + p->subs[p->sub_first].duration < now) {
+        p->sub_first = (p->sub_first + 1) % SUBQ;
+        p->sub_count--;
+    }
+    for (uint32_t k = 0; k < p->sub_count; k++) {
+        const sub_unit *s = &p->subs[(p->sub_first + k) % SUBQ];
+        if (s->pts <= now && now < s->pts + s->duration)
+            active = s;
+    }
+    if (p->sub_sub != DEMUX_NONE && active)
+        seq = active->seq;
+    changed = seq != p->sub_shown_seq;
+    if (changed && seq) {
+        int w, h;
+        if (png_info(active->png, active->size, &w, &h) == 0 && w <= VIDEO_W && h <= VIDEO_H &&
+            png_decode(active->png, active->size, p->sub_rgba, w * 4, p->sub_work, (uint32_t)(VIDEO_W * 8 + 1) * VIDEO_H) == 0) {
+            p->present.overlay_rgba = p->sub_rgba;
+            p->present.overlay_w = w;
+            p->present.overlay_h = h;
+            p->present.overlay_x = active->x;
+            p->present.overlay_y = active->y;
+            p->present.overlay_stride = w * 4;
+            p->present.overlay_id = seq;
+        } else {
+            seq = 0;
+        }
+    }
+    plat_mutex_unlock(p->lock);
+    if (changed && !seq) {
+        p->present.overlay_rgba = NULL;
+        p->present.overlay_id = 0;
+    }
+    p->sub_shown_seq = seq;
+    return changed;
 }
 
 player *player_open(const player_options *opt)
@@ -638,14 +762,19 @@ player *player_open(const player_options *opt)
     p->pcm = malloc(PCM_FRAMES * 4);
     p->dmx = malloc(sizeof(demux));
     p->at3p = malloc(at3p_decoder_size());
-    if (!p->lock || !p->cond || !p->vq_data || !p->pcm || !p->dmx || !p->at3p)
+    p->sub_rgba = malloc(VIDEO_W * VIDEO_H * 4);
+    p->sub_work = malloc((VIDEO_W * 8 + 1) * VIDEO_H);
+    for (i = 0; i < SUBQ; i++)
+        if (!(p->subs[i].png = malloc(SUB_PNG_MAX)))
+            goto fail;
+    if (!p->lock || !p->cond || !p->vq_data || !p->pcm || !p->dmx || !p->at3p || !p->sub_rgba || !p->sub_work)
         goto fail;
     at3p_init_tables();
     if (p->has_audio && plat_audio_open(AUDIO_RATE, audio_fill, p) < 0) {
         plat_log("cannot open audio output\n");
         p->has_audio = 0;
     }
-    restart_reader(p, p->title->start_pts, p->audio_sub);
+    restart_reader(p, p->title->start_pts, p->audio_sub, DEMUX_NONE);
     if (!p->reader)
         goto fail;
     return p;
@@ -680,6 +809,8 @@ int player_update(player *p, uint32_t pressed)
         seek_chapter(p, -1);
     if (pressed & PLAT_BTN_TRIANGLE)
         next_audio_track(p);
+    if (pressed & PLAT_BTN_SQUARE)
+        next_subtitle_track(p);
     if (pressed & PLAT_BTN_CROSS) {
         p->paused = !p->paused;
         p->clk_raw = 0;   /* restart the extrapolation after a pause */
@@ -709,6 +840,9 @@ int player_update(player *p, uint32_t pressed)
             p->frames_shown++;
             memmove(&p->frames[0], &p->frames[best + 1], (size_t)(p->frame_count - best - 1) * sizeof(p->frames[0]));
             p->frame_count -= best + 1;
+            update_subtitle(p, now);
+            plat_present(p->shown, &p->present);
+        } else if (p->shown && update_subtitle(p, now)) {
             plat_present(p->shown, &p->present);
         }
         if (p->frames_shown > 0 && plat_time_us() - p->last_report_us > 2000000) {
@@ -759,6 +893,10 @@ void player_close(player *p)
     free(p->pcm);
     free(p->dmx);
     free(p->at3p);
+    free(p->sub_rgba);
+    free(p->sub_work);
+    for (int i = 0; i < SUBQ; i++)
+        free(p->subs[i].png);
     free(p->clp_buf);
     plat_iso_close(&p->src);
     free(p);
