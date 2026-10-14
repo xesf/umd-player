@@ -17,7 +17,8 @@ typedef struct player player;
 typedef struct player_options {
     const char *iso_path;
     int title;          /* -1: the longest title */
-    int audio;          /* audio substream 0x00-0x0F */
+    int audio;          /* audio substream 0x00-0x0F, or -1 for the first */
+    const char *resume_key;   /* remember position and settings under this name, or NULL */
 } player_options;
 
 player *player_open(const player_options *opt);

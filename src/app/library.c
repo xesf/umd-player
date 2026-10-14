@@ -522,8 +522,10 @@ static int advance_icon(library *l)
     uint64_t t = icon_time(l);
     int best = -1, changed = 0;
 
-    if (t < l->last_t)
-        restart_icon(l);                     /* the sound looped */
+    if (t + l->loop_len / 2 < l->last_t || (l->audio_open && t + 45000 < l->last_t))
+        restart_icon(l);                     /* the sound looped (small backward steps are jitter) */
+    else if (t < l->last_t)
+        t = l->last_t;
     else if (!l->audio_open && l->au_next == l->au_count && l->frame_count == 0 && t >= l->loop_len) {
         restart_icon(l);                     /* no sound: loop on the icon's own length */
         t = 0;

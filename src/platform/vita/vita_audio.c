@@ -40,17 +40,25 @@ int plat_audio_open(int rate, plat_audio_fill fill, void *user)
     fill_fn = fill;
     fill_user = user;
     submitted = 0;
+    plat_audio_played();   /* resets the monotonic guard: submitted is 0 now */
     paused = 0;
     running = 1;
     thread = plat_thread_start(audio_main, NULL, "audio");
     return thread ? 0 : -1;
 }
 
+/* Submitted minus what the port still holds. The port's count can rise just before submitted
+   does (a new buffer is accepted), so never report less than before. */
 uint64_t plat_audio_played(void)
 {
+    static uint64_t last;
     int rest = port >= 0 ? sceAudioOutGetRestSample(port) : 0;
-    uint64_t s = submitted;
-    return rest > 0 && (uint64_t)rest < s ? s - (uint64_t)rest : s;
+    uint64_t s = submitted, played = rest > 0 && (uint64_t)rest < s ? s - (uint64_t)rest : s;
+
+    if (played < last && last - played < 4 * GRAIN)
+        played = last;
+    last = played;
+    return played;
 }
 
 void plat_audio_pause(int p)

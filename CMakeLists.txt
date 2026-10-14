@@ -31,6 +31,7 @@ add_executable(umdplayer
   src/app/screen.c
   src/app/osd.c
   src/app/library.c
+  src/app/resume.c
   src/core/iso9660.c
   src/core/umdv.c
   src/core/mpeg_ps.c

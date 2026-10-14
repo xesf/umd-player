@@ -1,0 +1,21 @@
+#ifndef RESUME_H
+#define RESUME_H
+
+#include <stdint.h>
+
+/* Where each disc was left and how it was set up, kept in the app data file resume.txt,
+   one line per disc, keyed by the ISO file name. */
+typedef struct resume_entry {
+    char key[128];
+    int title;            /* playlist title index */
+    uint64_t pos;         /* 90 kHz, in the clip's time */
+    int audio, sub;       /* substreams; sub is -1 for off */
+    int screen;           /* screen_mode */
+} resume_entry;
+
+/* Returns 0 and the entry for key, or -1 when the disc has none. */
+int resume_load(const char *key, resume_entry *out);
+/* Adds or replaces the entry for e->key. */
+void resume_save(const resume_entry *e);
+
+#endif

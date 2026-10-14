@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <time.h>
 
 static int read_sectors(void *user, uint32_t lba, uint32_t count, void *dst)
@@ -158,4 +159,55 @@ int plat_list_dir(const char *dir, plat_dir_fn fn, void *user)
             fn(user, e->d_name);
     closedir(d);
     return 0;
+}
+
+#define DATA_DIR_ENV NULL
+#define DATA_IN_HOME 1
+
+static int data_path(char *path, size_t size, const char *name)
+{
+    const char *dir = DATA_DIR_ENV ? getenv(DATA_DIR_ENV) : NULL;
+    const char *home = getenv("HOME");
+
+    if (dir) {
+        snprintf(path, size, "%s/%s", dir, name);
+        return 0;
+    }
+    if (!DATA_IN_HOME || !home)
+        return -1;
+    snprintf(path, size, "%s/.umdplayer", home);
+    mkdir(path, 0755);
+    snprintf(path, size, "%s/.umdplayer/%s", home, name);
+    return 0;
+}
+
+int plat_data_load(const char *name, char *buf, int max)
+{
+    char path[1024];
+    FILE *f;
+    int n;
+
+    if (data_path(path, sizeof(path), name) < 0 || !(f = fopen(path, "rb")))
+        return -1;
+    n = (int)fread(buf, 1, (size_t)max, f);
+    fclose(f);
+    return n;
+}
+
+int plat_data_save(const char *name, const char *buf, int size)
+{
+    char path[1024], tmp[1100];
+    FILE *f;
+
+    if (data_path(path, sizeof(path), name) < 0)
+        return -1;
+    snprintf(tmp, sizeof(tmp), "%s.new", path);
+    if (!(f = fopen(tmp, "wb")))
+        return -1;
+    if (fwrite(buf, 1, (size_t)size, f) != (size_t)size) {
+        fclose(f);
+        return -1;
+    }
+    fclose(f);
+    return rename(tmp, path);
 }

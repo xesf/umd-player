@@ -24,6 +24,11 @@ void plat_log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 typedef void (*plat_dir_fn)(void *user, const char *name);
 int plat_list_dir(const char *dir, plat_dir_fn fn, void *user);
 
+/* Small files of app data (settings, resume points), stored under a platform folder:
+   ux0:data/umdplayer on the Vita, ~/.umdplayer on macOS. Load returns the bytes read or -1. */
+int plat_data_load(const char *name, char *buf, int max);
+int plat_data_save(const char *name, const char *buf, int size);
+
 /* ---- Threads and time ---- */
 typedef struct plat_thread plat_thread;
 typedef struct plat_mutex plat_mutex;

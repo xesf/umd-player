@@ -11,7 +11,13 @@
 
 static library *lib;
 static player *current;
-static player_options direct = {NULL, -1, 0};
+static player_options direct = {NULL, -1, -1, NULL};
+
+static const char *base_name(const char *path)
+{
+    const char *slash = strrchr(path, '/');
+    return slash ? slash + 1 : path;
+}
 static uint32_t prev_buttons;
 
 static int is_iso(const char *path)
@@ -38,6 +44,7 @@ int app_init(int argc, char **argv)
     }
     if (is_iso(path)) {
         direct.iso_path = path;
+        direct.resume_key = base_name(path);
         current = player_open(&direct);
         return current ? 0 : 1;
     }
@@ -62,7 +69,7 @@ int app_frame(void)
     if (pick == -2)
         return 0;
     if (pick >= 0) {
-        player_options opt = {library_path(lib, pick), -1, 0};
+        player_options opt = {library_path(lib, pick), -1, -1, base_name(library_path(lib, pick))};
         library_suspend(lib);
         current = player_open(&opt);
         if (!current)

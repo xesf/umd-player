@@ -28,9 +28,9 @@ $(BIN)/pngdec: pngdec.c $(CORE)/png.c | $(BIN)
 
 PLAYER_CORE = $(CORE)/iso9660.c $(CORE)/umdv.c $(CORE)/mpeg_ps.c $(CORE)/demux.c $(CORE)/h264.c $(CORE)/vtiming.c \
               $(CORE)/png.c $(CORE)/canvas.c $(CORE)/font8x8.c $(CORE)/cropdetect.c $(CORE)/sfo.c $(CORE)/icons.c
-$(BIN)/playtest: playtest.c ../src/app/main.c ../src/app/library.c ../src/app/player.c ../src/app/screen.c ../src/app/osd.c ../src/platform/null/null_platform.c \
+$(BIN)/playtest: playtest.c ../src/app/main.c ../src/app/library.c ../src/app/player.c ../src/app/screen.c ../src/app/osd.c ../src/app/resume.c ../src/platform/null/null_platform.c \
                  $(PLAYER_CORE) $(AT3P) $(wildcard ../src/app/*.h ../src/core/*.h) | $(BIN)
-	$(CC) $(CFLAGS) $(AT3P_CFLAGS) -o $@ playtest.c ../src/app/main.c ../src/app/library.c ../src/app/player.c ../src/app/screen.c ../src/app/osd.c \
+	$(CC) $(CFLAGS) $(AT3P_CFLAGS) -o $@ playtest.c ../src/app/main.c ../src/app/library.c ../src/app/player.c ../src/app/screen.c ../src/app/osd.c ../src/app/resume.c \
 	    ../src/platform/null/null_platform.c $(PLAYER_CORE) $(AT3P) -lm -lpthread
 
 $(BIN):

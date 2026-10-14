@@ -14,6 +14,7 @@
 #include "../core/vtiming.h"
 #include "../platform/platform.h"
 #include "osd.h"
+#include "resume.h"
 #include "screen.h"
 
 #define VQ_BYTES      (4 * 1024 * 1024)  /* queued video access units */
@@ -42,6 +43,8 @@
 #define TOAST_US      2500000
 #define DETECT_US     500000             /* border detection interval */
 #define MENU_ROWS     4
+#define SAVE_US       10000000           /* save the resume point every 10 s while playing */
+#define RESUME_TAIL   (30 * 90000)       /* within 30 s of the end, start over next time */
 enum { ROW_AUDIO, ROW_SUBTITLES, ROW_SCREEN, ROW_CHAPTER };
 
 enum { AU_PENDING, AU_READY, AU_DROP };
@@ -158,6 +161,9 @@ struct player {
     uint64_t toast_until;
     int paused, audio_open;
     int leave;                       /* circle or start: back to the library */
+    char resume_key[128];            /* empty: do not remember */
+    uint64_t last_save_us;
+    int ended;
     uint64_t audio_base_played;      /* plat_audio_played() when playback started */
     uint64_t clk_raw, clk_us, clk_last;  /* last audio clock reading, when it changed, last value given */
     uint64_t wall_base_us, wall_base_pts;
@@ -1249,9 +1255,9 @@ static void play_input(player *p, uint32_t pressed)
         seek_to(p, (int64_t)now_or_shown(p) - SEEK_STEP, "back");
         toast(p, ICON_BACK, "-10 s");
     }
-    if (pressed & PLAT_BTN_UP)
+    if (pressed & (PLAT_BTN_UP | PLAT_BTN_R))
         seek_chapter(p, 1);
-    if (pressed & PLAT_BTN_DOWN)
+    if (pressed & (PLAT_BTN_DOWN | PLAT_BTN_L))
         seek_chapter(p, -1);
     if (pressed & PLAT_BTN_SQUARE)
         cycle_screen(p, 1);
@@ -1263,13 +1269,40 @@ static void play_input(player *p, uint32_t pressed)
         p->leave = 1;
 }
 
+static void save_resume(player *p)
+{
+    resume_entry e;
+
+    if (!p->resume_key[0] || !p->title)
+        return;
+    memset(&e, 0, sizeof(e));
+    snprintf(e.key, sizeof(e.key), "%s", p->resume_key);
+    e.title = (int)(p->title - p->playlist.titles);
+    e.pos = p->ended ? p->title->start_pts : now_or_shown(p);
+    e.audio = p->want_audio;
+    e.sub = p->sub_sub;
+    e.screen = (int)p->mode;
+    resume_save(&e);
+    p->last_save_us = plat_time_us();
+}
+
+static int has_stream(const player *p, int kind, int sub_id)
+{
+    for (int i = 0; i < p->clip.stream_count; i++)
+        if (p->clip.streams[i].kind == kind && p->clip.streams[i].sub_id == sub_id)
+            return 1;
+    return 0;
+}
+
 player *player_open(const player_options *opt)
 {
     player *p = calloc(1, sizeof(*p));
     char path[64];
     uint8_t *buf;
     uint32_t size, best = 0;
-    int i;
+    int i, have_resume = 0, sub = DEMUX_NONE, audio;
+    resume_entry resume;
+    uint64_t start;
 
     if (!p)
         return NULL;
@@ -1283,7 +1316,13 @@ player *player_open(const player_options *opt)
         goto fail;
     }
     free(buf);
+    if (opt->resume_key) {
+        snprintf(p->resume_key, sizeof(p->resume_key), "%s", opt->resume_key);
+        have_resume = resume_load(opt->resume_key, &resume) == 0;
+    }
     i = opt->title;
+    if (i < 0 && have_resume && resume.title >= 0 && resume.title < p->playlist.title_count)
+        i = resume.title;
     if (i < 0)
         for (int t = 0; t < p->playlist.title_count; t++)
             if (p->playlist.titles[t].end_pts - p->playlist.titles[t].start_pts > best) {
@@ -1305,11 +1344,18 @@ player *player_open(const player_options *opt)
         plat_log("cannot find %s\n", path);
         goto fail;
     }
-    p->audio_sub = opt->audio;
-    for (i = 0; i < p->clip.stream_count; i++)
-        if (p->clip.streams[i].kind == UMDV_STREAM_AUDIO && p->clip.streams[i].sub_id == opt->audio)
-            p->has_audio = 1;
-    plat_log("title \"%s\" (clip %s), audio track 0x%02x%s\n", p->title->name, p->title->clip, opt->audio,
+    /* Audio: the asked-for track, else the remembered one, else the first. */
+    audio = opt->audio;
+    if (audio < 0 && have_resume && has_stream(p, UMDV_STREAM_AUDIO, resume.audio))
+        audio = resume.audio;
+    for (i = 0; audio < 0 && i < p->clip.stream_count; i++)
+        if (p->clip.streams[i].kind == UMDV_STREAM_AUDIO)
+            audio = p->clip.streams[i].sub_id;
+    p->audio_sub = audio < 0 ? 0 : audio;
+    p->has_audio = has_stream(p, UMDV_STREAM_AUDIO, p->audio_sub);
+    if (have_resume && resume.sub >= 0 && has_stream(p, UMDV_STREAM_SUBTITLE, resume.sub))
+        sub = resume.sub;
+    plat_log("title \"%s\" (clip %s), audio track 0x%02x%s\n", p->title->name, p->title->clip, p->audio_sub,
            p->has_audio ? "" : " not found: playing without audio");
 
     p->lock = plat_mutex_create();
@@ -1326,6 +1372,8 @@ player *player_open(const player_options *opt)
     p->ui.stride = UI_W * 4;
     p->ui.rgba = malloc(UI_W * UI_H * 4);
     p->mode = SCREEN_ZOOM;
+    if (have_resume && resume.screen >= 0 && resume.screen < SCREEN_MODES)
+        p->mode = (screen_mode)resume.screen;
     for (i = 0; i < p->clip.stream_count; i++) {
         const umdv_stream *st = &p->clip.streams[i];
         if (st->kind == UMDV_STREAM_AUDIO && st->sub_id < DEMUX_AUDIO_TRACKS && !p->aq[st->sub_id].frames &&
@@ -1339,9 +1387,19 @@ player *player_open(const player_options *opt)
         plat_log("cannot open audio output\n");
         p->has_audio = 0;
     }
-    restart_reader(p, p->title->start_pts, p->audio_sub, DEMUX_NONE);
+    start = p->title->start_pts;
+    if (have_resume && resume.title == (int)(p->title - p->playlist.titles) && resume.pos > start &&
+        resume.pos + RESUME_TAIL < p->title->end_pts)
+        start = resume.pos;
+    restart_reader(p, start, p->audio_sub, sub);
     if (!p->reader)
         goto fail;
+    if (start != p->title->start_pts) {
+        char t[24];
+        format_time(t, sizeof(t), start - p->title->start_pts);
+        toast(p, ICON_PLAY, "Resume from %s", t);
+    }
+    p->last_save_us = plat_time_us();
     return p;
 
 fail:
@@ -1425,8 +1483,12 @@ int player_update(player *p, uint32_t pressed)
     plat_mutex_unlock(p->lock);
     if (done && p->frame_count == 0) {
         plat_log("end of title\n");
+        p->ended = 1;
+        save_resume(p);
         return 0;
     }
+    if (!p->paused && !p->seeking && p->shown && plat_time_us() - p->last_save_us > SAVE_US)
+        save_resume(p);
     return 1;
 }
 
@@ -1434,6 +1496,8 @@ void player_close(player *p)
 {
     if (!p)
         return;
+    if (p->reader && p->shown && !p->ended)
+        save_resume(p);
     if (p->lock) {
         plat_mutex_lock(p->lock);
         p->quit = 1;

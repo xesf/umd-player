@@ -9,6 +9,7 @@
 #include <string.h>
 #include <psp2/io/dirent.h>
 #include <psp2/io/fcntl.h>
+#include <psp2/io/stat.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
 #include <psp2/power.h>
@@ -179,4 +180,37 @@ int plat_list_dir(const char *dir, plat_dir_fn fn, void *user)
             fn(user, ent.d_name);
     sceIoDclose(d);
     return 0;
+}
+
+int plat_data_load(const char *name, char *buf, int max)
+{
+    char path[256];
+    SceUID fd;
+    int n;
+
+    snprintf(path, sizeof(path), "ux0:data/umdplayer/%s", name);
+    if ((fd = sceIoOpen(path, SCE_O_RDONLY, 0)) < 0)
+        return -1;
+    n = sceIoRead(fd, buf, (SceSize)max);
+    sceIoClose(fd);
+    return n;
+}
+
+int plat_data_save(const char *name, const char *buf, int size)
+{
+    char path[256], tmp[260];
+    SceUID fd;
+    int n;
+
+    sceIoMkdir("ux0:data/umdplayer", 0777);
+    snprintf(path, sizeof(path), "ux0:data/umdplayer/%s", name);
+    snprintf(tmp, sizeof(tmp), "%s.new", path);
+    if ((fd = sceIoOpen(tmp, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666)) < 0)
+        return -1;
+    n = sceIoWrite(fd, buf, (SceSize)size);
+    sceIoClose(fd);
+    if (n != size)
+        return -1;
+    sceIoRemove(path);   /* write a new file, then swap, so a crash never leaves half a file */
+    return sceIoRename(tmp, path) < 0 ? -1 : 0;
 }
