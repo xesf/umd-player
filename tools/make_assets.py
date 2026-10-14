@@ -281,31 +281,59 @@ def icon0(path):
     save(c, path)
 
 
+def film_background(c, band, hole_w, hole_h, step):
+    """A film strip: dark base, sprocket holes along the top and bottom bands, and the navy
+    picture area between them, like the film frame in the emblem."""
+    gx, gy = c.w * 0.3, c.h * 0.35
+    diag = math.hypot(c.w, c.h)
+
+    def fn(x, y):
+        if y < band or y >= c.h - band:
+            return (0.035, 0.04, 0.055)
+        t = min(1.0, math.hypot(x - gx, y - gy) / (diag * 0.7))
+        return mix(NAVY_LIGHT, NAVY, t)
+    c.fill(fn)
+    # a thin edge between the strip and the picture
+    c.rect(0, band - 2, c.w, 2, (0.12, 0.14, 0.20))
+    c.rect(0, c.h - band, c.w, 2, (0.12, 0.14, 0.20))
+    count = int(c.w // step)
+    x0 = (c.w - count * step) / 2 + (step - hole_w) / 2
+    for i in range(count):
+        hx = x0 + i * step
+        for hy in ((band - hole_h) / 2, c.h - band + (band - hole_h) / 2):
+            c.shape(rounded_rect(hx, hy, hx + hole_w, hy + hole_h, hole_h * 0.25), (0.86, 0.88, 0.92),
+                    bbox=(hx - 1, hy - 1, hx + hole_w + 1, hy + hole_h + 1))
+
+
 def bg(path):
     """LiveArea background. With style a1 the start image (280x158) and its Start button sit in
-    the middle, about x 280-560 and y 170-400, so the text goes along the top and the emblem
-    to the left, where nothing covers them."""
+    the middle, about x 280-560 and y 170-400, so the title goes along the top of the picture."""
     c = Canvas(840, 500, ss=3)
-    background(c)
-    title, by = 'UMD Player', 'by xesf'
-    tw = text_width(title, 5)
-    c.text(title, (840 - tw) // 2, 34, 5, WHITE)
-    c.rect((840 - tw) // 2, 82, tw, 4, ACCENT)
-    c.text(by, (840 - text_width(by, 3)) // 2, 100, 3, (0.70, 0.78, 0.92))
-    emblem(c, 128, 318, 196)
+    film_background(c, 54, 34, 22, 60)
+    title, by, scale = 'UMD Player', 'by xesf', 3
+    icon, gap = 64, 18
+    width = icon + gap + text_width(title, scale)
+    x = (840 - width) // 2
+    emblem(c, x + icon * 0.48, 104, icon * 0.86)
+    tx = x + icon + gap
+    c.text(title, tx, 80, scale, WHITE)
+    c.rect(tx, 108, text_width(title, scale), 3, ACCENT)
+    c.text(by, tx, 118, 2, (0.70, 0.78, 0.92))
     save(c, path)
 
 
 def startup(path):
-    """The start image: the bubble icon's background and emblem, no text."""
+    """The start image: the emblem on the same gradient the LiveArea background has where the
+    image sits (x 280, y 171 with style a1), so the two blend without a visible box."""
     c = Canvas(280, 158, ss=3)
-    background(c)
+    gx, gy, diag = 840 * 0.3, 500 * 0.35, math.hypot(840, 500)
+    c.fill(lambda x, y: mix(NAVY_LIGHT, NAVY, min(1.0, math.hypot(x + 280 - gx, y + 171 - gy) / (diag * 0.7))))
     emblem(c, 136, 68, 112)
     save(c, path)
 
 
 TEMPLATE = '''<?xml version="1.0" encoding="utf-8"?>
-<livearea style="a1" format-ver="01.00" content-rev="2">
+<livearea style="a1" format-ver="01.00" content-rev="3">
   <livearea-background>
     <image>bg.png</image>
   </livearea-background>
