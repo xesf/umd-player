@@ -141,6 +141,11 @@ void plat_keep_awake(void)
 {
 }
 
+void plat_set_power(int mode)
+{
+    (void)mode;
+}
+
 void plat_get_status(plat_status *s)
 {
     time_t now = time(NULL);

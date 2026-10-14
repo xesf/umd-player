@@ -65,7 +65,7 @@ int main(int argc, char **argv)
     (void)argv;
     sceIoMkdir(LOG_DIR, 0777);
     sceIoRemove(LOG_DIR "/log.txt");
-    scePowerSetArmClockFrequency(444);
+    plat_set_power(PLAT_POWER_FULL);
     sceCtrlSetSamplingMode(SCE_CTRL_MODE_DIGITAL);
     sceTouchSetSamplingState(SCE_TOUCH_PORT_FRONT, SCE_TOUCH_SAMPLING_STATE_START);
 

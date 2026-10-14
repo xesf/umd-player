@@ -124,6 +124,9 @@ struct player {
     uint32_t sub_first, sub_count, sub_seq;
     uint64_t pcm_first_pts;
     int have_audio_pts, audio_started;
+    uint32_t underruns;              /* audio callbacks the PCM ring could not fill while playing */
+    uint32_t underruns_seen;         /* the count when the main thread last checked */
+    int power_full;                  /* stay at full CPU speed: playback ran short at the lower one */
     uint64_t silence_frames;         /* frames of silence the callback produced: not on the clock */
 
     /* Reader thread only. */
@@ -560,6 +563,8 @@ static void audio_fill(void *user, int16_t *out, int frames)
         p->pcm_consumed += (uint64_t)n;
     }
     p->silence_frames += frames - n;
+    if (p->audio_started && n < frames && !p->eof)
+        p->underruns++;
     plat_cond_broadcast(p->cond);
     plat_mutex_unlock(p->lock);
     memset(out + n * 2, 0, (size_t)(frames - n) * 4);
@@ -1612,6 +1617,20 @@ int player_update(player *p, uint32_t pressed)
     else
         decode_ahead(p);
     maybe_start(p);
+    {
+        uint32_t underruns;
+        plat_mutex_lock(p->lock);
+        underruns = p->underruns;
+        plat_mutex_unlock(p->lock);
+        if (underruns != p->underruns_seen) {
+            p->underruns_seen = underruns;
+            if (!p->power_full) {
+                plat_log("audio ran short: staying at full CPU speed\n");
+                p->power_full = 1;
+                plat_set_power(PLAT_POWER_FULL);
+            }
+        }
+    }
 
     if (!p->paused && clock_now(p, &now)) {
         for (int i = 0; i < p->frame_count && p->frames[i].pts <= now; i++)
@@ -1629,6 +1648,8 @@ int player_update(player *p, uint32_t pressed)
             p->last_frame_us = plat_time_us();
             p->frames_shown++;
             p->stall_retries = 0;
+            if (!p->power_full)
+                plat_set_power(PLAT_POWER_PLAYBACK);
             memmove(&p->frames[0], &p->frames[best + 1], (size_t)(p->frame_count - best - 1) * sizeof(p->frames[0]));
             p->frame_count -= best + 1;
             update_subtitle(p, now);
@@ -1700,6 +1721,7 @@ void player_close(player *p)
 {
     if (!p)
         return;
+    plat_set_power(PLAT_POWER_FULL);
     if (p->reader && p->shown && !p->ended)
         save_resume(p);
     if (p->lock) {

@@ -125,6 +125,11 @@ void plat_frame_unlock(plat_frame *f);
    from going to sleep, as if the user had pressed a button. */
 void plat_keep_awake(void);
 
+/* CPU speed: full while browsing and loading, lower while a movie plays (the video decoder is
+   hardware; audio decoding needs about a tenth of one core). Only the Vita changes anything. */
+enum { PLAT_POWER_FULL, PLAT_POWER_PLAYBACK };
+void plat_set_power(int mode);
+
 typedef struct plat_status {
     int year, month, day, hour, minute;   /* local time */
     int battery;                          /* percent, or -1 when there is no battery */

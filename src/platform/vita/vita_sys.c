@@ -153,6 +153,18 @@ void plat_keep_awake(void)
     sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DEFAULT);
 }
 
+void plat_set_power(int mode)
+{
+    static int current = -1;
+    int mhz = mode == PLAT_POWER_PLAYBACK ? 333 : 444;
+
+    if (mode == current)
+        return;
+    current = mode;
+    scePowerSetArmClockFrequency(mhz);
+    plat_log("cpu: %d MHz\n", scePowerGetArmClockFrequency());
+}
+
 void plat_get_status(plat_status *s)
 {
     SceDateTime t;

@@ -30,7 +30,7 @@ The player starts in the disc library: the disc images (`.iso`, `.cso` or `.zso`
 
 On the touch screen, a tap shows or hides the time bar. While the bar shows, touch it and slide to pick a position; playback jumps there when you lift your finger.
 
-The options panel also shows the date, time, and battery level. While a movie plays, the Vita does not dim the screen or go to sleep.
+The options panel also shows the date, time, and battery level. While a movie plays, the Vita does not dim the screen or go to sleep, and it runs the CPU at 333 MHz instead of 444 MHz to save battery. If the audio ever runs short, the player goes back to 444 MHz for the rest of that movie.
 
 Each disc remembers where you left it and its audio, subtitle, and screen settings (`ux0:data/umdplayer/resume.txt`). Playing it again resumes from there; near the end of the movie it starts over. In the library, a disc with a saved position shows how far you got, and Square plays it from the start with the same settings.
 
