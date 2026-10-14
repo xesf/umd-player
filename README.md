@@ -19,6 +19,7 @@ The player starts in the disc library: the ISO files in `ux0:umd/` (on macOS, th
 | Button | Library | During playback | In the options panel |
 |---|---|---|---|
 | Up, Down | Choose a disc | Next or previous chapter | Choose a row |
+| L, R | | Previous or next chapter | |
 | Cross | Play the disc | Pause or play | Go to the chosen chapter |
 | Circle | | Back to the library | Close the panel |
 | Triangle | | Open the options panel | Close it |
@@ -28,6 +29,8 @@ The player starts in the disc library: the ISO files in `ux0:umd/` (on macOS, th
 | Start | Quit | Back to the library | |
 
 The options panel also shows the date, time, and battery level. While a movie plays, the Vita does not dim the screen or go to sleep.
+
+Each disc remembers where you left it and its audio, subtitle, and screen settings (`ux0:data/umdplayer/resume.txt`). Playing it again resumes from there; near the end of the movie it starts over.
 
 Screen modes:
 

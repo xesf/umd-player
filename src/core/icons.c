@@ -101,13 +101,13 @@ void canvas_battery(canvas *c, int x, int y, int w, int h, int percent, int char
     if (percent > 100)
         percent = 100;
     fill = inner * percent / 100;
-    /* outline and the terminal nub */
+    /* outline, the terminal nub on the left, and the charge filling from the right */
     canvas_rect(c, x, y, w, 2, rgba);
     canvas_rect(c, x, y + h - 2, w, 2, rgba);
     canvas_rect(c, x, y, 2, h, rgba);
     canvas_rect(c, x + w - 2, y, 2, h, rgba);
-    canvas_rect(c, x + w, y + (h - nub) / 2, 3, nub, rgba);
-    canvas_rect(c, x + 3, y + 3, fill, h - 6, level);
+    canvas_rect(c, x - 3, y + (h - nub) / 2, 3, nub, rgba);
+    canvas_rect(c, x + 3 + inner - fill, y + 3, fill, h - 6, level);
     if (charging) {
         /* a small bolt in the middle */
         int cx = x + w / 2, cy = y + 3, hh = h - 6;

@@ -37,17 +37,18 @@ int osd_draw_hint(canvas *c, int x, int y, icon_id button, const char *text)
 int osd_draw_status(canvas *c, int right, int top, const char *clock, int battery, int charging)
 {
     char pct[16] = "";
-    int bw = 34, bh = 18, w;
+    int bw = 34, bh = 18, w, x;
 
     if (battery >= 0)
         snprintf(pct, sizeof(pct), "%d%%", battery);
-    w = PAD + canvas_text_width(clock, SCALE) + (battery >= 0 ? 20 + bw + 8 + canvas_text_width(pct, SCALE) : 0) + PAD;
+    w = PAD + canvas_text_width(clock, SCALE) + (battery >= 0 ? 24 + canvas_text_width(pct, SCALE) + 10 + bw : 0) + PAD;
     canvas_rect(c, right - w, top, w, LINE + 24, BG);
-    canvas_text(c, right - w + PAD, top + 12, SCALE, TEXT, clock);
+    x = right - w + PAD;
+    x += canvas_text(c, x, top + 12, SCALE, TEXT, clock);
     if (battery >= 0) {
-        int x = right - w + PAD + canvas_text_width(clock, SCALE) + 20;
+        x += 24;
+        x += canvas_text(c, x, top + 12, SCALE, TEXT, pct) + 10 + 3;
         canvas_battery(c, x, top + 12 + (LINE - bh) / 2, bw, bh, battery, charging, TEXT);
-        canvas_text(c, x + bw + 8, top + 12, SCALE, TEXT, pct);
     }
     return w;
 }

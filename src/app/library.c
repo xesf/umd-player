@@ -23,7 +23,7 @@
 #define BIG_X          96              /* the selected disc's icon, drawn at twice the size */
 #define BIG_Y          192
 #define SMALL_X        168
-#define LOAD_DELAY_US  400000          /* load art and sound once the selection settles */
+#define CACHE_N        8               /* discs whose art and sound are kept in memory */
 #define FRAMES_AHEAD   3
 #define AU_MAX         4096
 #define PMF_MAX        (2 * 1024 * 1024)
@@ -50,13 +50,32 @@ typedef struct decoded {
     uint64_t pts;
 } decoded;
 
+/* A disc's art and sound, loaded by the worker thread. Buffers stay while state is READY; the
+   worker never replaces the entry of the disc on screen. */
+enum { MEDIA_EMPTY, MEDIA_LOADING, MEDIA_READY };
+typedef struct media {
+    int disc, state;
+    uint64_t used;
+    uint8_t *pic1;
+    int pic1_w, pic1_h;
+    uint8_t *pmf, *snd;
+    uint32_t pmf_size, snd_size;
+} media;
+
 struct library {
     lib_disc discs[LIB_MAX];
     int count, sel;
-    int loaded;                      /* disc whose art and sound are loaded, or -1 */
-    uint64_t sel_time;
+    int loaded;                      /* disc whose art and sound are in use, or -1 */
 
-    uint8_t *pic1;                   /* RGBA background, or NULL */
+    /* Cache filled by the worker thread, guarded by cache_lock. */
+    media cache[CACHE_N];
+    plat_mutex *cache_lock;
+    plat_cond *cache_cond;
+    plat_thread *worker;
+    int worker_quit, worker_paused, want_sel;
+    uint64_t use_clock;
+
+    const uint8_t *pic1;             /* RGBA background from the cache, or NULL */
     int pic1_w, pic1_h;
 
     /* ICON1.PMF, demuxed and timed once at load. */
@@ -336,7 +355,95 @@ static void sound_fill(void *user, int16_t *out, int frames)
     plat_mutex_unlock(l->lock);
 }
 
-/* ---- loading and unloading the selected disc's media ---- */
+/* ---- the media cache ---- */
+
+static media *find_media(library *l, int disc)
+{
+    for (int i = 0; i < CACHE_N; i++)
+        if (l->cache[i].disc == disc && l->cache[i].state != MEDIA_EMPTY)
+            return &l->cache[i];
+    return NULL;
+}
+
+static void free_media(media *m)
+{
+    free(m->pic1);
+    free(m->pmf);
+    free(m->snd);
+    memset(m, 0, sizeof(*m));
+    m->disc = -1;
+}
+
+/* Reads one disc's art and sound (no lock held: the disc has its own file handle). */
+static void read_media(const lib_disc *disc, media *m)
+{
+    disc_file d;
+    uint8_t *buf;
+    uint32_t size;
+
+    if (disc_open(&d, disc->path) < 0)
+        return;
+    if ((buf = disc_read(&d, "UMD_VIDEO/PIC1.PNG", &size, 2 * 1024 * 1024)) != NULL) {
+        m->pic1 = decode_png(buf, size, &m->pic1_w, &m->pic1_h, PIC_MAX_W, PIC_MAX_H);
+        free(buf);
+    }
+    m->pmf = disc_read(&d, "UMD_VIDEO/ICON1.PMF", &m->pmf_size, PMF_MAX);
+    m->snd = disc_read(&d, "UMD_VIDEO/SND0.AT3", &m->snd_size, SND_MAX);
+    plat_iso_close(&d.src);
+}
+
+/* Loads the selected disc first, then its neighbours, into free or least recently used slots. */
+static void worker_main(void *user)
+{
+    static const int order[5] = {0, 1, -1, 2, -2};
+    library *l = (library *)user;
+
+    plat_mutex_lock(l->cache_lock);
+    while (!l->worker_quit) {
+        int target = -1, slot = -1;
+        media loaded;
+
+        if (!l->worker_paused)
+            for (int k = 0; k < 5 && target < 0; k++) {
+                int d = l->want_sel + order[k];
+                if (d >= 0 && d < l->count && !find_media(l, d))
+                    target = d;
+            }
+        if (target >= 0) {
+            for (int i = 0; i < CACHE_N; i++) {
+                media *m = &l->cache[i];
+                int near = m->disc >= l->want_sel - 2 && m->disc <= l->want_sel + 2;
+                if (m->state == MEDIA_EMPTY) {
+                    slot = i;
+                    break;
+                }
+                if (m->state == MEDIA_READY && m->disc != l->loaded && !near &&
+                    (slot < 0 || m->used < l->cache[slot].used))
+                    slot = i;
+            }
+        }
+        if (slot < 0) {
+            plat_cond_wait(l->cache_cond, l->cache_lock);
+            continue;
+        }
+        free_media(&l->cache[slot]);
+        l->cache[slot].disc = target;
+        l->cache[slot].state = MEDIA_LOADING;
+        plat_mutex_unlock(l->cache_lock);
+
+        memset(&loaded, 0, sizeof(loaded));
+        read_media(&l->discs[target], &loaded);
+
+        plat_mutex_lock(l->cache_lock);
+        loaded.disc = target;
+        loaded.state = MEDIA_READY;
+        loaded.used = ++l->use_clock;
+        l->cache[slot] = loaded;
+    }
+    plat_mutex_unlock(l->cache_lock);
+}
+
+/* ---- the disc on screen ---- */
 
 static void unload_media(library *l)
 {
@@ -356,43 +463,41 @@ static void unload_media(library *l)
     free(l->es);
     l->es = NULL;
     l->au_count = l->au_next = 0;
-    free(l->pic1);
     l->pic1 = NULL;
     plat_mutex_lock(l->lock);
-    free(l->snd);
     l->snd = NULL;
     plat_mutex_unlock(l->lock);
+    plat_mutex_lock(l->cache_lock);
     l->loaded = -1;
+    plat_mutex_unlock(l->cache_lock);
 }
 
-static void load_media(library *l)
+/* Starts the selected disc's art, icon, and sound if the worker has them. Returns 1 if it did. */
+static int load_media(library *l)
 {
-    disc_file d;
-    uint8_t *buf;
-    uint32_t size;
+    media *m;
 
-    unload_media(l);
-    l->loaded = l->sel;
+    plat_mutex_lock(l->cache_lock);
+    m = find_media(l, l->sel);
+    if (!m || m->state != MEDIA_READY) {
+        plat_mutex_unlock(l->cache_lock);
+        return 0;
+    }
+    l->loaded = l->sel;              /* from now on the worker keeps this entry */
+    m->used = ++l->use_clock;
+    plat_mutex_unlock(l->cache_lock);
+
     l->ui_dirty = 1;
-    if (disc_open(&d, l->discs[l->sel].path) < 0)
-        return;
-    if ((buf = disc_read(&d, "UMD_VIDEO/PIC1.PNG", &size, 2 * 1024 * 1024)) != NULL) {
-        l->pic1 = decode_png(buf, size, &l->pic1_w, &l->pic1_h, PIC_MAX_W, PIC_MAX_H);
-        free(buf);
-    }
-    if ((buf = disc_read(&d, "UMD_VIDEO/ICON1.PMF", &size, PMF_MAX)) != NULL) {
-        load_icon_video(l, buf, size);
-        free(buf);
-    }
-    if ((buf = disc_read(&d, "UMD_VIDEO/SND0.AT3", &size, SND_MAX)) != NULL) {
+    l->pic1 = m->pic1;
+    l->pic1_w = m->pic1_w;
+    l->pic1_h = m->pic1_h;
+    if (m->pmf)
+        load_icon_video(l, m->pmf, m->pmf_size);
+    if (m->snd) {
         plat_mutex_lock(l->lock);
-        load_sound(l, buf, size);
+        load_sound(l, m->snd, m->snd_size);
         plat_mutex_unlock(l->lock);
-        if (!l->snd)
-            free(buf);
     }
-    plat_iso_close(&d.src);
-
     if (l->au_count) {
         plat_video_config cfg;
         memset(&cfg, 0, sizeof(cfg));
@@ -406,9 +511,20 @@ static void load_media(library *l)
         l->au_next = 0;
         l->loop_us = plat_time_us();
         l->last_t = 0;
+        l->clk_raw = 0;
     }
     if (l->snd && plat_audio_open(l->snd_rate, sound_fill, l) == 0)
         l->audio_open = 1;
+    return 1;
+}
+
+static void tell_worker(library *l, int paused)
+{
+    plat_mutex_lock(l->cache_lock);
+    l->want_sel = l->sel;
+    l->worker_paused = paused;
+    plat_cond_broadcast(l->cache_cond);
+    plat_mutex_unlock(l->cache_lock);
 }
 
 /* ---- drawing ---- */
@@ -418,7 +534,7 @@ static void draw_ui(library *l)
     canvas *c = &l->ui;
     plat_status st;
     char clock[16];
-    int animated = l->video && l->loaded == l->sel, hx;
+    int animated = l->video && l->loaded == l->sel;
 
     if (l->pic1 && l->loaded == l->sel) {
         canvas_blit(c, l->pic1, l->pic1_w, l->pic1_h, l->pic1_w * 4, 0, 0, UI_W, UI_H);
@@ -467,12 +583,6 @@ static void draw_ui(library *l)
     l->minute = st.minute;
     snprintf(clock, sizeof(clock), "%02d:%02d", st.hour, st.minute);
     osd_draw_status(c, UI_W - 24, 24, clock, st.battery, st.charging);
-    hx = 24;
-    canvas_darken(c, 12, 22, 420, 32, 110);
-    canvas_text(c, hx, 34, 1, TEXT_DIM, "Up/Down: choose a disc");
-    hx += canvas_text_width("Up/Down: choose a disc", 1) + 24;
-    hx += osd_draw_hint(c, hx, 30, ICON_BUTTON_CROSS, "Play");
-    canvas_text(c, hx, 34, 1, TEXT_DIM, "START: quit");
 
     l->info.ui_rgba = c->rgba;
     l->info.ui_w = c->w;
@@ -598,14 +708,18 @@ library *library_open(const char *dir)
     l->ui.h = UI_H;
     l->ui.stride = UI_W * 4;
     l->ui.rgba = malloc(UI_W * UI_H * 4);
-    if (!l->lock || !l->at3p || !l->ui.rgba) {
+    l->cache_lock = plat_mutex_create();
+    l->cache_cond = plat_cond_create();
+    for (int i = 0; i < CACHE_N; i++)
+        l->cache[i].disc = -1;
+    if (!l->lock || !l->at3p || !l->ui.rgba || !l->cache_lock || !l->cache_cond) {
         library_close(l);
         return NULL;
     }
     at3p_init_tables();
     l->loaded = -1;
-    l->sel_time = plat_time_us();
     l->ui_dirty = 1;
+    l->worker = plat_thread_start(worker_main, l, "library");
     l->info.video_w = ICON_W;
     l->info.video_h = ICON_H;
     l->info.dst = (plat_rect){(float)BIG_X / UI_W, (float)BIG_Y / UI_H, 2.0f * ICON_W / UI_W, 2.0f * ICON_H / UI_H};
@@ -630,10 +744,11 @@ int library_update(library *l, uint32_t pressed)
         pressed = 0;
     if (pressed) {
         unload_media(l);   /* stop the old disc's sound and animation at once */
-        l->sel_time = plat_time_us();
         l->ui_dirty = 1;
     }
-    if (l->loaded != l->sel && plat_time_us() - l->sel_time >= LOAD_DELAY_US)
+    if (pressed || l->worker_paused)
+        tell_worker(l, 0);
+    if (l->loaded != l->sel)
         load_media(l);
     if (l->video && l->au_count) {
         present |= advance_icon(l);
@@ -662,7 +777,7 @@ const char *library_path(const library *l, int index)
 void library_suspend(library *l)
 {
     unload_media(l);
-    l->sel_time = plat_time_us();
+    tell_worker(l, 1);   /* no memory card reads while a movie plays */
     l->ui_dirty = 1;
 }
 
@@ -670,10 +785,21 @@ void library_close(library *l)
 {
     if (!l)
         return;
-    if (l->lock)
+    if (l->worker) {
+        plat_mutex_lock(l->cache_lock);
+        l->worker_quit = 1;
+        plat_cond_broadcast(l->cache_cond);
+        plat_mutex_unlock(l->cache_lock);
+        plat_thread_join(l->worker);
+    }
+    if (l->lock && l->cache_lock)
         unload_media(l);
+    for (int i = 0; i < CACHE_N; i++)
+        free_media(&l->cache[i]);
     for (int i = 0; i < l->count; i++)
         free(l->discs[i].icon0);
+    plat_cond_destroy(l->cache_cond);
+    plat_mutex_destroy(l->cache_lock);
     plat_mutex_destroy(l->lock);
     free(l->at3p);
     free(l->ui.rgba);
