@@ -208,7 +208,20 @@ Check: on each disc, every chapter starts on the same frame as in Adrenaline. Su
 
 Check: the library shows all 5 discs with correct titles and covers, and opens each one.
 
-### Phase 6: Vita platform (next)
+### Phase 6: Vita platform (in progress)
+
+Working on hardware (`cmake -S . -B build/vita && cmake --build build/vita`, then install `build/vita/umdplayer.vpk`):
+
+- All 5 discs play with audio. L and R switch discs; the log is `ux0:data/umdplayer/log.txt`.
+- Film discs play at 24 fps from `sceAvcdec` straight into the framebuffer.
+- Field-coded discs: in interlaced mode the decoder writes both fields as two half-height pictures, one above the other. The GPU transfer engine splits them into two line-doubled frames, shown 1/59.94 s apart (bob). This takes 2.8 ms per frame; per-line DMA took 47 ms.
+- The shown frame stays within 16 ms of the audio clock.
+
+Still to do on the Vita:
+
+- About a third of the fields on field-coded discs are skipped, because the audio clock moves in 21 ms steps. Smooth the clock between audio updates.
+- Scale the picture to the display aspect ratio. This needs GXM shaders.
+
 
 Vita test results so far, from `tests/vita/avcdec` and `tests/vita/at3p_bench`:
 
