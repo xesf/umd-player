@@ -211,6 +211,7 @@ static void *fill_user;
 static plat_thread *audio_thread;
 static volatile int audio_running, audio_paused;
 static volatile uint64_t played;
+static int audio_rate = 48000;
 
 static void audio_main(void *user)
 {
@@ -222,7 +223,7 @@ static void audio_main(void *user)
             fill_fn(fill_user, buf, GRAIN);
             played += GRAIN;
         }
-        next += (uint64_t)GRAIN * 1000000 / 48000;
+        next += (uint64_t)GRAIN * 1000000 / (uint64_t)audio_rate;
         while (plat_time_us() < next)
             usleep(1000);
     }
@@ -230,7 +231,7 @@ static void audio_main(void *user)
 
 int plat_audio_open(int rate, plat_audio_fill fill, void *user)
 {
-    (void)rate;
+    audio_rate = rate;
     fill_fn = fill;
     fill_user = user;
     played = 0;

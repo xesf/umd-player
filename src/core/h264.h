@@ -39,7 +39,7 @@ typedef struct h264_au_info {
     int frame_num;
     int field_pic, bottom_field;
     int poc_lsb;
-    int poc;                        /* full picture order count, poc_type 0 only; resets at IDR */
+    int poc;                        /* picture order count (types 0 and 2); resets at IDR */
     int pic_struct;                 /* from SEI, -1 when absent */
 } h264_au_info;
 
@@ -47,7 +47,8 @@ typedef struct h264_parser {
     h264_sps sps;
     uint8_t sps_nal[H264_MAX_PARAM_SET], pps_nal[H264_MAX_PARAM_SET];
     uint32_t sps_size, pps_size;    /* latest SPS and PPS NAL units, without start codes */
-    int prev_poc_msb, prev_poc_lsb; /* POC state, H.264 8.2.1.1 */
+    int prev_poc_msb, prev_poc_lsb; /* POC state for type 0, H.264 8.2.1.1 */
+    int prev_frame_num, frame_num_offset;  /* POC state for type 2, H.264 8.2.1.3 */
 } h264_parser;
 
 void h264_parser_init(h264_parser *p);

@@ -64,6 +64,8 @@ struct library {
     icon_au aus[AU_MAX];
     int au_count, au_next;
     uint64_t first_pts, loop_len, loop_us;
+    uint64_t last_t;                 /* icon time at the last update, to notice the sound looping */
+    uint64_t clk_raw, clk_us;        /* last played-sample reading and when it changed */
     h264_sps sps;
     uint8_t sps_nal[H264_MAX_PARAM_SET], pps_nal[H264_MAX_PARAM_SET];
     uint32_t sps_size, pps_size;
@@ -403,6 +405,7 @@ static void load_media(library *l)
         l->video = plat_video_open(&cfg);
         l->au_next = 0;
         l->loop_us = plat_time_us();
+        l->last_t = 0;
     }
     if (l->snd && plat_audio_open(l->snd_rate, sound_fill, l) == 0)
         l->audio_open = 1;
@@ -477,12 +480,53 @@ static void draw_ui(library *l)
     l->ui_dirty = 0;
 }
 
-/* Decodes the icon animation ahead and returns the frame due now, looping at the end. */
+static void restart_icon(library *l)
+{
+    for (int i = 0; i < l->frame_count; i++)
+        plat_frame_release(l->frames[i].frame);
+    l->frame_count = 0;
+    plat_video_flush(l->video);
+    l->au_next = 0;
+    l->loop_us = plat_time_us();
+}
+
+/* The icon's time in 90 kHz. With sound, it follows the audio actually played, within the
+   sound's loop, so picture and sound stay together and restart together (as on the PSP).
+   Without sound, it runs on the system clock and loops at its own length. */
+static uint64_t icon_time(library *l)
+{
+    if (l->audio_open && l->snd_frames) {
+        uint64_t loop = (uint64_t)l->snd_frames * AT3P_FRAME_SAMPLES, played = plat_audio_played(), now = plat_time_us();
+        uint64_t lead;
+        /* Played audio moves in buffer-sized steps; run on the system clock in between,
+           at most two buffers ahead, like the player's clock. */
+        if (played != l->clk_raw) {
+            l->clk_raw = played;
+            l->clk_us = now;
+        }
+        lead = (now - l->clk_us) * (uint64_t)l->snd_rate / 1000000;
+        if (lead > 2048)
+            lead = 2048;
+        return (played + lead) % loop * 90000 / (uint64_t)l->snd_rate;
+    }
+    return (plat_time_us() - l->loop_us) * 9 / 100;
+}
+
+/* Decodes the icon animation ahead and returns 1 if a new frame is due now. */
 static int advance_icon(library *l)
 {
-    uint64_t t = (plat_time_us() - l->loop_us) * 9 / 100;
+    static uint64_t window_us;
+    static int shown_in_window;
+    uint64_t t = icon_time(l);
     int best = -1, changed = 0;
 
+    if (t < l->last_t)
+        restart_icon(l);                     /* the sound looped */
+    else if (!l->audio_open && l->au_next == l->au_count && l->frame_count == 0 && t >= l->loop_len) {
+        restart_icon(l);                     /* no sound: loop on the icon's own length */
+        t = 0;
+    }
+    l->last_t = t;
     while (l->frame_count < FRAMES_AHEAD && l->au_next < l->au_count) {
         const icon_au *a = &l->aus[l->au_next++];
         plat_frame *f;
@@ -511,11 +555,15 @@ static int advance_icon(library *l)
         memmove(&l->frames[0], &l->frames[best + 1], (size_t)(l->frame_count - best - 1) * sizeof(l->frames[0]));
         l->frame_count -= best + 1;
         changed = 1;
+        shown_in_window++;
     }
-    if (l->au_next == l->au_count && l->frame_count == 0 && t >= l->loop_len) {
-        plat_video_flush(l->video);
-        l->au_next = 0;
-        l->loop_us = plat_time_us();
+    if (plat_time_us() - window_us > 4000000) {
+        if (window_us)
+            plat_log("icon: %.1f frames/s, at %.2f s of %.2f s (%s clock)\n",
+                     shown_in_window * 1e6 / (double)(plat_time_us() - window_us), t / 90000.0, l->loop_len / 90000.0,
+                     l->audio_open ? "sound" : "system");
+        window_us = plat_time_us();
+        shown_in_window = 0;
     }
     return changed;
 }

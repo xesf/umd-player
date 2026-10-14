@@ -289,6 +289,14 @@ static void on_nal(void *user, const uint8_t *nal, uint32_t size)
                 p->prev_poc_msb = msb;
                 p->prev_poc_lsb = info->poc_lsb;
             }
+        } else if (s->poc_type == 2) {
+            /* Output order is decode order: the POC follows frame_num (ICON1.PMF uses this). */
+            if (info->is_idr)
+                p->frame_num_offset = 0;
+            else if (p->prev_frame_num > info->frame_num)
+                p->frame_num_offset += 1 << s->log2_max_frame_num;
+            info->poc = info->is_idr ? 0 : 2 * (p->frame_num_offset + info->frame_num) - (info->nal_ref_idc == 0);
+            p->prev_frame_num = info->frame_num;
         }
     }
 }
