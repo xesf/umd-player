@@ -1,6 +1,7 @@
 /* macOS: files, threads, and time. */
 #define _DARWIN_C_SOURCE
 #include "../platform.h"
+#include "../../core/disc_image.h"
 
 #include <dirent.h>
 #include <pthread.h>
@@ -11,32 +12,40 @@
 #include <sys/stat.h>
 #include <time.h>
 
-static int read_sectors(void *user, uint32_t lba, uint32_t count, void *dst)
+static int read_bytes(void *user, uint64_t off, uint32_t len, void *dst)
 {
     FILE *f = (FILE *)user;
-    if (fseeko(f, (off_t)lba * UMD_SECTOR_SIZE, SEEK_SET) != 0)
+    if (fseeko(f, (off_t)off, SEEK_SET) != 0)
         return -1;
-    return fread(dst, UMD_SECTOR_SIZE, count, f) == count ? 0 : -1;
+    return fread(dst, 1, len, f) == len ? 0 : -1;
 }
 
 int plat_iso_open(const char *path, umd_source *out)
 {
     FILE *f = fopen(path, "rb");
+    image_file file;
 
     if (!f)
         return -1;
     fseeko(f, 0, SEEK_END);
-    out->user = f;
-    out->read_sectors = read_sectors;
-    out->sector_count = (uint32_t)(ftello(f) / UMD_SECTOR_SIZE);
+    file.user = f;
+    file.read = read_bytes;
+    file.size = (uint64_t)ftello(f);
+    if (image_open(out, &file) < 0) {
+        fclose(f);
+        return -1;
+    }
     return 0;
 }
 
 void plat_iso_close(umd_source *src)
 {
-    if (src->user)
-        fclose((FILE *)src->user);
-    src->user = NULL;
+    image_file file;
+
+    if (!src->read_sectors)
+        return;
+    image_close(src, &file);
+    fclose((FILE *)file.user);
 }
 
 struct plat_thread { pthread_t t; void (*fn)(void *); void *user; };

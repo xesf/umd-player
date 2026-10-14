@@ -6,6 +6,7 @@
 
 #include "../core/atrac3p/at3p.h"
 #include "../core/canvas.h"
+#include "../core/disc_image.h"
 #include "../core/demux.h"
 #include "../core/h264.h"
 #include "../core/iso9660.h"
@@ -183,7 +184,7 @@ static void on_entry(void *user, const char *name)
     list_ctx *c = (list_ctx *)user;
     size_t n = strlen(name);
 
-    if (c->l->count >= LIB_MAX || n <= 4 || (strcmp(name + n - 4, ".iso") != 0 && strcmp(name + n - 4, ".ISO") != 0))
+    if (c->l->count >= LIB_MAX || n <= 4 || !image_name_supported(name))
         return;
     /* The same file in two folders shows once; resume data is keyed by the file name. */
     for (int i = 0; i < c->l->count; i++)

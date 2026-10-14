@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "../core/disc_image.h"
 #include "../platform/platform.h"
 #include "library.h"
 #include "player.h"
@@ -20,12 +21,6 @@ static const char *base_name(const char *path)
     return slash ? slash + 1 : path;
 }
 static uint32_t prev_buttons;
-
-static int is_iso(const char *path)
-{
-    size_t n = strlen(path);
-    return n > 4 && (strcmp(path + n - 4, ".iso") == 0 || strcmp(path + n - 4, ".ISO") == 0);
-}
 
 int app_init(int argc, char **argv)
 {
@@ -43,7 +38,7 @@ int app_init(int argc, char **argv)
         plat_log("usage: umdplayer <folder | iso> [-t title] [-a audio]\n");
         return 1;
     }
-    if (is_iso(path)) {
+    if (image_name_supported(path)) {
         snprintf(current_path, sizeof(current_path), "%.511s", path);
         direct.iso_path = current_path;
         direct.resume_key = base_name(current_path);

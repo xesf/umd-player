@@ -4,32 +4,40 @@
 #include <stdio.h>
 #include <sys/types.h>
 
-static int read_sectors(void *user, uint32_t lba, uint32_t count, void *dst)
+#include "../src/core/disc_image.h"
+
+static int read_bytes(void *user, uint64_t off, uint32_t len, void *dst)
 {
     FILE *f = (FILE *)user;
-    if (fseeko(f, (off_t)lba * UMD_SECTOR_SIZE, SEEK_SET) != 0)
+    if (fseeko(f, (off_t)off, SEEK_SET) != 0)
         return -1;
-    return fread(dst, UMD_SECTOR_SIZE, count, f) == count ? 0 : -1;
+    return fread(dst, 1, len, f) == len ? 0 : -1;
 }
 
 int host_source_open(umd_source *src, const char *path)
 {
     FILE *f = fopen(path, "rb");
-    off_t size;
+    image_file file;
 
     if (!f)
         return -1;
     fseeko(f, 0, SEEK_END);
-    size = ftello(f);
-    src->user = f;
-    src->read_sectors = read_sectors;
-    src->sector_count = (uint32_t)(size / UMD_SECTOR_SIZE);
+    file.user = f;
+    file.read = read_bytes;
+    file.size = (uint64_t)ftello(f);
+    if (image_open(src, &file) < 0) {
+        fclose(f);
+        return -1;
+    }
     return 0;
 }
 
 void host_source_close(umd_source *src)
 {
-    if (src->user)
-        fclose((FILE *)src->user);
-    src->user = NULL;
+    image_file file;
+
+    if (!src->read_sectors)
+        return;
+    image_close(src, &file);
+    fclose((FILE *)file.user);
 }

@@ -11,10 +11,10 @@ AT3P_CFLAGS = -Wno-pointer-sign -Wno-unused-parameter -Wno-sign-compare -Wno-shi
 
 all: $(TOOLS)
 
-$(BIN)/umdinfo: umdinfo.c host_source.c $(CORE)/iso9660.c $(CORE)/sfo.c $(CORE)/umdv.c $(CORE)/mpeg_ps.c | $(BIN)
+$(BIN)/umdinfo: umdinfo.c host_source.c $(CORE)/disc_image.c $(CORE)/png.c $(CORE)/iso9660.c $(CORE)/sfo.c $(CORE)/umdv.c $(CORE)/mpeg_ps.c | $(BIN)
 	$(CC) $(CFLAGS) -o $@ $^
 
-$(BIN)/umddemux: umddemux.c host_source.c $(CORE)/iso9660.c $(CORE)/umdv.c $(CORE)/mpeg_ps.c $(CORE)/demux.c $(CORE)/h264.c $(CORE)/vtiming.c | $(BIN)
+$(BIN)/umddemux: umddemux.c host_source.c $(CORE)/disc_image.c $(CORE)/png.c $(CORE)/iso9660.c $(CORE)/umdv.c $(CORE)/mpeg_ps.c $(CORE)/demux.c $(CORE)/h264.c $(CORE)/vtiming.c | $(BIN)
 	$(CC) $(CFLAGS) -o $@ $^
 
 $(BIN)/at3pdec: at3pdec.c $(AT3P) $(wildcard $(CORE)/atrac3p/*.h) | $(BIN)
@@ -26,7 +26,7 @@ $(BIN)/h264prog: h264prog.c $(CORE)/h264.c ../src/platform/macos/h264_progressiv
 $(BIN)/pngdec: pngdec.c $(CORE)/png.c | $(BIN)
 	$(CC) $(CFLAGS) -o $@ $^
 
-PLAYER_CORE = $(CORE)/iso9660.c $(CORE)/umdv.c $(CORE)/mpeg_ps.c $(CORE)/demux.c $(CORE)/h264.c $(CORE)/vtiming.c \
+PLAYER_CORE = $(CORE)/disc_image.c $(CORE)/iso9660.c $(CORE)/umdv.c $(CORE)/mpeg_ps.c $(CORE)/demux.c $(CORE)/h264.c $(CORE)/vtiming.c \
               $(CORE)/png.c $(CORE)/canvas.c $(CORE)/font8x8.c $(CORE)/cropdetect.c $(CORE)/sfo.c $(CORE)/icons.c
 $(BIN)/playtest: playtest.c ../src/app/main.c ../src/app/library.c ../src/app/player.c ../src/app/screen.c ../src/app/osd.c ../src/app/resume.c ../src/platform/null/null_platform.c \
                  $(PLAYER_CORE) $(AT3P) $(wildcard ../src/app/*.h ../src/core/*.h) | $(BIN)

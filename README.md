@@ -14,7 +14,7 @@ make -C tools
 
 ## Controls
 
-The player starts in the disc library: the ISO files in `ux0:umd/` and `ux0:pspemu/ISO/VIDEO/` (on macOS, the folder given on the command line). Like the PSP's menu, the selected disc shows its background art, its animated icon, and plays its sound. The options panel shows the disc's name.
+The player starts in the disc library: the disc images (`.iso`, `.cso` or `.zso`) in `ux0:umd/` and `ux0:pspemu/ISO/VIDEO/` (on macOS, the folder given on the command line). Like the PSP's menu, the selected disc shows its background art, its animated icon, and plays its sound. The options panel shows the disc's name.
 
 | Button | Library | During playback | In the options panel |
 |---|---|---|---|
