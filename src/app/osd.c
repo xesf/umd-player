@@ -63,7 +63,7 @@ static void draw_menu(const osd_view *v, canvas *c)
     int sub = v->subheader[0] != 0;
     int h = PAD + LINE + (sub ? 14 : 0) + PAD + v->row_count * ROW_H + PAD + 2 * 20 + PAD;
     int x = c->w - PANEL_W - 24, y = (c->h - h) / 2 - 10, hx;
-    char head[32];
+    char head[64];
 
     /* The disc name, cut to the panel width. */
     snprintf(head, sizeof(head), "%s", v->header[0] ? v->header : "OPTIONS");

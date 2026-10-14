@@ -44,7 +44,7 @@ int app_init(int argc, char **argv)
         return 1;
     }
     if (is_iso(path)) {
-        snprintf(current_path, sizeof(current_path), "%s", path);
+        snprintf(current_path, sizeof(current_path), "%.511s", path);
         direct.iso_path = current_path;
         direct.resume_key = base_name(current_path);
         current = player_open(&direct);
@@ -80,7 +80,7 @@ int app_frame(void)
         return 0;
     if (pick >= 0) {
         player_options opt;
-        snprintf(current_path, sizeof(current_path), "%s", library_path(lib, pick));
+        snprintf(current_path, sizeof(current_path), "%.511s", library_path(lib, pick));
         opt.iso_path = current_path;
         opt.title = -1;
         opt.audio = -1;
