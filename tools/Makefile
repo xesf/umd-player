@@ -8,7 +8,7 @@ TOOLS = $(BIN)/umdinfo
 
 all: $(TOOLS)
 
-$(BIN)/umdinfo: umdinfo.c host_source.c $(CORE)/iso9660.c $(CORE)/sfo.c | $(BIN)
+$(BIN)/umdinfo: umdinfo.c host_source.c $(CORE)/iso9660.c $(CORE)/sfo.c $(CORE)/umdv.c $(CORE)/mpeg_ps.c | $(BIN)
 	$(CC) $(CFLAGS) -o $@ $^
 
 $(BIN):
