@@ -217,12 +217,18 @@ def emblem(c, cx, cy, size):
 BAYER = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]]
 
 
-def quantize(c, colors=256):
-    """Median cut on 5-bit-per-channel colours, then nearest-colour mapping. A 4x4 ordered
-    dither of one 5-bit step first keeps the dark gradients from banding."""
+DITHER_LIGHT = 8      # one 5-bit step: hides banding
+DITHER_STRONG = 40    # five steps: a visible pattern, for the LiveArea
+
+
+def quantize(c, colors=256, dither=DITHER_LIGHT, origin=(0, 0)):
+    """Median cut on 5-bit-per-channel colours, then nearest-colour mapping, after a 4x4
+    ordered dither of the given strength. origin places the dither grid, so images that are
+    shown next to each other share one grid."""
     px = []
+    ox, oy = origin
     for i, p in enumerate(c.px):
-        d = (BAYER[(i // c.w) % 4][i % c.w % 4] / 16.0 - 0.5) * 8
+        d = (BAYER[(i // c.w + oy) % 4][(i % c.w + ox) % 4] / 16.0 - 0.5) * dither
         px.append(tuple(max(0, min(255, int(v * 255 + 0.5 + d))) for v in p))
     counts = {}
     for p in px:
@@ -272,8 +278,8 @@ def write_png(path, w, h, palette, indices):
     open(path, 'wb').write(png)
 
 
-def save(c, path):
-    palette, idx = quantize(c)
+def save(c, path, dither=DITHER_LIGHT, origin=(0, 0)):
+    palette, idx = quantize(c, dither=dither, origin=origin)
     write_png(path, c.w, c.h, palette, idx)
     print('%s: %dx%d, %d colours' % (path, c.w, c.h, len(palette)))
 
@@ -329,7 +335,7 @@ def bg(path):
     # the version at the far right, just above the bottom strip
     version = 'v' + app_version()
     c.text(version, 840 - 16 - text_width(version, 2), version_y, 2, (0.70, 0.78, 0.92))
-    save(c, path)
+    save(c, path, DITHER_STRONG)
 
 
 def startup(path):
@@ -339,11 +345,11 @@ def startup(path):
     gx, gy, diag = 840 * 0.3, 500 * 0.35, math.hypot(840, 500)
     c.fill(lambda x, y: mix(NAVY_LIGHT, NAVY, min(1.0, math.hypot(x + 280 - gx, y + 171 - gy) / (diag * 0.7))))
     emblem(c, 136, 68, 112)
-    save(c, path)
+    save(c, path, DITHER_STRONG, origin=(280, 171))
 
 
 TEMPLATE = '''<?xml version="1.0" encoding="utf-8"?>
-<livearea style="a1" format-ver="01.00" content-rev="7">
+<livearea style="a1" format-ver="01.00" content-rev="8">
   <livearea-background>
     <image>bg.png</image>
   </livearea-background>
