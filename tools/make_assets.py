@@ -3,8 +3,8 @@
 
     python3 -I tools/make_assets.py [out_dir]     (default: assets/vita)
 
-Standard library only. The emblem is an original drawing: a disc in a UMD-style shell with a
-film frame in front. Text uses the app's 8x8 font (src/core/font8x8.c). The Vita wants 8-bit
+Standard library only. The emblem is an original drawing: a disc in a PSP-style caddy
+(the physical shape only, without Sony's label, wordmark, or logos) with a film frame in front. Text uses the app's 8x8 font (src/core/font8x8.c). The Vita wants 8-bit
 indexed PNGs, so images are reduced to 256 colours (median cut) before writing.
 """
 import math
@@ -102,7 +102,7 @@ def rounded_rect(x0, y0, x1, y1, r):
     return inside
 
 
-# ---- the emblem: a UMD-style shell with a disc, and a film frame in front ----
+# ---- the emblem: a disc in a PSP-style caddy, and a film frame in front ----
 
 NAVY = (0.04, 0.07, 0.16)
 NAVY_LIGHT = (0.10, 0.18, 0.38)
@@ -121,36 +121,74 @@ def background(c):
     c.fill(fn)
 
 
+def hsv(h, s, v):
+    i = int(h * 6) % 6
+    f = h * 6 - int(h * 6)
+    p, q, t = v * (1 - s), v * (1 - f * s), v * (1 - (1 - f) * s)
+    return [(v, t, p), (q, v, p), (p, v, t), (p, q, v), (t, p, v), (v, p, q)][i]
+
+
+def caddy(cx, cy, rs):
+    """The caddy outline around a disc centred at (cx, cy): a half circle of radius rs on top,
+    straight sides, rounded bottom corners, and a slightly convex bottom edge."""
+    rc = rs * 0.20                       # bottom corner radius
+    base = cy + rs * 0.96                # bottom edge at the sides
+    bulge = rs * 0.07                    # how far the middle of the bottom edge drops
+
+    def bottom(x):
+        d = (x - cx) / rs
+        return base + bulge * (1 - d * d)
+
+    def inside(x, y):
+        dx = x - cx
+        if y <= cy:
+            return dx * dx + (y - cy) ** 2 <= rs * rs
+        if abs(dx) > rs or y > bottom(x):
+            return False
+        # round the bottom corners
+        kx = cx + math.copysign(rs - rc, dx)
+        ky = bottom(kx) - rc
+        if abs(dx) > rs - rc and y > ky:
+            return (x - kx) ** 2 + (y - ky) ** 2 <= rc * rc
+        return True
+    return inside, bottom(cx)
+
+
 def emblem(c, cx, cy, size):
-    """size is the shell width. The shell is a rounded square with a slightly narrower,
-    rounded bottom edge, like a UMD caddy; the disc shows through a round window."""
-    s = size / 2.0
-    shell = rounded_rect(cx - s, cy - s, cx + s, cy + s * 1.04, s * 0.22)
-    c.shape(shell, lambda x, y: mix((0.20, 0.24, 0.32), (0.08, 0.10, 0.16), (y - (cy - s)) / (2 * s)),
-            bbox=(cx - s - 2, cy - s - 2, cx + s + 2, cy + s * 1.04 + 2))
-    # a thin light rim on the shell
-    rim = lambda x, y: shell(x, y) and not rounded_rect(cx - s + size * 0.02, cy - s + size * 0.02, cx + s - size * 0.02,
-                                                        cy + s * 1.04 - size * 0.02, s * 0.20)(x, y)
-    c.shape(rim, (0.55, 0.62, 0.75), 0.8, bbox=(cx - s - 2, cy - s - 2, cx + s + 2, cy + s * 1.04 + 2))
+    """size is the caddy width. The disc centre is at (cx, cy)."""
+    rs = size / 2.0
+    r = rs * 0.90                        # disc radius
+    outline, lowest = caddy(cx, cy, rs)
+    box = (cx - rs - 2, cy - rs - 2, cx + rs + 2, lowest + 2)
 
-    # the disc: silver with a soft sheen, darker inner ring, and the spindle hole
-    r = s * 0.80
-    dcx, dcy = cx, cy + s * 0.02
+    # soft shadow, then the light grey shell with a top-to-bottom shade
+    sh, _ = caddy(cx + size * 0.015, cy + size * 0.03, rs)
+    c.shape(sh, (0.0, 0.0, 0.03), 0.45, bbox=(box[0], box[1], box[2] + size * 0.02, box[3] + size * 0.04))
+    c.shape(outline, lambda x, y: mix((0.96, 0.96, 0.97), (0.80, 0.81, 0.84), (y - (cy - rs)) / (lowest - (cy - rs))),
+            bbox=box)
+    # the window rim around the disc
+    c.shape(lambda x, y: (x - cx) ** 2 + (y - cy) ** 2 <= (r * 1.035) ** 2, (0.62, 0.64, 0.68), bbox=box)
 
-    def silver(x, y):
-        ang = math.atan2(y - dcy, x - dcx)
-        sheen = 0.5 + 0.5 * math.cos(2 * ang - 0.8)
-        return mix((0.55, 0.60, 0.68), (0.93, 0.95, 0.98), sheen)
-    c.shape(lambda x, y: (x - dcx) ** 2 + (y - dcy) ** 2 <= r * r, silver, bbox=(dcx - r, dcy - r, dcx + r, dcy + r))
-    c.shape(lambda x, y: (x - dcx) ** 2 + (y - dcy) ** 2 <= (r * 0.36) ** 2, (0.40, 0.45, 0.55),
-            bbox=(dcx - r, dcy - r, dcx + r, dcy + r))
-    c.shape(lambda x, y: (x - dcx) ** 2 + (y - dcy) ** 2 <= (r * 0.16) ** 2, (0.05, 0.07, 0.12),
-            bbox=(dcx - r, dcy - r, dcx + r, dcy + r))
+    # the disc: silver with a faint rainbow sheen that turns around the centre
+    def disc(x, y):
+        ang = math.atan2(y - cy, x - cx)
+        rainbow = hsv(((ang / (2 * math.pi)) * 2) % 1.0, 0.22, 1.0)
+        light = 0.5 + 0.5 * math.cos(2 * ang + 0.6)
+        base = mix((0.80, 0.82, 0.86), (0.99, 0.99, 1.00), light)
+        return mix(base, rainbow, 0.55)
+    c.shape(lambda x, y: (x - cx) ** 2 + (y - cy) ** 2 <= r * r, disc, bbox=box)
+    # the centre label: plain, with a thin edge
+    lr = r * 0.40
+    c.shape(lambda x, y: (x - cx) ** 2 + (y - cy) ** 2 <= (lr * 1.04) ** 2, (0.70, 0.72, 0.76), bbox=box)
+    c.shape(lambda x, y: (x - cx) ** 2 + (y - cy) ** 2 <= lr * lr,
+            lambda x, y: mix((0.99, 0.99, 1.0), (0.86, 0.87, 0.90), (y - (cy - lr)) / (2 * lr)), bbox=box)
 
-    # the film frame, overlapping the lower right
-    fw, fh = size * 0.62, size * 0.42
-    fx, fy = cx + s * 0.20, cy + s * 0.38
-    frame = rounded_rect(fx, fy, fx + fw, fy + fh, size * 0.03)
+    # the film frame, over the lower right of the disc
+    fw, fh = size * 0.50, size * 0.34
+    fx, fy = cx + rs * 0.12, cy + rs * 0.40
+    frame = rounded_rect(fx, fy, fx + fw, fy + fh, size * 0.025)
+    c.shape(rounded_rect(fx + size * 0.01, fy + size * 0.02, fx + fw + size * 0.01, fy + fh + size * 0.02, size * 0.025),
+            (0.0, 0.0, 0.03), 0.4, bbox=(fx - 2, fy - 2, fx + fw + size * 0.02, fy + fh + size * 0.03))
     c.shape(frame, (0.07, 0.08, 0.11), bbox=(fx - 2, fy - 2, fx + fw + 2, fy + fh + 2))
     holes = 5
     hw, hh = fw / (holes * 2.0), fh * 0.12
@@ -158,7 +196,6 @@ def emblem(c, cx, cy, size):
         hx = fx + fw * (i + 0.5) / holes - hw / 2
         for hy in (fy + fh * 0.06, fy + fh - fh * 0.06 - hh):
             c.shape(rounded_rect(hx, hy, hx + hw, hy + hh, hh * 0.3), WHITE, 0.9, bbox=(hx - 1, hy - 1, hx + hw + 1, hy + hh + 1))
-    # the picture area with a play mark
     px0, py0, px1, py1 = fx + fw * 0.08, fy + fh * 0.26, fx + fw * 0.92, fy + fh * 0.74
     c.shape(rounded_rect(px0, py0, px1, py1, size * 0.01),
             lambda x, y: mix(ACCENT, (0.20, 0.35, 0.80), (y - py0) / (py1 - py0)), bbox=(px0 - 1, py0 - 1, px1 + 1, py1 + 1))
@@ -240,14 +277,14 @@ def save(c, path):
 def icon0(path):
     c = Canvas(128, 128)
     background(c)
-    emblem(c, 60, 58, 78)
+    emblem(c, 62, 58, 88)
     save(c, path)
 
 
 def bg(path):
     c = Canvas(840, 500, ss=3)
     background(c)
-    emblem(c, 230, 240, 300)
+    emblem(c, 220, 222, 310)
     x = 452
     c.text('UMD Player', x, 196, 4, WHITE)
     c.rect(x, 242, text_width('UMD Player', 4), 4, ACCENT)
@@ -258,9 +295,9 @@ def bg(path):
 def startup(path):
     c = Canvas(280, 158, ss=3)
     background(c)
-    emblem(c, 62, 76, 86)
-    c.text('UMD', 128, 52, 3, WHITE)
-    c.text('Player', 128, 84, 3, WHITE)
+    emblem(c, 64, 70, 96)
+    c.text('UMD', 132, 52, 3, WHITE)
+    c.text('Player', 132, 84, 3, WHITE)
     save(c, path)
 
 
