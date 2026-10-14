@@ -212,7 +212,7 @@ static void push_audio(player *p, const demux_unit *u)
     if (!p->at3p_channels) {
         p->at3p_channels = (u->data[2] >> 2) & 7;
         if (at3p_init(p->at3p, p->at3p_channels) < 0) {
-            fprintf(stderr, "unsupported audio channel mode %d\n", p->at3p_channels);
+            plat_log("unsupported audio channel mode %d\n", p->at3p_channels);
             p->at3p_channels = -1;
         }
     }
@@ -305,7 +305,7 @@ static int open_video(player *p)
     cfg.pps = p->pps_nal;
     cfg.pps_size = p->pps_size;
     if ((p->video = plat_video_open(&cfg)) == NULL) {
-        fprintf(stderr, "this platform cannot decode the video (%s); playing audio only\n",
+        plat_log("this platform cannot decode the video (%s); playing audio only\n",
                 p->field_coded ? "field pictures" : "decoder error");
         p->video_disabled = 1;
         return -1;
@@ -315,7 +315,7 @@ static int open_video(player *p)
     p->present.sar_w = p->sps.sar_w;
     p->present.sar_h = p->sps.sar_h;
     p->present.deinterlace = p->field_coded;
-    printf("video: %dx%d, sample aspect %d:%d, %s\n", p->sps.width, p->sps.height, p->sps.sar_w, p->sps.sar_h,
+    plat_log("video: %dx%d, sample aspect %d:%d, %s\n", p->sps.width, p->sps.height, p->sps.sar_w, p->sps.sar_h,
            p->field_coded ? "field pictures (deinterlaced)" : "frame pictures");
     return 0;
 }
@@ -449,12 +449,12 @@ player *player_open(const player_options *opt)
     if (!p)
         return NULL;
     if (plat_iso_open(opt->iso_path, &p->src) < 0 || iso_open(&p->vol, &p->src) < 0) {
-        fprintf(stderr, "cannot open %s\n", opt->iso_path);
+        plat_log("cannot open %s\n", opt->iso_path);
         goto fail;
     }
     if ((buf = read_file(p, "UMD_VIDEO/PLAYLIST.UMD", &size)) == NULL || umdv_playlist_parse(buf, size, &p->playlist) < 0) {
         free(buf);
-        fprintf(stderr, "cannot read PLAYLIST.UMD\n");
+        plat_log("cannot read PLAYLIST.UMD\n");
         goto fail;
     }
     free(buf);
@@ -466,25 +466,25 @@ player *player_open(const player_options *opt)
                 i = t;
             }
     if (i < 0 || i >= p->playlist.title_count) {
-        fprintf(stderr, "no title %d\n", opt->title);
+        plat_log("no title %d\n", opt->title);
         goto fail;
     }
     p->title = &p->playlist.titles[i];
     snprintf(path, sizeof(path), "UMD_VIDEO/CLIPINF/%s.CLP", p->title->clip);
     if ((p->clp_buf = read_file(p, path, &size)) == NULL || umdv_clip_parse(p->clp_buf, size, &p->clip) < 0) {
-        fprintf(stderr, "cannot read %s\n", path);
+        plat_log("cannot read %s\n", path);
         goto fail;
     }
     snprintf(path, sizeof(path), "UMD_VIDEO/STREAM/%s.MPS", p->title->clip);
     if (iso_find(&p->vol, path, &p->mps) < 0) {
-        fprintf(stderr, "cannot find %s\n", path);
+        plat_log("cannot find %s\n", path);
         goto fail;
     }
     p->audio_sub = opt->audio;
     for (i = 0; i < p->clip.stream_count; i++)
         if (p->clip.streams[i].kind == UMDV_STREAM_AUDIO && p->clip.streams[i].sub_id == opt->audio)
             p->has_audio = 1;
-    printf("title \"%s\" (clip %s), audio track 0x%02x%s\n", p->title->name, p->title->clip, opt->audio,
+    plat_log("title \"%s\" (clip %s), audio track 0x%02x%s\n", p->title->name, p->title->clip, opt->audio,
            p->has_audio ? "" : " not found: playing without audio");
 
     p->lock = plat_mutex_create();
@@ -501,7 +501,7 @@ player *player_open(const player_options *opt)
     demux_select(p->dmx, p->has_audio ? p->audio_sub : DEMUX_NONE, DEMUX_NONE);
     demux_seek(p->dmx, 0);
     if (p->has_audio && plat_audio_open(AUDIO_RATE, audio_fill, p) < 0) {
-        fprintf(stderr, "cannot open audio output\n");
+        plat_log("cannot open audio output\n");
         p->has_audio = 0;
     }
     p->reader = plat_thread_start(reader_main, p, "reader");
@@ -562,13 +562,12 @@ int player_update(player *p, uint32_t pressed)
         if (p->frames_shown > 0 && plat_time_us() - p->last_report_us > 2000000) {
             p->last_report_us = plat_time_us();
             plat_mutex_lock(p->lock);
-            printf("t %7.2f s  frame-clock %+6.1f ms  shown %u  skipped %u  queued %d  au %u  pcm %.2f s  "
+            plat_log("t %7.2f s  frame-clock %+6.1f ms  shown %u  skipped %u  queued %d  au %u  pcm %.2f s  "
                    "starved %u/%u  reader waits pcm %u vq %u\n",
                    (double)(now - p->title->start_pts) / 90000.0, ((double)p->shown_pts - (double)now) / 90.0,
                    p->frames_shown, p->frames_late, p->frame_count, p->vq_count, p->pcm_count / 48000.0,
                    p->wait_empty, p->wait_pending, p->reader_wait_pcm, p->reader_wait_vq);
             plat_mutex_unlock(p->lock);
-            fflush(stdout);
         }
     } else if (!p->shown && p->frame_count > 0) {
         plat_present(p->frames[0].frame, &p->present);
@@ -578,7 +577,7 @@ int player_update(player *p, uint32_t pressed)
     done = p->eof && p->vq_count == 0 && p->pcm_count == 0;
     plat_mutex_unlock(p->lock);
     if (done && p->frame_count == 0) {
-        printf("end of title\n");
+        plat_log("end of title\n");
         return 0;
     }
     return 1;

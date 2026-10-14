@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <psp2/display.h>
+#include <psp2/io/fcntl.h>
 #include <psp2/kernel/sysmem.h>
 #include <psp2/sysmodule.h>
 #include <psp2/videodec.h>
@@ -46,6 +47,24 @@ static SceUID pool_uid = -1, es_uid = -1;
 static uint8_t *es_buf;
 static plat_frame *displayed;
 static int decode_errors;
+static uint32_t outputs;
+
+/* Debug: saves an output frame as raw RGBA (720x480, 4 bytes per pixel) to look at on a PC. */
+static void dump_frame(const uint8_t *pic, const SceAvcdecPicture *p)
+{
+    char path[64];
+    SceUID fd;
+
+    snprintf(path, sizeof(path), "ux0:data/umdplayer/frame%u.rgba", (unsigned)outputs);
+    fd = sceIoOpen(path, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);
+    if (fd < 0)
+        return;
+    for (int y = 0; y < 480; y++)
+        sceIoWrite(fd, pic + (size_t)y * SCREEN_W * 4, 720 * 4);
+    sceIoClose(fd);
+    plat_log("saved %s: %ux%u, picStruct %u %u, ctType %u\n", path, p->frame.horizontalSize, p->frame.verticalSize,
+             p->info.picStruct[0], p->info.picStruct[1], p->info.ctType);
+}
 
 static void *alloc_block(const char *name, unsigned type, SceSize size, SceSize align, SceUID *uid)
 {
@@ -103,7 +122,7 @@ plat_video *plat_video_open(const plat_video_config *cfg)
     init.numOfRefFrames = REF_FRAMES;
     init.numOfStreams = 1;
     if ((r = sceVideodecInitLibrary(SCE_VIDEODEC_TYPE_HW_AVCDEC, &init)) < 0) {
-        printf("sceVideodecInitLibrary: 0x%08x\n", r);
+        plat_log("sceVideodecInitLibrary: 0x%08x\n", r);
         return NULL;
     }
     memset(&query, 0, sizeof(query));
@@ -119,7 +138,7 @@ plat_video *plat_video_open(const plat_video_config *cfg)
     v.ctrl.frameBuf.pBuf = mem;
     v.ctrl.frameBuf.size = ALIGN(info.frameMemSize, 1024 * 1024);
     if ((r = sceAvcdecCreateDecoder(SCE_VIDEODEC_TYPE_HW_AVCDEC, &v.ctrl, &query)) < 0) {
-        printf("sceAvcdecCreateDecoder: 0x%08x\n", r);
+        plat_log("sceAvcdecCreateDecoder: 0x%08x\n", r);
         sceKernelFreeMemBlock(v.mem_uid);
         goto fail;
     }
@@ -165,8 +184,16 @@ int plat_video_decode(plat_video *v, const uint8_t *au, uint32_t size, uint64_t 
     r = sceAvcdecDecode(&v->ctrl, &in, &arr);
     if (r < 0) {
         if (decode_errors++ < 10)
-            printf("sceAvcdecDecode: 0x%08x (%u bytes)\n", r, size);
+            plat_log("sceAvcdecDecode: 0x%08x (%u bytes)\n", r, size);
         return -1;
+    }
+    if (arr.numOfOutput > 0) {
+        if (outputs < 3)
+            plat_log("output %u: %ux%u, picStruct %u %u, ctType %u\n", outputs, pic.frame.horizontalSize,
+                   pic.frame.verticalSize, pic.info.picStruct[0], pic.info.picStruct[1], pic.info.ctType);
+        ++outputs;
+        if (outputs == 600 || outputs == 1500 || outputs == 3000)
+            dump_frame(pic.frame.pPicture[0], &pic);
     }
     if (arr.numOfOutput > 0) {
         uint64_t out_pts = (uint64_t)pic.info.pts.upper << 32 | pic.info.pts.lower;

@@ -3,7 +3,10 @@
 #include "vita_source.h"
 
 #include <malloc.h>
+#include <stdarg.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <psp2/io/fcntl.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
 
@@ -116,4 +119,26 @@ void plat_cond_destroy(plat_cond *c)
 uint64_t plat_time_us(void)
 {
     return sceKernelGetProcessTimeWide();
+}
+
+/* Opens and closes the log on every line, so it survives the app being killed. */
+void plat_log(const char *fmt, ...)
+{
+    char line[512];
+    va_list ap;
+    SceUID fd;
+    int n;
+
+    va_start(ap, fmt);
+    n = vsnprintf(line, sizeof(line), fmt, ap);
+    va_end(ap);
+    if (n <= 0)
+        return;
+    if (n >= (int)sizeof(line))
+        n = sizeof(line) - 1;
+    fd = sceIoOpen("ux0:data/umdplayer/log.txt", SCE_O_WRONLY | SCE_O_CREAT | SCE_O_APPEND, 0666);
+    if (fd >= 0) {
+        sceIoWrite(fd, line, n);
+        sceIoClose(fd);
+    }
 }

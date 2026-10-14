@@ -8,6 +8,7 @@
 #include <psp2/ctrl.h>
 #include <psp2/display.h>
 #include <psp2/io/dirent.h>
+#include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/power.h>
@@ -69,22 +70,21 @@ int main(int argc, char **argv)
     (void)argc;
     (void)argv;
     sceIoMkdir(LOG_DIR, 0777);
-    freopen(LOG_DIR "/log.txt", "w", stdout);
-    setvbuf(stdout, NULL, _IOLBF, 0);
+    sceIoRemove(LOG_DIR "/log.txt");
     scePowerSetArmClockFrequency(444);
     sceCtrlSetSamplingMode(SCE_CTRL_MODE_DIGITAL);
 
     if (vita_video_init() < 0) {
-        printf("cannot allocate video memory\n");
+        plat_log("cannot allocate video memory\n");
         sceKernelExitProcess(0);
         return 0;
     }
     if (!first_iso(iso, sizeof(iso))) {
-        printf("no ISO files in " ISO_DIR "/\n");
+        plat_log("no ISO files in " ISO_DIR "/\n");
         sceKernelExitProcess(0);
         return 0;
     }
-    printf("playing %s\n", iso);
+    plat_log("playing %s\n", iso);
     args[0] = "umdplayer";
     args[1] = iso;
     if (app_init(2, args) == 0) {
@@ -96,8 +96,7 @@ int main(int argc, char **argv)
         }
         app_shutdown();
     }
-    printf("exit\n");
-    fflush(stdout);
+    plat_log("exit\n");
     sceKernelExitProcess(0);
     return 0;
 }

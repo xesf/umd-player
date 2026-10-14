@@ -17,6 +17,9 @@ void app_shutdown(void);
 int  plat_iso_open(const char *path, umd_source *out);
 void plat_iso_close(umd_source *src);
 
+/* ---- Logging: stdout on macOS, ux0:data/umdplayer/log.txt on the Vita ---- */
+void plat_log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+
 /* ---- Threads and time ---- */
 typedef struct plat_thread plat_thread;
 typedef struct plat_mutex plat_mutex;

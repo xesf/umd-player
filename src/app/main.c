@@ -24,7 +24,7 @@ int app_init(int argc, char **argv)
             opt.iso_path = argv[i];
     }
     if (!opt.iso_path) {
-        fprintf(stderr, "usage: umdplayer <iso> [-t title] [-a audio]\n");
+        plat_log("usage: umdplayer <iso> [-t title] [-a audio]\n");
         return 1;
     }
     current = player_open(&opt);
