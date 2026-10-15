@@ -53,4 +53,14 @@ Screen modes:
 
 Requirements: a C99 compiler for the host tools and the macOS build, and VitaSDK for the Vita build. The player uses no other libraries.
 
-Licence: MIT, except `src/core/atrac3p/`, which is LGPL-2.1-or-later. See [docs/licensing.md](docs/licensing.md).
+## Licence
+
+UMD Player is copyright (c) 2026 xesf and released under the [MIT License](LICENSE), with these exceptions:
+
+- The ATRAC3plus decoder in `src/core/atrac3p/` is derived from FFmpeg and is under the [GNU LGPL 2.1 or later](src/core/atrac3p/COPYING.LGPLv2.1).
+- The GXM shaders in `src/platform/vita/vita_shaders.c` are from libvita2d (MIT, Sergi Granell).
+- The 8x8 font in `src/core/font8x8.c` is public domain.
+
+[NOTICE](NOTICE) has the full third-party notices. The VPK includes `LICENSE`, `NOTICE` and `COPYING.LGPLv2.1`. [docs/licensing.md](docs/licensing.md) explains the choices and the rules for contributors.
+
+UMD Player is not affiliated with or endorsed by Sony Interactive Entertainment.

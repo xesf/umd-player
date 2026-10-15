@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Adds the LICENSE (MIT), NOTICE and COPYING.LGPLv2.1 files, and ships them in the VPK.
+
 ## v0.3.0 (2026-10-15)
 
 - Library: Triangle opens a settings panel with the default screen mode, audio language and subtitle language for new discs.

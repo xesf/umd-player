@@ -1,0 +1,56 @@
+UMD Player
+Copyright (c) 2026 xesf
+
+UMD Player is under the MIT License (see LICENSE), except for the parts below.
+The Vita package (umdplayer.vpk) contains all of them, so it ships this file,
+LICENSE, and COPYING.LGPLv2.1.
+
+------------------------------------------------------------------------------
+ATRAC3plus decoder: src/core/atrac3p/
+GNU Lesser General Public License, version 2.1 or later (COPYING.LGPLv2.1)
+
+Derived from FFmpeg n7.1 (libavcodec/atrac.c, atrac.h, atrac3plus.c,
+atrac3plus.h, atrac3plusdsp.c, atrac3plus_data.h, atrac3plusdec.c):
+  Copyright (c) 2010-2013 Maxim Poliakovski
+  Copyright (c) 2006-2008 Benjamin Larsson
+Changes for UMD Player, Copyright (c) 2026 xesf, are dated in each file.
+
+The decoder is linked into the app. Its complete source, and the source and
+build files of the whole app, are in this repository, so you can change the
+decoder and rebuild the app with it (cmake -S . -B build/vita).
+FFmpeg: https://ffmpeg.org
+
+------------------------------------------------------------------------------
+GXM texture shaders: src/platform/vita/vita_shaders.c
+From libvita2d (https://github.com/xerpi/libvita2d), MIT License:
+
+Copyright (c) 2015 Sergi Granell (xerpi), xerpi.g.12@gmail.com
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+------------------------------------------------------------------------------
+8x8 font: src/core/font8x8.c
+font8x8_basic by Daniel Hepper (https://github.com/dhepper/font8x8), based on
+font8x8.h by Marcel Sondaar and the IBM VGA fonts. Public domain.
+
+------------------------------------------------------------------------------
+UMD Player is not affiliated with or endorsed by Sony Interactive Entertainment.
+UMD, PSP and PS Vita are trademarks of Sony Interactive Entertainment. The app
+icon and LiveArea art are original drawings (tools/make_assets.py) and use none
+of Sony's logos or label artwork.

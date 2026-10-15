@@ -4,7 +4,7 @@
  * Based on FFmpeg libavcodec/atrac3plusdec.c (n7.1):
  * Copyright (c) 2010-2013 Maxim Poliakovski
  *
- * Changes for umd-player (c) 2026 umd-player contributors: removed the AVCodec framework,
+ * Changes for umd-player, Copyright (c) 2026 xesf: removed the AVCodec framework,
  * mono and stereo only, and added the VLC builder, float vector helpers, sine windows,
  * and an FFT-based inverse MDCT in place of the ones FFmpeg provides in other files.
  *
@@ -16,6 +16,11 @@
  * It is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
  * even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along with it;
+ * see src/core/atrac3p/COPYING.LGPLv2.1.
+ *
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "at3p.h"
