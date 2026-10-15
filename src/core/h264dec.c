@@ -742,9 +742,18 @@ static int build_lists(h264dec *d, const list_mod mod[2])
         if (mod[l].count && apply_modification(d, l, &mod[l]) < 0)
             return -1;
         d->list_len[l] = d->sh.num_ref[l];
+        /* Entries without a picture: after a seek the stream can name more references than
+           have been decoded. They stand in with the first one; a picture with none at all
+           cannot be decoded. */
         for (int i = 0; i < d->sh.num_ref[l]; i++)
-            if (!d->list[l][i].pic)
-                return h264dec_fail(d, "reference list %d entry %d is missing (%d references)", l, i, len[l]);
+            if (!d->list[l][i].pic) {
+                int k = 0;
+                while (k < d->sh.num_ref[l] && !d->list[l][k].pic)
+                    k++;
+                if (k == d->sh.num_ref[l])
+                    return h264dec_fail(d, "reference list %d is empty (%d references)", l, len[l]);
+                d->list[l][i] = d->list[l][k];
+            }
     }
     return 0;
 }
@@ -896,6 +905,7 @@ static int decode_slice(h264dec *d, const uint8_t *nal, uint32_t size)
         if (s.type != SLICE_I)
             return 0;
         d->need_key = 0;
+        d->recovering = 2;         /* set the point once the picture's POC is known */
     }
     d->sh = s;
     d->cur_pps = &d->pps[s.pps_id];
@@ -906,6 +916,22 @@ static int decode_slice(h264dec *d, const uint8_t *nal, uint32_t size)
             return -1;
     } else if (!d->decoding) {
         return 0;                  /* the rest of a picture whose first slice was lost */
+    }
+    if (s.first_mb == 0 && d->recovering == 2) {
+        d->recovering = 1;
+        d->recover_epoch = d->epoch;
+        d->recover_poc = d->poc;
+    } else if (s.first_mb == 0 && d->recovering == 1 && d->epoch == d->recover_epoch && s.type == SLICE_B &&
+               d->poc < d->recover_poc) {
+        /* shown before the I picture decoding restarted at: its references are gone */
+        if (d->cur && d->cur->fields == 0) {
+            d->cur->used = 0;
+            d->cur = NULL;
+        }
+        d->decoding = 0;
+        return 0;
+    } else if (s.first_mb == 0 && d->recovering == 1 && d->epoch != d->recover_epoch) {
+        d->recovering = 0;
     }
     if (build_lists(d, mod) < 0) {
         /* a picture referring to pictures we do not have (B pictures after a seek): drop it */

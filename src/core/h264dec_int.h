@@ -174,6 +174,8 @@ struct h264dec {
     int flushing;
     int epoch;
     int need_key;                  /* after a reset: skip until an I or IDR picture */
+    int recovering;                /* the pictures before that I picture in display order are */
+    int recover_epoch, recover_poc;/* missing references: drop them */
 
     char err[128];
 };
