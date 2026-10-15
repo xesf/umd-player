@@ -155,6 +155,7 @@ typedef struct sim {
     int ended_pending;
     int saved_playlist, saved_chapter;
     int last_chapter;         /* the chapter last reported; 0 after a play, as in src/app/disc.c */
+    int menu_mode;            /* the title playing is a menu video */
 } sim;
 
 static uint8_t *sim_read(void *user, const char *path, uint32_t *size)
@@ -173,7 +174,7 @@ static uint8_t *sim_read(void *user, const char *path, uint32_t *size)
     return buf;
 }
 
-static void sim_play(void *user, int playlist, int chapter, int audio, int subtitle)
+static void sim_play(void *user, int playlist, int chapter, int audio, int subtitle, int menu_mode)
 {
     sim *s = user;
     const umdv_title *t;
@@ -183,6 +184,10 @@ static void sim_play(void *user, int playlist, int chapter, int audio, int subti
     if (playlist < 1 || playlist > s->pl.title_count) {
         printf("  (no such title)\n");
         return;
+    }
+    if (s->st.playing && !s->menu_mode && s->st.playlist != playlist) {
+        s->saved_playlist = s->st.playlist;   /* as src/app/disc.c: the replaced title's place */
+        s->saved_chapter = s->st.chapter;
     }
     t = &s->pl.titles[playlist - 1];
     len = (uint64_t)(t->end_pts - t->start_pts) * 100 / 9;
@@ -197,13 +202,14 @@ static void sim_play(void *user, int playlist, int chapter, int audio, int subti
     s->st.subtitle = subtitle;
     s->title_end = s->now + (len > from ? len - from : 0);
     s->last_chapter = 0;
+    s->menu_mode = menu_mode;
 }
 
 static void sim_stop(void *user)
 {
     sim *s = user;
     printf("%8.2f s  STOP\n", s->now / 1e6);
-    if (s->st.playing) {      /* as src/app/disc.c: a stop with nothing playing keeps the last */
+    if (s->st.playing && !s->menu_mode) {   /* as src/app/disc.c: menu videos and a stop with nothing playing keep the last */
         s->saved_playlist = s->st.playlist;
         s->saved_chapter = s->st.chapter;
     }
@@ -217,7 +223,7 @@ static int sim_resume(void *user)
     printf("%8.2f s  RESUME\n", s->now / 1e6);
     if (!s->saved_playlist)
         return -1;
-    sim_play(user, s->saved_playlist, s->saved_chapter, s->st.audio, s->st.subtitle);
+    sim_play(user, s->saved_playlist, s->saved_chapter, s->st.audio, s->st.subtitle, 0);
     return 0;
 }
 
@@ -421,7 +427,7 @@ static int run_disc(int argc, char **argv)
     }
     if (state && (sf = fopen(state, "w")) != NULL) {
         int n;
-        if (s.st.playing) {
+        if (s.st.playing && !s.menu_mode) {
             s.saved_playlist = s.st.playlist;
             s.saved_chapter = s.st.chapter;
         }

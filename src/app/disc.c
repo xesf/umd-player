@@ -31,6 +31,7 @@ struct disc {
     int stopped_title, stopped_audio, stopped_sub;
     uint64_t stopped_pos;
     int audio, subtitle;      /* streams the menus asked for */
+    int menu_video;           /* the title playing is a menu's own video: no resume point */
     int window_on;
     float window[4];          /* screen fractions */
     canvas layer;
@@ -92,10 +93,19 @@ static void start(disc *d, int title, int chapter, uint64_t pos)
     d->layer_id++;            /* hand the menu layer to the new player */
 }
 
-static void d_play(void *user, int playlist, int chapter, int audio, int subtitle)
+static void d_play(void *user, int playlist, int chapter, int audio, int subtitle, int menu_mode)
 {
     disc *d = user;
 
+    /* Another title replacing the movie (Circle opens the menu over it): keep the movie's
+       place for resume(), as a stop would. */
+    if (d->pl && !d->menu_video && !player_title_ended(d->pl) && d->title != playlist) {
+        d->stopped_title = d->title;
+        d->stopped_pos = player_position(d->pl);
+        d->stopped_audio = player_audio(d->pl);
+        d->stopped_sub = from_substream(player_subtitle(d->pl));
+    }
+    d->menu_video = menu_mode;
     /* The same title again (a looping menu video): restart it in place, which is quick. */
     if (d->pl && d->title == playlist && audio == d->audio && subtitle == d->subtitle) {
         player_restart(d->pl, chapter);
@@ -114,10 +124,12 @@ static void d_stop(void *user)
 
     if (!d->pl)
         return;
-    d->stopped_title = d->title;
-    d->stopped_pos = player_position(d->pl);
-    d->stopped_audio = player_audio(d->pl);
-    d->stopped_sub = from_substream(player_subtitle(d->pl));
+    if (!d->menu_video) {     /* resume() continues the last title that was not a menu video */
+        d->stopped_title = d->title;
+        d->stopped_pos = player_position(d->pl);
+        d->stopped_audio = player_audio(d->pl);
+        d->stopped_sub = from_substream(player_subtitle(d->pl));
+    }
     player_close(d->pl);
     d->pl = NULL;
     d->title = 0;
@@ -130,6 +142,7 @@ static int d_resume(void *user)
 
     if (!d->stopped_title)
         return -1;
+    d->menu_video = 0;
     d->audio = d->stopped_audio;
     d->subtitle = d->stopped_sub;
     start(d, d->stopped_title, 0, d->stopped_pos);
@@ -215,7 +228,7 @@ static void save_state(disc *d)
         disc_state_save(state_key(d), NULL);
         return;
     }
-    if (d->pl) {              /* the disc was left during a title: the PSP keeps its place */
+    if (d->pl && !d->menu_video) {   /* the disc was left during a title: the PSP keeps its place */
         d->stopped_title = d->title;
         d->stopped_pos = player_position(d->pl);
         d->stopped_audio = player_audio(d->pl);

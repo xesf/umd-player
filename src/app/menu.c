@@ -95,6 +95,7 @@ struct menu {
     user_value user[MAX_USERDATA];
     int user_count;
     int resume_playlist, resume_chapter;   /* for getResumeInfo */
+    int menu_mode;            /* the title playing is a menu video: play(0, 1, ...) */
     int audio_id, sub_id, sub_on;
     float win[4];
     int win_set;
@@ -883,7 +884,16 @@ NATIVE(mp_play)
     }
     mlog(m, "menu: play title %d chapter %d audio %d subtitle %d", playlist, chapter, m->audio_id,
          m->sub_on ? m->sub_id : -1);
-    m->p.play(m->p.user, playlist, chapter, m->audio_id, m->sub_on ? m->sub_id : -1);
+    {
+        menu_status st;
+        m->p.status(m->p.user, &st);
+        if (st.playing && !m->menu_mode && st.playlist != playlist) {   /* as a stop: getResumeInfo */
+            m->resume_playlist = st.playlist;
+            m->resume_chapter = st.chapter;
+        }
+    }
+    m->menu_mode = vs_truthy(arg(args, argc, 1));
+    m->p.play(m->p.user, playlist, chapter, m->audio_id, m->sub_on ? m->sub_id : -1, m->menu_mode);
 }
 
 NATIVE(mp_stop)
@@ -892,7 +902,7 @@ NATIVE(mp_stop)
     menu_status st;
     (void)vm; (void)self; (void)args; (void)argc; (void)ret;
     m->p.status(m->p.user, &st);
-    if (st.playing) {
+    if (st.playing && !m->menu_mode) {      /* a menu video is no place to resume */
         m->resume_playlist = st.playlist;
         m->resume_chapter = st.chapter;
     }
@@ -903,6 +913,7 @@ NATIVE(mp_resume)
 {
     menu *m = user;
     (void)vm; (void)self; (void)args; (void)argc;
+    m->menu_mode = 0;
     *ret = vs_int(m->p.resume(m->p.user));     /* scripts test for 0 before playing from the start */
 }
 
@@ -918,6 +929,7 @@ NATIVE(mp_status)
     vs_set(vm, *ret, vs_intern(vm, "playStatus"), vs_int(!st.playing ? 0 : st.paused ? 2 : 1));
     vs_set(vm, *ret, vs_intern(vm, "playListNumber"), vs_int(st.playlist));
     vs_set(vm, *ret, vs_intern(vm, "chapterNumber"), vs_int(st.chapter));
+    vs_set(vm, *ret, vs_intern(vm, "menuMode"), vs_int(st.playing && m->menu_mode));
     /* 0 is normal speed, anything else paused or fast play; the scripts only test for 0.
        Summer Days shows its password at normal speed and hides it when that changes. */
     vs_set(vm, *ret, vs_intern(vm, "playSpeed"), vs_int(st.playing && st.paused ? -1 : 0));
@@ -1390,7 +1402,7 @@ void menu_exit(menu *m)
     menu_status st;
 
     m->p.status(m->p.user, &st);
-    if (st.playing) {
+    if (st.playing && !m->menu_mode) {
         m->resume_playlist = st.playlist;
         m->resume_chapter = st.chapter;
     }
