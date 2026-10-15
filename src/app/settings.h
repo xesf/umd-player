@@ -12,6 +12,7 @@ typedef struct app_settings {
     int screen;               /* screen_mode */
     char audio[3];            /* ISO 639-1 language of the preferred audio track */
     char subs[4];             /* SUBS_OFF, SUBS_SYSTEM, or an ISO 639-1 language */
+    int start_disc;           /* 1: play the disc's intros before the movie; 0: the movie only */
 } app_settings;
 
 /* The settings, loaded on first use (defaults: Zoom, English audio, subtitles in the system

@@ -1,0 +1,72 @@
+#ifndef MENU_H
+#define MENU_H
+
+#include <stdint.h>
+
+#include "../core/canvas.h"
+
+/* Runs a UMD Video disc's own menus: loads the RCO packages from UMD_VIDEO/RESOURCE/, runs
+   their scripts, and keeps the widgets, animations and timers going. Portable: it drives
+   the movie playback through menu_player callbacks and draws into a canvas, so it runs the
+   same in tools/menutest (with a player that only logs) and in the app.
+
+   Coordinates in the scripts are units of a 16:9 screen 854 wide and 480 high, from the centre,
+   y up; an image is one unit per pixel unless its widget gives a size. The canvas is the
+   Vita's 960x544. */
+
+typedef struct menu menu;
+
+typedef struct menu_status {
+    int playing;              /* a title is playing (or paused) */
+    int paused;
+    int playlist;             /* 1-based title number, 0 when stopped */
+    int chapter;              /* 1-based */
+    int audio, subtitle;      /* substreams; subtitle -1 for off */
+} menu_status;
+
+typedef struct menu_player {
+    void *user;
+    /* Read a disc file; returns malloc'd data or NULL. */
+    uint8_t *(*read_file)(void *user, const char *path, uint32_t *size);
+    /* Start a title (1-based) at a chapter (1-based); audio and subtitle are substreams,
+       subtitle -1 for off. */
+    void (*play)(void *user, int playlist, int chapter, int audio, int subtitle);
+    void (*stop)(void *user);
+    /* Continue the title that was playing before the menu stopped it. */
+    void (*resume)(void *user);
+    void (*status)(void *user, menu_status *st);
+    void (*set_audio)(void *user, int audio);
+    void (*set_subtitle)(void *user, int subtitle);   /* -1 turns subtitles off */
+    /* Show the video in a window (menu units, centre origin), or full screen when w is 0. */
+    void (*set_window)(void *user, float x, float y, float w, float h);
+    void (*log)(void *user, const char *msg);
+} menu_player;
+
+/* Loads EN100000.RCO (the start menus) and runs its top level. NULL if the disc has none. */
+menu *menu_open(const menu_player *player, const char *language);
+void menu_close(menu *m);
+
+/* Starts the disc as when it is inserted (controller.onAutoPlay). */
+void menu_start(menu *m);
+
+/* Call once per display refresh with the buttons pressed since the last call (PLAT_BTN_*)
+   and the time. Returns 0 when the menus ended (controller.end). */
+int menu_update(menu *m, uint32_t pressed, uint64_t now_us);
+
+/* Playback events from the player. */
+void menu_playlist_ended(menu *m, int playlist);
+void menu_chapter_changed(menu *m, int chapter);
+/* The user asked for the menu during playback (the PSP's "menu" button). */
+void menu_menu_button(menu *m);
+
+/* Logs the open pages and their widgets. */
+void menu_debug(const menu *m);
+
+/* 1 if the menus changed since the last menu_draw. */
+int menu_dirty(const menu *m);
+/* Draws the open pages into c (UI layer, transparent where nothing is drawn). */
+void menu_draw(menu *m, canvas *c);
+/* 1 while a page is open and takes the buttons; the player should not handle them. */
+int menu_has_focus(const menu *m);
+
+#endif

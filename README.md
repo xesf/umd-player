@@ -37,7 +37,7 @@ The options panel also shows the date, time, and battery level. While a movie pl
 
 Each disc remembers where you left it and its audio, subtitle, and screen settings (`ux0:data/umdplayer/resume.txt`). Playing it again resumes from there; near the end of the movie it starts over. In the library, Select shows the selected disc's title and, if it has a saved position, how far you got. Square plays a disc from the start, with the same settings, whether or not that panel shows. To quit, use the PS button.
 
-The library's settings panel (Triangle) sets the defaults for discs you have not played yet: the screen mode (Zoom at first), the audio language (English at first), and the subtitle language (at first the Vita's system language; Off turns them off). A disc without a track in that language uses its first audio track and no subtitles. The settings are kept in `ux0:data/umdplayer/settings.txt`.
+The library's settings panel (Triangle) has "Start with": Movie (the default) plays the movie at once, and Disc plays the disc as a PSP would, through its own menus: logos and warnings, the menu screens, then the movie. During the movie, Circle asks the disc for its menu. Select (or holding Circle) goes back to the library. A disc without menus plays its short intro titles (picked by name) and then the movie; Cross or Start skips one. The same panel sets the defaults for discs you have not played yet: the screen mode (Zoom at first), the audio language (English at first), and the subtitle language (at first the Vita's system language; Off turns them off). A disc without a track in that language uses its first audio track and no subtitles. The settings are kept in `ux0:data/umdplayer/settings.txt`.
 
 Screen modes:
 
@@ -46,6 +46,7 @@ Screen modes:
 - **Fill**: fills the screen with the whole frame and crops what does not fit, for example a 4:3 picture cropped to 16:9.
 - **Stretch**: fills the screen and ignores the aspect ratio.
 
+- [Manual](docs/manual.md): installing, adding movies, all controls, with screenshots
 - [Changelog](CHANGELOG.md)
 - [Build plan](docs/plan.md)
 - [UMD Video format reference](docs/formats/umd-video.md)
