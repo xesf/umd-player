@@ -1,267 +1,163 @@
-/* macOS: H.264 decoding with VideoToolbox. Output frames are IOSurface-backed BGRA.
-   VideoToolbox rejects frame_mbs_only_flag = 0, so the stream goes through h264_progressive.c
-   first; field-coded discs cannot be decoded here and only play on the Vita. */
+/* macOS: H.264 decoding with the software decoder in src/core/h264dec.c. VideoToolbox cannot
+   decode the field pictures that half of the UMD Video discs use, so the Mac does not use it.
+   Frames come out as IOSurface-backed BGRA pixel buffers for the presenter in mac_main.m. */
 #include "../platform.h"
 #include "mac_frame.h"
-#include "h264_progressive.h"
-#include "../../core/h264.h"
+#include "../../core/h264dec.h"
 
-#include <CoreMedia/CoreMedia.h>
-#include <VideoToolbox/VideoToolbox.h>
-#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define MAX_FRAMES 16
-#define SAMPLE_MAX (2 * 1024 * 1024)
+#define MAX_FRAMES 8
 
 struct plat_video {
-    VTDecompressionSessionRef session;
-    CMVideoFormatDescriptionRef format;
-    int interlaced;
-    pthread_mutex_t lock;
+    h264dec *dec;
     struct { CVPixelBufferRef image; uint64_t pts; } out[MAX_FRAMES];
     int out_count;
-    h264p_state rewrite;
-    uint8_t *nal_buf;       /* one rewritten NAL unit */
-    uint8_t *sample;        /* AVCC sample being built: 4-byte big-endian length + NAL */
-    uint32_t sample_size;
-    int fields;             /* fields collected in sample, for field pairs */
-    uint64_t sample_pts;
 };
 
-static void on_frame(void *ref, void *source_ref, OSStatus status, VTDecodeInfoFlags flags,
-                     CVImageBufferRef image, CMTime pts, CMTime duration)
+/* BT.601 limited range to BGRA, 16.16 fixed point */
+static void yuv_to_bgra(const h264dec_frame *f, uint8_t *dst, size_t dst_stride)
 {
-    plat_video *v = (plat_video *)ref;
-
-    (void)source_ref;
-    (void)flags;
-    (void)duration;
-    if (status != noErr || !image) {
-        static int reported;
-        if (reported++ < 10)
-            fprintf(stderr, "VideoToolbox: frame at %.3f s failed (status %d)\n", pts.value / 90000.0, (int)status);
-        return;
+    for (int y = 0; y < f->height; y++) {
+        const uint8_t *py = f->plane[0] + y * f->stride[0];
+        const uint8_t *pu = f->plane[1] + (y >> 1) * f->stride[1];
+        const uint8_t *pv = f->plane[2] + (y >> 1) * f->stride[2];
+        uint8_t *o = dst + y * dst_stride;
+        for (int x = 0; x < f->width; x++) {
+            int c = (py[x] - 16) * 76309, d = pu[x >> 1] - 128, e = pv[x >> 1] - 128;
+            int r = (c + 104597 * e + 32768) >> 16;
+            int g = (c - 25675 * d - 53279 * e + 32768) >> 16;
+            int b = (c + 132201 * d + 32768) >> 16;
+            o[x * 4 + 0] = (uint8_t)(b < 0 ? 0 : b > 255 ? 255 : b);
+            o[x * 4 + 1] = (uint8_t)(g < 0 ? 0 : g > 255 ? 255 : g);
+            o[x * 4 + 2] = (uint8_t)(r < 0 ? 0 : r > 255 ? 255 : r);
+            o[x * 4 + 3] = 255;
+        }
     }
-    pthread_mutex_lock(&v->lock);
-    if (v->out_count < MAX_FRAMES) {
-        v->out[v->out_count].image = CVPixelBufferRetain(image);
-        v->out[v->out_count].pts = (uint64_t)pts.value;
+}
+
+static CVPixelBufferRef make_image(const h264dec_frame *f)
+{
+    CVPixelBufferRef image = NULL;
+    CFMutableDictionaryRef attrs = CFDictionaryCreateMutable(NULL, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+    CFMutableDictionaryRef surface = CFDictionaryCreateMutable(NULL, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+
+    CFDictionarySetValue(attrs, kCVPixelBufferIOSurfacePropertiesKey, surface);
+    if (CVPixelBufferCreate(NULL, (size_t)f->width, (size_t)f->height, kCVPixelFormatType_32BGRA, attrs, &image) == kCVReturnSuccess) {
+        CVPixelBufferLockBaseAddress(image, 0);
+        yuv_to_bgra(f, CVPixelBufferGetBaseAddress(image), CVPixelBufferGetBytesPerRow(image));
+        CVPixelBufferUnlockBaseAddress(image, 0);
+    }
+    CFRelease(surface);
+    CFRelease(attrs);
+    return image;
+}
+
+static void take_frames(plat_video *v)
+{
+    h264dec_frame f;
+    while (v->out_count < MAX_FRAMES && h264dec_output(v->dec, &f)) {
+        CVPixelBufferRef image = f.pts == PLAT_PTS_HIDDEN ? NULL : make_image(&f);
+        if (f.pts != PLAT_PTS_HIDDEN && !image)
+            continue;
+        v->out[v->out_count].image = image;
+        v->out[v->out_count].pts = f.pts;
         v->out_count++;
     }
-    pthread_mutex_unlock(&v->lock);
+}
+
+/* Parameter sets as an Annex B buffer, so the decoder reads them like any access unit. */
+static void feed_parameter_sets(plat_video *v, const plat_video_config *cfg)
+{
+    uint32_t n = 4 + cfg->sps_size + 4 + cfg->pps_size;
+    uint8_t *buf = malloc(n);
+    if (!buf)
+        return;
+    memcpy(buf, "\0\0\0\1", 4);
+    memcpy(buf + 4, cfg->sps, cfg->sps_size);
+    memcpy(buf + 4 + cfg->sps_size, "\0\0\0\1", 4);
+    memcpy(buf + 8 + cfg->sps_size, cfg->pps, cfg->pps_size);
+    h264dec_decode(v->dec, buf, n, PLAT_PTS_HIDDEN);
+    free(buf);
 }
 
 plat_video *plat_video_open(const plat_video_config *cfg)
 {
-    uint8_t sps[2 * 256 + 16];
-    uint32_t sps_size = 0;
-    const uint8_t *sets[2] = {sps, cfg->pps};
-    size_t sizes[2] = {0, cfg->pps_size};
-    VTDecompressionOutputCallbackRecord cb = {on_frame, NULL};
-    CFMutableDictionaryRef attrs, surface;
-    int32_t bgra = kCVPixelFormatType_32BGRA;
-    CFNumberRef fmt;
     plat_video *v = calloc(1, sizeof(*v));
 
-    if (!v || !(v->sample = malloc(SAMPLE_MAX)) || !(v->nal_buf = malloc(2 * SAMPLE_MAX + 16)))
-        goto fail;
-    pthread_mutex_init(&v->lock, NULL);
-    v->interlaced = cfg->interlaced;
-    if (cfg->interlaced || cfg->sps_size > 256)
-        goto fail;
-    switch (h264p_rewrite(&v->rewrite, cfg->sps, cfg->sps_size, sps, &sps_size)) {
-    case H264P_REWRITTEN:
-        break;
-    case H264P_COPY:
-        memcpy(sps, cfg->sps, cfg->sps_size);
-        sps_size = cfg->sps_size;
-        break;
-    default:
-        goto fail;
+    if (!v || !(v->dec = h264dec_open())) {
+        free(v);
+        return NULL;
     }
-    sizes[0] = sps_size;
-    h264p_rewrite(&v->rewrite, cfg->pps, cfg->pps_size, v->nal_buf, &sps_size);
-    if (CMVideoFormatDescriptionCreateFromH264ParameterSets(NULL, 2, sets, sizes, 4, &v->format) != noErr)
-        goto fail;
-
-    attrs = CFDictionaryCreateMutable(NULL, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
-    surface = CFDictionaryCreateMutable(NULL, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
-    fmt = CFNumberCreate(NULL, kCFNumberSInt32Type, &bgra);
-    CFDictionarySetValue(attrs, kCVPixelBufferPixelFormatTypeKey, fmt);
-    CFDictionarySetValue(attrs, kCVPixelBufferIOSurfacePropertiesKey, surface);
-    cb.decompressionOutputRefCon = v;
-    if (VTDecompressionSessionCreate(NULL, v->format, NULL, attrs, &cb, &v->session) != noErr)
-        v->session = NULL;
-    CFRelease(fmt);
-    CFRelease(surface);
-    CFRelease(attrs);
-    if (!v->session)
-        goto fail;
+    if (cfg->sps && cfg->sps_size && cfg->pps && cfg->pps_size)
+        feed_parameter_sets(v, cfg);
     return v;
-
-fail:
-    plat_video_close(v);
-    return NULL;
-}
-
-typedef struct {
-    plat_video *v;
-    int overflow;
-} append_ctx;
-
-/* Appends one NAL unit to the AVCC sample. Delimiters and parameter sets stay out:
-   the format description carries the SPS and PPS. */
-static void append_nal(void *user, const uint8_t *nal, uint32_t size)
-{
-    append_ctx *c = (append_ctx *)user;
-    plat_video *v = c->v;
-    int type = size ? nal[0] & 0x1F : 0;
-    uint32_t rewritten;
-
-    /* SEI stays out too: with its picture timing, VideoToolbox drops some pulldown frames. */
-    if (size == 0 || type == 9 || type == 7 || type == 8 || type == 6)
-        return;
-    if (size <= SAMPLE_MAX) {
-        int r = h264p_rewrite(&v->rewrite, nal, size, v->nal_buf, &rewritten);
-        if (r == H264P_REWRITTEN) {
-            nal = v->nal_buf;
-            size = rewritten;
-        } else if (r != H264P_COPY) {
-            static int reported;
-            if (reported++ < 10)
-                fprintf(stderr, "progressive rewrite failed (%d) on NAL type %d, %u bytes\n", r, type, size);
-            c->overflow = 1;
-            return;
-        }
-    }
-    if (v->sample_size + 4 + size > SAMPLE_MAX) {
-        c->overflow = 1;
-        return;
-    }
-    v->sample[v->sample_size + 0] = (uint8_t)(size >> 24);
-    v->sample[v->sample_size + 1] = (uint8_t)(size >> 16);
-    v->sample[v->sample_size + 2] = (uint8_t)(size >> 8);
-    v->sample[v->sample_size + 3] = (uint8_t)size;
-    memcpy(v->sample + v->sample_size + 4, nal, size);
-    v->sample_size += 4 + size;
-}
-
-static int submit(plat_video *v)
-{
-    CMBlockBufferRef block = NULL;
-    CMSampleBufferRef sample = NULL;
-    CMSampleTimingInfo timing = {kCMTimeInvalid, CMTimeMake((int64_t)v->sample_pts, 90000), kCMTimeInvalid};
-    size_t size = v->sample_size;
-    VTDecodeInfoFlags info = 0;
-    OSStatus st;
-
-    if (v->sample_pts == PLAT_PTS_HIDDEN)
-        timing.presentationTimeStamp = CMTimeMake(INT64_MAX, 90000);
-    st = CMBlockBufferCreateWithMemoryBlock(NULL, NULL, size, kCFAllocatorDefault, NULL, 0, size,
-                                            kCMBlockBufferAssureMemoryNowFlag, &block);
-    if (st == noErr)
-        st = CMBlockBufferReplaceDataBytes(v->sample, block, 0, size);
-    if (st == noErr)
-        st = CMSampleBufferCreateReady(NULL, block, v->format, 1, 1, &timing, 1, &size, &sample);
-    if (st == noErr)
-        st = VTDecompressionSessionDecodeFrame(v->session, sample, 0, NULL, &info);
-    if (st != noErr) {
-        static int reported;
-        if (reported++ < 10)
-            fprintf(stderr, "VideoToolbox: decode at %.3f s failed (status %d)\n", v->sample_pts / 90000.0, (int)st);
-    }
-    if (sample)
-        CFRelease(sample);
-    if (block)
-        CFRelease(block);
-    v->sample_size = 0;
-    v->fields = 0;
-    return st == noErr ? 0 : -1;
 }
 
 int plat_video_decode(plat_video *v, const uint8_t *au, uint32_t size, uint64_t pts, unsigned flags)
 {
-    append_ctx c = {v, 0};
-
-    if (v->fields == 0 || pts < v->sample_pts)
-        v->sample_pts = pts;
-    h264_each_nal(au, size, append_nal, &c);
-    if (c.overflow) {
-        v->sample_size = 0;
-        v->fields = 0;
+    (void)flags;                   /* the decoder pairs fields itself */
+    if (h264dec_decode(v->dec, au, size, pts) < 0) {
+        static int reported;
+        if (reported++ < 10)
+            fprintf(stderr, "H.264: %s\n", h264dec_error(v->dec));
         return -1;
     }
-    /* VideoToolbox wants both fields of a frame in one sample. */
-    if ((flags & PLAT_AU_FIELD) && ++v->fields < 2)
-        return 0;
-    return submit(v);
+    take_frames(v);
+    return 0;
 }
 
 int plat_video_frame(plat_video *v, plat_frame **frame, uint64_t *pts)
 {
     plat_frame *f;
-    int got = 0;
 
-    pthread_mutex_lock(&v->lock);
-    if (v->out_count > 0) {
-        f = calloc(1, sizeof(*f));
-        if (f) {
-            f->image = v->out[0].image;
-            *pts = v->out[0].pts == (uint64_t)INT64_MAX ? PLAT_PTS_HIDDEN : v->out[0].pts;
-            *frame = f;
-            got = 1;
-        } else {
-            CVPixelBufferRelease(v->out[0].image);
-        }
-        memmove(&v->out[0], &v->out[1], (size_t)(v->out_count - 1) * sizeof(v->out[0]));
-        v->out_count--;
-    }
-    pthread_mutex_unlock(&v->lock);
-    return got;
+    take_frames(v);
+    if (v->out_count == 0)
+        return 0;
+    f = calloc(1, sizeof(*f));
+    if (!f)
+        return 0;
+    f->image = v->out[0].image;
+    *pts = v->out[0].pts;
+    *frame = f;
+    memmove(&v->out[0], &v->out[1], (size_t)(v->out_count - 1) * sizeof(v->out[0]));
+    v->out_count--;
+    return 1;
 }
 
 void plat_frame_release(plat_frame *f)
 {
     if (!f)
         return;
-    CVPixelBufferRelease(f->image);
+    if (f->image)
+        CVPixelBufferRelease(f->image);
     free(f);
 }
 
 void plat_video_flush(plat_video *v)
 {
-    if (v->session)
-        VTDecompressionSessionWaitForAsynchronousFrames(v->session);
-    pthread_mutex_lock(&v->lock);
-    while (v->out_count > 0)
-        CVPixelBufferRelease(v->out[--v->out_count].image);
-    pthread_mutex_unlock(&v->lock);
-    v->sample_size = 0;
-    v->fields = 0;
+    while (v->out_count > 0) {
+        v->out_count--;
+        if (v->out[v->out_count].image)
+            CVPixelBufferRelease(v->out[v->out_count].image);
+    }
+    h264dec_reset(v->dec);
 }
 
 void plat_video_close(plat_video *v)
 {
     if (!v)
         return;
-    if (v->session) {
-        plat_video_flush(v);
-        VTDecompressionSessionInvalidate(v->session);
-        CFRelease(v->session);
-    }
-    if (v->format)
-        CFRelease(v->format);
-    free(v->sample);
-    free(v->nal_buf);
+    plat_video_flush(v);
+    h264dec_close(v->dec);
     free(v);
 }
 
 int plat_frame_lock(plat_frame *f, const uint8_t **pixels, int *stride)
 {
-    if (CVPixelBufferLockBaseAddress(f->image, kCVPixelBufferLock_ReadOnly) != kCVReturnSuccess)
+    if (!f->image || CVPixelBufferLockBaseAddress(f->image, kCVPixelBufferLock_ReadOnly) != kCVReturnSuccess)
         return -1;
     *pixels = CVPixelBufferGetBaseAddress(f->image);
     *stride = (int)CVPixelBufferGetBytesPerRow(f->image);
@@ -270,5 +166,6 @@ int plat_frame_lock(plat_frame *f, const uint8_t **pixels, int *stride)
 
 void plat_frame_unlock(plat_frame *f)
 {
-    CVPixelBufferUnlockBaseAddress(f->image, kCVPixelBufferLock_ReadOnly);
+    if (f->image)
+        CVPixelBufferUnlockBaseAddress(f->image, kCVPixelBufferLock_ReadOnly);
 }

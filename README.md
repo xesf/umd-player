@@ -47,18 +47,26 @@ On the touch screen, a tap shows or hides the time bar; slide along it and lift 
 
 ## Build
 
-Requirements: a C99 compiler for the host tools, and [VitaSDK](https://vitasdk.org) for the Vita. The player uses no other libraries.
+Requirements: a C99 compiler for the host tools and the Mac app, and [VitaSDK](https://vitasdk.org) for the Vita. The player uses no other libraries.
 
 ```
 cmake -S . -B build/vita && cmake --build build/vita   # build/vita/umdplayer-v<version>.vpk
+make                                                   # the Mac app: build/macos/umdplayer
 make -C tools                                          # host tools in build/host/
 ./build/host/umdinfo umd/movie.iso                     # titles, chapters, streams of a disc
 ./build/host/menutest -d umd/movie.iso 60              # run a disc's menus with a simulated player
 ./tools/check_corpus.sh umd                            # check every disc in a folder
 ./tools/image_check.sh                                 # check the CSO and ZSO readers
+./build/host/h264dectest video.264 -c ref.yuv          # check the H.264 decoder against a reference
 ```
 
-GitHub Actions builds the host tools and the VPK on every push and runs the checks that need no disc. A `v*` tag publishes a release with the VPK and sends it to [VitaDB](https://vitadb.rinnegatamante.eu), using the `VITA_SECRET` repository secret. The macOS player is parked: VideoToolbox cannot decode the field-coded H.264 some discs use.
+GitHub Actions builds the host tools and the VPK on every push and runs the checks that need no disc. A `v*` tag publishes a release with the VPK and sends it to [VitaDB](https://vitadb.rinnegatamante.eu), using the `VITA_SECRET` repository secret. It also builds the Mac app.
+
+## macOS
+
+`./build/macos/umdplayer umd` opens the library of a folder; `./build/macos/umdplayer movie.iso` plays one disc. The keyboard stands in for the Vita's buttons: arrow keys for the D-pad, Space for Cross, Backspace for Circle, A for Square, W for Triangle, Q and E for L and R, Return for Start, Tab for Select. Escape quits.
+
+VideoToolbox cannot decode the field pictures that half of the discs use, so the Mac app decodes H.264 itself, with the decoder in `src/core/h264dec.c`. See [the decoder notes](docs/h264-decoder.md).
 
 ## Documentation
 
@@ -66,6 +74,7 @@ GitHub Actions builds the host tools and the VPK on every push and runs the chec
 - [Changelog](CHANGELOG.md)
 - [UMD Video format reference](docs/formats/umd-video.md) and [compressed images](docs/formats/compressed-iso.md)
 - [UMD Video menus](docs/research/umd-menus.md): the RCO format, the script bytecode and the player interface
+- [H.264 decoder](docs/h264-decoder.md): the software decoder the Mac app uses
 - [Build plan](docs/plan.md)
 - [Licensing](docs/licensing.md)
 

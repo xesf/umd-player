@@ -837,16 +837,6 @@ static void add_luma_block(h264dec *d, mbdec *m, int r)
     uint8_t *dst = d->dst[0] + (m->y * 16 + by * 4) * d->dst_stride[0] + m->x * 16 + bx * 4;
     if (m->type == MB_I16)
         m->coef[r][0] = m->dc[r];
-    if (getenv("H264DEC_MBTRACE") && d->cur->frame_num == atoi(getenv("H264DEC_MBTRACE")) && getenv("H264DEC_MBADDR") &&
-        m->addr == atoi(getenv("H264DEC_MBADDR")) && ((m->nz >> r) & 1)) {
-        fprintf(stderr, "block %d coef:", r);
-        for (int k = 0; k < 16; k++)
-            fprintf(stderr, " %d", m->coef[r][k]);
-        fprintf(stderr, "\n  pred:");
-        for (int k = 0; k < 16; k++)
-            fprintf(stderr, " %d", dst[(k >> 2) * d->dst_stride[0] + (k & 3)]);
-        fprintf(stderr, "\n");
-    }
     if ((m->nz >> r) & 1)
         h264dec_idct4x4_add(dst, d->dst_stride[0], m->coef[r]);
 }
@@ -1323,6 +1313,10 @@ int h264dec_decode_slice_data(h264dec *d, const uint8_t *data, uint32_t size, ui
     int total = d->mb_w * d->pic_mb_h;
     mbdec *m = malloc(sizeof(mbdec));
     int addr = d->sh.first_mb, r = 0;
+    /* debugging output, see docs/h264-decoder.md */
+    int mbtypes = getenv("H264DEC_MBTYPES") != NULL;
+    int mbtrace = getenv("H264DEC_MBTRACE") ? atoi(getenv("H264DEC_MBTRACE")) : -1;
+    int mbaddr = getenv("H264DEC_MBADDR") ? atoi(getenv("H264DEC_MBADDR")) : -1;
 
     if (!m)
         return h264dec_fail(d, "out of memory");
@@ -1348,7 +1342,7 @@ int h264dec_decode_slice_data(h264dec *d, const uint8_t *data, uint32_t size, ui
             break;
         }
         store_mb(d, m);
-        if (getenv("H264DEC_MBTYPES")) {
+        if (mbtypes) {
             /* FFmpeg's -debug mb_type letters */
             char t = m->type == MB_PCM ? 'P' : m->type == MB_I4 ? 'i' : m->type == MB_I16 ? 'I' :
                      m->skip ? (d->sh.type == SLICE_B ? 'd' : 'S') : m->type == MB_BDIRECT ? 'D' :
@@ -1356,8 +1350,7 @@ int h264dec_decode_slice_data(h264dec *d, const uint8_t *data, uint32_t size, ui
                      m->ref[0][0] < 0 && m->ref[0][1] < 0 && m->ref[0][2] < 0 && m->ref[0][3] < 0 ? '<' : 'X';
             fprintf(stderr, "MBT %d %d %c %d %d\n", d->slice_num, addr, t, d->cur->frame_num, d->qp);
         }
-        if (getenv("H264DEC_MBTRACE") && d->cur->frame_num == atoi(getenv("H264DEC_MBTRACE")) &&
-            (!getenv("H264DEC_MBADDR") ? addr < 8 : addr == atoi(getenv("H264DEC_MBADDR")))) {
+        if (mbtrace >= 0 && d->cur->frame_num == mbtrace && (mbaddr < 0 ? addr < 8 : addr == mbaddr)) {
             fprintf(stderr, "mb %d type %d skip %d qp %d cbp %x i16 %d refs %d %d %d %d\n", addr, m->type, m->skip, d->qp, m->cbp,
                     m->i16mode, m->ref[0][0], m->ref[0][1], m->ref[0][2], m->ref[0][3]);
             for (int k = 0; k < 16; k++)

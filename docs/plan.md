@@ -171,7 +171,7 @@ Still to do:
 - Measure the decoder on the Vita with `tests/vita/at3p_bench`. The budget is 10% of one core at 333 MHz. If it is over budget, profile it with the **frame-budget** skill. The likely targets are the IPQF filter and the IMDCT, which suit NEON.
 - Check whether the Vita's `SceAudiodec` decodes ATRAC3plus (codec IDs `0x1001` and `0x1002`, guess). Our decoder works, so this is now only a speed option.
 
-### Phase 3: macOS platform and first playback (parked)
+### Phase 3: macOS platform and first playback
 
 Done and still useful on every platform:
 
@@ -185,10 +185,7 @@ macOS results, measured with `make && ./build/macos/umdplayer <iso>`:
 - VideoToolbox does not accept `frame_mbs_only_flag = 0`, which all discs set. `src/platform/macos/h264_progressive.c` rewrites film streams to progressive. Software decoding of the rewritten stream is identical to the original for 2000 frames.
 - Field-coded discs cannot be rewritten, so they play audio only on macOS.
 
-Parked with these known issues, because the Vita decodes all discs in hardware:
-
-- VideoToolbox drops a few film frames without an error (status 0, no image), for example around 4 s and 26 s into *Zathura*. FFmpeg's VideoToolbox path decodes the same rewritten stream without drops, so the cause is in `mac_video.c`.
-- Deinterlacing, seeking, and subtitles are not done on macOS.
+Update: VideoToolbox returns corrupt pictures for field-coded streams even with the hardware decoder, and its software decoder rejects them. The Mac app now decodes H.264 with its own decoder (`src/core/h264dec.c`, see `docs/h264-decoder.md`), which matches FFmpeg bit for bit on every test disc, frame and field coded. The progressive rewrite is gone.
 
 ### Phase 4: player features
 
