@@ -171,6 +171,12 @@ struct player {
     int paused, audio_open;
     int leave;                       /* circle: back to the library */
     int intro, skipped;              /* player_options.intro; × skipped it */
+    int menu_mode, menu_request;     /* player_options.menu; Circle asked for the disc menu */
+    int window_on;                   /* player_set_window */
+    float window[4];
+    const uint8_t *layer;            /* player_set_layer */
+    int layer_w, layer_h, layer_stride;
+    uint32_t layer_id;
     char resume_key[128];            /* empty: do not remember */
     char disc_title[96];             /* PARAM.SFO TITLE */
     int next_title;                  /* L or R: the title to switch to, or -1 */
@@ -810,6 +816,7 @@ static void restart_reader(player *p, uint64_t target, int audio, int sub)
 
 /* The current position: the seek target until a frame from after the seek is on screen. */
 static void toast(player *p, icon_id icon, const char *fmt, ...) __attribute__((format(printf, 3, 4)));
+static int has_stream(const player *p, int kind, int sub_id);
 static int count_long_titles(const player *p);
 
 static uint64_t now_or_shown(player *p)
@@ -1096,6 +1103,16 @@ static int update_osd(player *p)
 {
     osd_view v;
 
+    if (p->layer) {           /* the disc menus draw instead */
+        int changed = p->present.ui_rgba != p->layer || p->present.ui_id != (p->layer_id | 0x40000000u);
+        p->present.ui_rgba = p->layer;
+        p->present.ui_w = p->layer_w;
+        p->present.ui_h = p->layer_h;
+        p->present.ui_stride = p->layer_stride;
+        p->present.ui_id = p->layer_id | 0x40000000u;
+        return changed;
+    }
+
     build_osd(p, &v);
     if (memcmp(&v, &p->osd_drawn, sizeof(v)) == 0)
         return 0;
@@ -1152,13 +1169,16 @@ static void present(player *p)
     if (!p->shown)
         return;
     plat_screen_size(&sw, &sh);
-    screen_layout(p->mode, p->present.video_w, p->present.video_h, p->sps.sar_w, p->sps.sar_h,
+    /* Disc menus are drawn for the whole 16:9 frame: while they show, the picture is Fit. */
+    screen_layout(p->layer ? SCREEN_FIT : p->mode, p->present.video_w, p->present.video_h, p->sps.sar_w, p->sps.sar_h,
                   p->have_active ? &p->active : NULL, (float)sw / (float)sh, &g);
     p->present.src_x = g.src_x;
     p->present.src_y = g.src_y;
     p->present.src_w = g.src_w;
     p->present.src_h = g.src_h;
     p->present.dst = g.dst;
+    if (p->window_on)
+        p->present.dst = (plat_rect){p->window[0], p->window[1], p->window[2], p->window[3]};
     if (p->present.overlay_rgba)
         p->present.overlay_dst = screen_map(&g, p->sub_x, p->sub_y, p->present.overlay_w, p->present.overlay_h);
     plat_present(p->shown, &p->present);
@@ -1294,6 +1314,61 @@ static void switch_title(player *p, int dir)
     toast(p, ICON_CHAPTERS, "This disc has one title");
 }
 
+int player_title_ended(const player *p) { return p->ended; }
+int player_paused(const player *p) { return p->paused; }
+int player_audio(const player *p) { return p->want_audio; }
+int player_subtitle(const player *p) { return p->sub_sub == DEMUX_NONE ? -1 : p->sub_sub; }
+uint64_t player_position(const player *p) { return now_or_shown((player *)p); }
+
+int player_menu_requested(player *p)
+{
+    int r = p->menu_request;
+    p->menu_request = 0;
+    return r;
+}
+
+int player_chapter(const player *p)
+{
+    return current_chapter((player *)p) + 1;
+}
+
+void player_set_audio(player *p, int audio)
+{
+    if (has_stream(p, UMDV_STREAM_AUDIO, audio)) {
+        plat_mutex_lock(p->lock);
+        p->want_audio = audio;
+        plat_cond_broadcast(p->cond);
+        plat_mutex_unlock(p->lock);
+    }
+}
+
+void player_set_subtitle(player *p, int subtitle)
+{
+    p->sub_sub = subtitle >= 0 && has_stream(p, UMDV_STREAM_SUBTITLE, subtitle) ? subtitle : DEMUX_NONE;
+    p->dirty = 1;
+}
+
+void player_set_window(player *p, const float *dst)
+{
+    p->window_on = dst != NULL;
+    if (dst)
+        memcpy(p->window, dst, sizeof(p->window));
+    p->dirty = 1;
+}
+
+void player_set_layer(player *p, const uint8_t *rgba, int w, int h, int stride, uint32_t id)
+{
+    if (rgba == p->layer && id == p->layer_id)
+        return;
+    p->layer = rgba;
+    p->layer_w = w;
+    p->layer_h = h;
+    p->layer_stride = stride;
+    p->layer_id = id;
+    memset(&p->osd_drawn, 0xFF, sizeof(p->osd_drawn));   /* redraw the OSD when the layer goes */
+    p->dirty = 1;
+}
+
 int player_finished(const player *p)
 {
     return p->ended || p->skipped;
@@ -1319,6 +1394,12 @@ static void toggle_pause(player *p)
 /* Buttons during playback. */
 static void play_input(player *p, uint32_t pressed)
 {
+    if (p->menu_mode && (pressed & PLAT_BTN_CIRCLE)) {
+        p->menu_request = 1;
+        return;
+    }
+    if (p->menu_mode)
+        pressed &= ~(PLAT_BTN_L | PLAT_BTN_R);
     if (p->intro) {
         if (pressed & (PLAT_BTN_CROSS | PLAT_BTN_START)) {
             p->skipped = 1;
@@ -1499,6 +1580,7 @@ player *player_open(const player_options *opt)
         free(buf);
     }
     p->intro = opt->intro;
+    p->menu_mode = opt->menu;
     if (opt->resume_key) {
         snprintf(p->resume_key, sizeof(p->resume_key), "%s", opt->resume_key);
         have_resume = resume_load(opt->resume_key, &resume) == 0;
@@ -1541,7 +1623,9 @@ player *player_open(const player_options *opt)
     p->has_audio = has_stream(p, UMDV_STREAM_AUDIO, p->audio_sub);
     if (have_resume && resume.sub >= 0 && has_stream(p, UMDV_STREAM_SUBTITLE, resume.sub))
         sub = resume.sub;
-    if (!have_resume && settings_subtitle_language()[0]) {
+    if (opt->menu && opt->subtitle != -2) {
+        sub = opt->subtitle >= 0 && has_stream(p, UMDV_STREAM_SUBTITLE, opt->subtitle) ? opt->subtitle : DEMUX_NONE;
+    } else if (!have_resume && settings_subtitle_language()[0]) {
         int s = stream_in_language(p, UMDV_STREAM_SUBTITLE, settings_subtitle_language());
         if (s >= 0)
             sub = s;
@@ -1582,10 +1666,14 @@ player *player_open(const player_options *opt)
     if (have_resume && resume.title == (int)(p->title - p->playlist.titles) && resume.pos > start &&
         resume.pos + RESUME_TAIL < p->title->end_pts)
         start = resume.pos;
+    if (opt->menu && opt->chapter > 1 && opt->chapter <= p->title->chapter_count)
+        start = p->playlist.chapters[p->title->first_chapter + opt->chapter - 1].pts;
+    if (opt->menu && opt->start_pts > start && opt->start_pts < p->title->end_pts)
+        start = opt->start_pts;
     restart_reader(p, start, p->audio_sub, sub);
     if (!p->reader)
         goto fail;
-    if (opt->title >= 0 && count_long_titles(p) > 1)
+    if (opt->title >= 0 && count_long_titles(p) > 1 && !opt->menu)
         toast(p, ICON_CHAPTERS, "%.40s", p->title->name);
     if (start != p->title->start_pts) {
         char t[24];
@@ -1614,7 +1702,8 @@ int player_update(player *p, uint32_t pressed)
             return 1;
         if (open_video(p) < 0 && !p->has_audio)
             return 0;
-        if (p->video)
+        /* Menu videos and logos are short; probing them would only delay the menus. */
+        if (p->video && !(p->menu_mode && p->title->end_pts - p->title->start_pts < 10u * 60 * 90000))
             probe_borders(p);
         p->last_frame_us = plat_time_us();   /* the probe's time is not a stall */
     }
@@ -1725,8 +1814,11 @@ int player_update(player *p, uint32_t pressed)
     done = p->eof && p->vq_count == 0 && p->pcm_count == 0;
     plat_mutex_unlock(p->lock);
     if (done && p->frame_count == 0) {
-        plat_log("end of title\n");
+        if (!p->ended)
+            plat_log("end of title\n");
         p->ended = 1;
+        if (p->menu_mode)
+            return 1;         /* hold the last frame; the menus decide what plays next */
         save_resume(p);
         return 0;
     }

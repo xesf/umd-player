@@ -53,6 +53,11 @@ add_executable(umdplayer
   src/app/backdrop.c
   src/app/settings.c
   src/app/intro.c
+  src/app/disc.c
+  src/app/menu.c
+  src/core/rco.c
+  src/core/vsmx.c
+  src/core/jpeg.c
   src/app/backdrop_png.c
   src/app/resume.c
   src/core/disc_image.c
