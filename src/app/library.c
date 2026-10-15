@@ -13,6 +13,7 @@
 #include "../core/iso9660.h"
 #include "../core/png.h"
 #include "../core/sfo.h"
+#include "../core/umdv.h"
 #include "../core/vtiming.h"
 #include "../platform/platform.h"
 #include "backdrop.h"
@@ -53,6 +54,7 @@ typedef struct lib_disc {
     uint8_t *icon0;                  /* RGBA, or NULL */
     int icon_w, icon_h;
     int has_resume;                  /* a saved position past the start */
+    int interactive;                 /* UMD-PG: an interactive movie, played through its menus */
     uint64_t resume_pos, resume_start, resume_end;   /* 90 kHz; start and end are 0 for 0.1.0 entries */
 } lib_disc;
 
@@ -221,6 +223,35 @@ static int compare_discs(const void *a, const void *b)
 }
 
 /* Reads the title and ICON0.PNG of every disc; the rest loads when a disc is selected. */
+/* UMD-PG discs (interactive movies, like Summer Days) carry no flag of their own. They are
+   UMD Video with menus whose scripts pick the next clip: many short unnamed titles and no
+   feature-length one. Such a disc only makes sense played through its menus. */
+static int is_interactive(disc_file *d)
+{
+    iso_entry dir;
+    umdv_playlist *pl;
+    uint8_t *buf;
+    uint32_t size, longest = 0;
+    int named = 0, result = 0;
+
+    if (iso_find(&d->vol, "UMD_VIDEO/RESOURCE", &dir) < 0 || !dir.is_dir)
+        return 0;
+    if ((buf = disc_read(d, "UMD_VIDEO/PLAYLIST.UMD", &size, 1024 * 1024)) == NULL)
+        return 0;
+    if ((pl = malloc(sizeof(umdv_playlist))) != NULL && umdv_playlist_parse(buf, size, pl) == 0) {
+        for (int i = 0; i < pl->title_count; i++) {
+            uint32_t len = pl->titles[i].end_pts - pl->titles[i].start_pts;
+            if (len > longest)
+                longest = len;
+            named += pl->titles[i].name[0] != 0;
+        }
+        result = pl->title_count >= 20 && named == 0 && longest < 45u * 60 * 90000;
+    }
+    free(pl);
+    free(buf);
+    return result;
+}
+
 static void read_disc_info(lib_disc *disc)
 {
     disc_file d;
@@ -243,6 +274,9 @@ static void read_disc_info(lib_disc *disc)
         disc->icon0 = decode_png(buf, size, &disc->icon_w, &disc->icon_h, 512, 512);
         free(buf);
     }
+    disc->interactive = is_interactive(&d);
+    if (disc->interactive)
+        plat_log("library: %s is an interactive movie (UMD-PG)\n", disc->title);
     plat_iso_close(&d.src);
 }
 
@@ -577,7 +611,9 @@ static void draw_info(library *l)
         title[max_chars] = 0;
     canvas_round_darken(c, PANEL_X, BIG_Y, PANEL_W, 2 * ICON_H, BIG_R, 90);   /* as tall as the icon */
     if (!d->has_resume) {
-        canvas_text(c, x, y + ICON_H - 8, 2, RGBA(255, 255, 255, 255), title);   /* centred */
+        canvas_text(c, x, y + ICON_H - (d->interactive ? 18 : 8), 2, RGBA(255, 255, 255, 255), title);   /* centred */
+        if (d->interactive)
+            canvas_text(c, x, y + ICON_H + 10, 2, TEXT_DIM, "Interactive movie (UMD-PG)");
         return;
     }
     format_time(at, sizeof(at), d->resume_pos - d->resume_start);
@@ -1148,6 +1184,11 @@ int library_update(library *l, uint32_t pressed)
     if (present)
         plat_present(l->icon ? l->shown : NULL, &l->info);
     return -1;
+}
+
+int library_interactive(const library *l, int index)
+{
+    return index >= 0 && index < l->count && l->discs[index].interactive;
 }
 
 const char *library_path(const library *l, int index)

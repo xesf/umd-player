@@ -10,7 +10,7 @@
 
 typedef struct disc disc;
 
-/* NULL if the disc has no menus (no UMD_VIDEO/RESOURCE/EN100000.RCO). */
+/* NULL if the disc has no menus (no UMD_VIDEO/RESOURCE/XX100000.RCO). */
 disc *disc_open(const char *iso_path);
 
 /* Call once per display refresh with the buttons pressed since the last call. Returns 0

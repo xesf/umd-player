@@ -19,7 +19,7 @@
 #define MAX_USERDATA 64
 #define UNITS_W      854.0f           /* menu coordinates: a 16:9 screen 480 units high */
 #define UNITS_H      480.0f
-#define START_RCO    "EN100000"
+
 
 enum { P_POS, P_COLOR, P_SCALE, P_ROT, P_CROP, P_SIZE, P_FADE };
 
@@ -960,13 +960,30 @@ NATIVE(mp_set_size)
     m->p.set_window(m->p.user, m->win[0], m->win[1], m->win[2], m->win[3]);
 }
 
+/* The video window: full screen (854x480 at the centre) until setPos or setSize. */
+NATIVE(mp_get_size)
+{
+    menu *m = user;
+    float v[2] = {m->win[2] > 0 ? m->win[2] : 854, m->win[3] > 0 ? m->win[3] : 480};
+    (void)self; (void)args; (void)argc;
+    *ret = array3(vm, v, 2);
+}
+
+NATIVE(mp_get_pos)
+{
+    menu *m = user;
+    (void)self; (void)args; (void)argc;
+    *ret = array3(vm, m->win, 2);
+}
+
 static int movieplayer_get(vsmx *vm, void *host, const char *key, vs_value *out)
 {
     static const struct { const char *name; vs_native fn; } methods[] = {
         {"play", mp_play}, {"stop", mp_stop}, {"resume", mp_resume}, {"getPlayerStatus", mp_status},
         {"getResumeInfo", mp_resume_info}, {"changeResumeInfo", mp_change_resume},
         {"changeAudioStream", mp_audio}, {"changeSubtitleStream", mp_subtitle}, {"turnOnSubtitle", mp_sub_on},
-        {"turnOffSubtitle", mp_sub_off}, {"setPos", mp_set_pos}, {"setSize", mp_set_size}};
+        {"turnOffSubtitle", mp_sub_off}, {"setPos", mp_set_pos}, {"setSize", mp_set_size},
+        {"getPos", mp_get_pos}, {"getSize", mp_get_size}};
     menu *m = host;
 
     for (unsigned i = 0; i < sizeof(methods) / sizeof(methods[0]); i++)
@@ -1223,12 +1240,37 @@ static void apply_pending(menu *m)
         if (vs_run_main(r->vm) < 0)
             mlog(m, "menu: %s top level failed", name);
         m->depth--;
-        call_value(m, vs_get(r->vm, vs_global(r->vm, "controller"), vs_intern(r->vm, "onChangeResource")),
-                   vs_global(r->vm, "controller"), NULL, 0);
+        {
+            vs_value fn = vs_get(r->vm, vs_global(r->vm, "controller"), vs_intern(r->vm, "onChangeResource"));
+            if (getenv("MENU_TRACE"))
+                mlog(m, "menu: %s.onChangeResource is %s", name, vs_is_function(fn) ? "set" : "missing");
+            call_value(m, fn, vs_global(r->vm, "controller"), NULL, 0);
+        }
     }
 }
 
 /* ---- public ---- */
+
+/* The start menus are XX100000.RCO, XX a language: EN on most discs, JA on Japanese ones.
+   Prefers the system language, then English, then whichever the disc has. */
+static const char *start_resource(menu *m)
+{
+    static const char *const langs[] = {"EN", "JA", "FR", "DE", "ES", "IT", "NL", "PT", "RU", "KO", "ZH", "CH", "TW"};
+    static char name[16];
+    char path[64], first[3] = {(char)(m->language[0] & ~0x20), (char)(m->language[1] & ~0x20), 0};
+    uint32_t size;
+
+    for (int i = -1; i < (int)(sizeof(langs) / sizeof(langs[0])); i++) {
+        uint8_t *data;
+        snprintf(name, sizeof(name), "%s100000", i < 0 ? first : langs[i]);
+        snprintf(path, sizeof(path), "UMD_VIDEO/RESOURCE/%s.RCO", name);
+        if ((data = m->p.read_file(m->p.user, path, &size)) != NULL) {
+            free(data);
+            return name;
+        }
+    }
+    return "EN100000";
+}
 
 menu *menu_open(const menu_player *player, const char *language)
 {
@@ -1239,7 +1281,7 @@ menu *menu_open(const menu_player *player, const char *language)
     m->p = *player;
     snprintf(m->language, sizeof(m->language), "%s", language && language[0] ? language : "en");
     m->sub_id = -1;
-    if ((m->res = load_res(m, START_RCO)) == NULL) {
+    if ((m->res = load_res(m, start_resource(m))) == NULL) {
         free(m);
         return NULL;
     }
@@ -1296,6 +1338,8 @@ void menu_chapter_changed(menu *m, int chapter)
     m->p.status(m->p.user, &st);
     vs_set(vm, info, vs_intern(vm, "chapterNumber"), vs_int(chapter));
     vs_set(vm, info, vs_intern(vm, "playListNumber"), vs_int(st.playlist));
+    vs_set(vm, info, vs_intern(vm, "mark_name"), vs_string(vm, st.mark_name));
+    vs_set(vm, info, vs_intern(vm, "mark_data"), vs_int(st.mark_data));
     call_handler(m, "movieplayer", "onChapter", &info, 1);
 }
 

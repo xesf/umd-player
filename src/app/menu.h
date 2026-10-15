@@ -22,6 +22,8 @@ typedef struct menu_status {
     int playlist;             /* 1-based title number, 0 when stopped */
     int chapter;              /* 1-based */
     int audio, subtitle;      /* substreams; subtitle -1 for off */
+    char mark_name[25];       /* the chapter's mark (UMD-PG): name and data */
+    uint32_t mark_data;
 } menu_status;
 
 typedef struct menu_player {
@@ -42,7 +44,8 @@ typedef struct menu_player {
     void (*log)(void *user, const char *msg);
 } menu_player;
 
-/* Loads EN100000.RCO (the start menus) and runs its top level. NULL if the disc has none. */
+/* Loads the start menus (EN100000.RCO, or another language's XX100000.RCO) and runs their top
+   level. NULL if the disc has none. */
 menu *menu_open(const menu_player *player, const char *language);
 void menu_close(menu *m);
 

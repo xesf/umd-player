@@ -342,8 +342,11 @@ static int run_disc(int argc, char **argv)
                 if ((uint64_t)(s.pl.chapters[t->first_chapter + k].pts - t->start_pts) * 100 / 9 <= pos)
                     ch = k + 1;
             if (ch != last_chapter) {
+                const umdv_chapter *mk = &s.pl.chapters[t->first_chapter + ch - 1];
                 last_chapter = ch;
                 s.st.chapter = ch;
+                snprintf(s.st.mark_name, sizeof(s.st.mark_name), "%s", mk->name);
+                s.st.mark_data = mk->data;
                 menu_chapter_changed(m, ch);
             }
             if (s.now >= s.title_end) {

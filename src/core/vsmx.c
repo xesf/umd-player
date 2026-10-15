@@ -367,6 +367,91 @@ static void put_prop(vsmx *vm, vs_obj *o, const char *key, vs_value value)
 }
 
 static void native_call(vsmx *vm, void *user, vs_value self, const vs_value *args, int argc, vs_value *ret);
+static void native_string(vsmx *vm, void *user, vs_value self, const vs_value *args, int argc, vs_value *ret);
+static vs_value add(vsmx *vm, vs_value a, vs_value b);
+/* String methods: self is the string, user the method's name. Strings are bytes (the
+   scripts' text is converted to UTF-8). */
+static void native_string(vsmx *vm, void *user, vs_value self, const vs_value *args, int argc, vs_value *ret)
+{
+    const char *fn = (const char *)user;
+    char buf[64], *tmp;
+    const char *t = vs_text(self, buf, sizeof(buf));
+    int n = (int)strlen(t);
+    int a = argc > 0 ? (int)vs_number(args[0]) : 0, b = argc > 1 ? (int)vs_number(args[1]) : n;
+
+    if (strcmp(fn, "charAt") == 0) {
+        char c[2] = {a >= 0 && a < n ? t[a] : 0, 0};
+        *ret = vs_string(vm, c);
+    } else if (strcmp(fn, "charCodeAt") == 0) {
+        *ret = a >= 0 && a < n ? vs_int((unsigned char)t[a]) : vs_num(NAN);
+    } else if (strcmp(fn, "indexOf") == 0 || strcmp(fn, "lastIndexOf") == 0) {
+        char nb[64];
+        const char *needle = argc > 0 ? vs_text(args[0], nb, sizeof(nb)) : "undefined";
+        const char *hit = NULL;
+        if (fn[0] == 'i') {
+            hit = strstr(t + (argc > 1 && b > 0 && b <= n ? b : 0), needle);
+        } else {
+            for (const char *q = strstr(t, needle); q; q = strstr(q + 1, needle))
+                hit = q;
+        }
+        *ret = vs_int(hit ? (double)(hit - t) : -1);
+    } else if (strcmp(fn, "substring") == 0 || strcmp(fn, "substr") == 0 || strcmp(fn, "slice") == 0) {
+        int from = a, to;
+        if (strcmp(fn, "substr") == 0)          /* substr(from, length) */
+            to = argc > 1 ? from + b : n;
+        else
+            to = argc > 1 ? b : n;
+        if (strcmp(fn, "slice") == 0) {         /* negative counts from the end */
+            if (from < 0) from += n;
+            if (to < 0) to += n;
+        }
+        if (strcmp(fn, "substring") == 0 && to < from) {
+            int x = from;
+            from = to;
+            to = x;
+        }
+        from = from < 0 ? 0 : from > n ? n : from;
+        to = to < from ? from : to > n ? n : to;
+        if ((tmp = malloc((size_t)(to - from) + 1)) == NULL)
+            return;
+        memcpy(tmp, t + from, (size_t)(to - from));
+        tmp[to - from] = 0;
+        *ret = vs_string(vm, tmp);
+        free(tmp);
+    } else if (strcmp(fn, "toUpperCase") == 0 || strcmp(fn, "toLowerCase") == 0) {
+        if ((tmp = malloc((size_t)n + 1)) == NULL)
+            return;
+        for (int i = 0; i <= n; i++)
+            tmp[i] = fn[2] == 'U' ? (char)(t[i] >= 'a' && t[i] <= 'z' ? t[i] - 32 : t[i])
+                                  : (char)(t[i] >= 'A' && t[i] <= 'Z' ? t[i] + 32 : t[i]);
+        *ret = vs_string(vm, tmp);
+        free(tmp);
+    } else if (strcmp(fn, "split") == 0) {
+        char sb[64];
+        const char *sep = argc > 0 ? vs_text(args[0], sb, sizeof(sb)) : NULL;
+        size_t sl = sep ? strlen(sep) : 0;
+        int count = 0;
+        *ret = vs_new_array(vm, 0);
+        if ((tmp = malloc((size_t)n + 1)) == NULL)
+            return;
+        for (const char *q = t;;) {
+            const char *e = sl ? strstr(q, sep) : (*q ? q + 1 : NULL);
+            size_t len = e ? (size_t)(e - q) : strlen(q);
+            memcpy(tmp, q, len);
+            tmp[len] = 0;
+            vs_set_index(vm, *ret, count++, vs_string(vm, tmp));
+            if (!e || (!sl && !*e))
+                break;
+            q = e + sl;
+        }
+        free(tmp);
+    } else if (strcmp(fn, "concat") == 0) {
+        *ret = self;
+        for (int i = 0; i < argc; i++)
+            *ret = add(vm, *ret, args[i]);
+    }
+}
+
 static void native_slice(vsmx *vm, void *user, vs_value self, const vs_value *args, int argc, vs_value *ret);
 static void native_push(vsmx *vm, void *user, vs_value self, const vs_value *args, int argc, vs_value *ret);
 
@@ -377,8 +462,13 @@ vs_value vs_get(vsmx *vm, vs_value obj, const char *key)
     int depth = 0;
 
     if (obj.type == VS_STR) {
+        static const char *const methods[] = {"charAt", "charCodeAt", "indexOf", "lastIndexOf", "substring",
+                                              "substr", "slice", "toUpperCase", "toLowerCase", "split", "concat"};
         if (key == vm->k_length)
             return vs_int(obj.u.s->len);
+        for (unsigned i = 0; i < sizeof(methods) / sizeof(methods[0]); i++)
+            if (strcmp(key, methods[i]) == 0)
+                return vs_new_native(vm, native_string, (void *)methods[i]);
         return vs_undef();
     }
     if (obj.type != VS_OBJ)
@@ -1070,7 +1160,8 @@ static void invoke(vsmx *vm, int argc, int method, int construct, uint32_t *pc)
 }
 
 /* Runs until the frame count drops back to stop_fp (a return from the entry frame) or the
-   script ends. Returns 0, or -1 on an error. */
+   script ends. stop_fp is -1 for the top level, which has no entry frame and ends only at
+   the end of the script. Returns 0, or -1 on an error. */
 static int run(vsmx *vm, uint32_t pc, int stop_fp, vs_value *result)
 {
     long steps = 0;
@@ -1247,8 +1338,8 @@ static int run(vsmx *vm, uint32_t pc, int stop_fp, vs_value *result)
         case 0x3F: {          /* return */
             frame *f;
             a = pop_value(vm);
-            if (vm->fp <= stop_fp) {
-                *result = a;
+            if (vm->fp == 0 || vm->fp <= stop_fp) {
+                *result = a;      /* a return outside any function: the run is over */
                 return 0;
             }
             f = &vm->frames[--vm->fp];
@@ -1280,7 +1371,7 @@ int vs_run_main(vsmx *vm)
     int rc;
 
     vm->sp = 0;
-    rc = run(vm, 0, 0, &r);
+    rc = run(vm, 0, -1, &r);
     vm->sp = 0;
     return rc;
 }

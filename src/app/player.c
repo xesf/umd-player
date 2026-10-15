@@ -1335,6 +1335,13 @@ int player_chapter(const player *p)
     return current_chapter((player *)p) + 1;
 }
 
+const char *player_chapter_mark(const player *p, uint32_t *data)
+{
+    const umdv_chapter *c = &p->playlist.chapters[p->title->first_chapter + current_chapter((player *)p)];
+    *data = c->data;
+    return c->name;
+}
+
 void player_restart(player *p, int chapter)
 {
     uint64_t start = p->title->start_pts;

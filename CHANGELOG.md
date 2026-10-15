@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- UMD-PG interactive movies (such as Summer Days): detected in the library, always played through their own menus, with their Japanese start menus (JA100000), chapter marks (mark_name, mark_data) and more than 64 titles.
+- Disc menus: integer arithmetic as on the PSP, string methods, top-level script calls, movieplayer.getPos and getSize, and pages drawn in their RCO order (Up in Smoke's song list works).
+- In disc mode, logos, warnings and menu videos stay in Fit, so the picture no longer switches screen mode.
+- The options panel is titled SETTINGS, as in the library.
+
 ## v0.4.0 (2026-10-15)
 
 - Adds the LICENSE (MIT), NOTICE and COPYING.LGPLv2.1 files, and ships them in the VPK.

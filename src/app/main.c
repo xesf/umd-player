@@ -125,7 +125,7 @@ int app_frame(void)
         backdrop_present();          /* until the movie's first frame */
         intro_count = intro_next = 0;
         /* "Start with: Disc": the disc's own menus, or without them its intro titles. */
-        if (settings_get()->start_disc && (current_disc = disc_open(current_path)) != NULL)
+        if ((settings_get()->start_disc || library_interactive(lib, pick)) && (current_disc = disc_open(current_path)) != NULL)
             return 1;
         if (settings_get()->start_disc && !has_saved_position(opt.resume_key))
             intro_count = intro_titles(current_path, intros, INTRO_MAX);

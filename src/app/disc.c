@@ -133,6 +133,7 @@ static void d_status(void *user, menu_status *st)
     st->chapter = player_chapter(d->pl);
     st->audio = player_audio(d->pl);
     st->subtitle = player_subtitle(d->pl);
+    snprintf(st->mark_name, sizeof(st->mark_name), "%s", player_chapter_mark(d->pl, &st->mark_data));
 }
 
 static void d_audio(void *user, int audio)

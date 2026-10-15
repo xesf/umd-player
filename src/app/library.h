@@ -19,6 +19,8 @@ library *library_open(const char *dir);
 int library_update(library *l, uint32_t pressed);
 
 const char *library_path(const library *l, int index);
+/* 1 for a UMD-PG disc (an interactive movie): it plays only through its own menus. */
+int library_interactive(const library *l, int index);
 
 /* Stops the icon animation and sound (before playing a disc); library_update starts them again. */
 void library_suspend(library *l);

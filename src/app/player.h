@@ -44,6 +44,8 @@ int player_finished(const player *p);
 int player_title_ended(const player *p);          /* the title played to its end (menu mode) */
 int player_menu_requested(player *p);             /* Circle was pressed; clears the request */
 int player_chapter(const player *p);              /* 1-based */
+/* The current chapter's mark: its name ("Mark1783") and data, for UMD-PG scripts. */
+const char *player_chapter_mark(const player *p, uint32_t *data);
 int player_paused(const player *p);
 int player_audio(const player *p);                /* substream */
 int player_subtitle(const player *p);             /* substream, or -1 for off */

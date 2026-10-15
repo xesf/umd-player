@@ -8,14 +8,15 @@
 
 #define UMDV_PTS_HZ 90000u
 
-#define UMDV_MAX_TITLES   64
-#define UMDV_MAX_CHAPTERS 512
+#define UMDV_MAX_TITLES   256
+#define UMDV_MAX_CHAPTERS 2048
 #define UMDV_MAX_NAME     128
 #define UMDV_MAX_STREAMS  48
 
 typedef struct umdv_chapter {
     uint32_t pts;
-    char name[25];
+    char name[25];            /* "Mark1783": UMD-PG scripts read it as mark_name */
+    uint32_t data;            /* bytes 0x0C-0x0F of the entry, mark_data (0 on the test discs) */
 } umdv_chapter;
 
 typedef struct umdv_title {

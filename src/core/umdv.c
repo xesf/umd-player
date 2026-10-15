@@ -71,6 +71,7 @@ int umdv_playlist_parse(const uint8_t *buf, uint32_t size, umdv_playlist *out)
             umdv_chapter *ch = &out->chapters[out->chapter_count++];
             ch->pts = be48(&mk[4]);
             copy_name(ch->name, sizeof(ch->name), &mk[0x10], mk[1]);
+            ch->data = (uint32_t)mk[0x0C] << 24 | (uint32_t)mk[0x0D] << 16 | (uint32_t)mk[0x0E] << 8 | mk[0x0F];
         }
         o = entry_end;
     }
