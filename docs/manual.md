@@ -101,6 +101,7 @@ With "Start with: Disc", UMD Player runs the disc's own menus: the menu screens,
 | D-pad | Move between menu items | As in "Watching a movie" |
 | ✕ | Choose the item | Pause or play |
 | ○ | Back, as the disc defines it | Open the disc's menu |
+| △ | The disc's menu, as the PSP's menu button. On a list shown over the movie, this leaves it for the main menu. | Options panel |
 | Select | Back to the library | Back to the library |
 | Touch | Tap an item to choose it. Swipe to move, as with the D-pad. | As in "Watching a movie" |
 

@@ -199,6 +199,7 @@ def main():
            'screens and choices, then the movie. A disc without menus plays its intros first.')
     p.rows([('D-pad', 'Move between menu items'), ('Cross', 'Choose'),
             ('Circle', 'Back in the menus; the disc\'s menu during the movie'),
+            ('Triangle', 'In the menus: the disc\'s menu button'),
             ('Select', 'Back to the library (or hold Circle)'),
             ('Touch', 'Tap an item to choose it; swipe to move')], key_w=130)
     p.y += 8

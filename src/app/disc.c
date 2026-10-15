@@ -324,6 +324,13 @@ int disc_update(disc *d, uint32_t pressed)
     }
     if (d->pl && player_menu_requested(d->pl))
         menu_menu_button(d->m);
+    /* Triangle while a disc menu has focus is the PSP's menu button: Circle is the page's Back
+       there, and Saw's scene list over the movie leaves for the main menu only by the menu
+       button. During the movie Triangle stays the options panel. */
+    if (menu_focus && (pressed & PLAT_BTN_TRIANGLE)) {
+        menu_menu_button(d->m);
+        pressed &= ~PLAT_BTN_TRIANGLE;
+    }
 
     if (!menu_update(d->m, menu_focus ? pressed : 0, plat_time_us())) {
         d->menus_ended = 1;
