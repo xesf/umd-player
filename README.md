@@ -17,7 +17,7 @@ GitHub Actions (`.github/workflows/build.yml`) builds the host tools and the Vit
 
 ## Controls
 
-The player starts in the disc library: the disc images (`.iso`, `.cso` or `.zso`) in `ux0:umd/` and `ux0:pspemu/ISO/VIDEO/` (on macOS, the folder given on the command line). Like the PSP's menu, the selected disc shows its background art, its animated icon, and plays its sound. The options panel shows the disc's name.
+The player starts in the disc library: the disc images (`.iso`, `.cso` or `.zso`) in `ux0:umd/` and `ux0:pspemu/ISO/VIDEO/` (on macOS, the folder given on the command line). Reading `ux0:pspemu/` needs "Enable unsafe homebrew" in the HENkaku settings, which Adrenaline also needs. Like the PSP's menu, the selected disc shows its background art, its animated icon, and plays its sound. The options panel shows the disc's name.
 
 | Button | Library | During playback | In the options panel |
 |---|---|---|---|

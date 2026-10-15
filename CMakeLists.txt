@@ -70,7 +70,8 @@ target_link_libraries(umdplayer
   SceRtc_stub
 )
 
-vita_create_self(umdplayer.self umdplayer)
+# UNSAFE: safe homebrew cannot open ux0:pspemu, where Adrenaline users keep their ISOs.
+vita_create_self(umdplayer.self umdplayer UNSAFE)
 # Bubble icon and LiveArea, drawn by tools/make_assets.py.
 vita_create_vpk(umdplayer.vpk ${VITA_TITLEID} umdplayer.self
   VERSION ${VITA_VERSION}
