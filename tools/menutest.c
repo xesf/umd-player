@@ -148,6 +148,7 @@ typedef struct sim {
     int chapter_count;
     int ended_pending;
     int saved_playlist, saved_chapter;
+    int last_chapter;         /* the chapter last reported; 0 after a play, as in src/app/disc.c */
 } sim;
 
 static uint8_t *sim_read(void *user, const char *path, uint32_t *size)
@@ -189,6 +190,7 @@ static void sim_play(void *user, int playlist, int chapter, int audio, int subti
     s->st.audio = audio;
     s->st.subtitle = subtitle;
     s->title_end = s->now + (len > from ? len - from : 0);
+    s->last_chapter = 0;
 }
 
 static void sim_stop(void *user)
@@ -302,7 +304,7 @@ static int run_disc(int argc, char **argv)
     double seconds = argc > 3 ? atof(argv[3]) : 30;
     const char *outdir = NULL;
     canvas c = {NULL, 960, 544, 960 * 4};
-    int last_chapter = 0, unsaved = 0;
+    int unsaved = 0;
     uint64_t last_save = 0;
 
     for (int i = 4; i < argc; i++) {
@@ -341,9 +343,9 @@ static int run_disc(int argc, char **argv)
             for (int k = 1; k < t->chapter_count; k++)
                 if ((uint64_t)(s.pl.chapters[t->first_chapter + k].pts - t->start_pts) * 100 / 9 <= pos)
                     ch = k + 1;
-            if (ch != last_chapter) {
+            if (ch != s.last_chapter) {
                 const umdv_chapter *mk = &s.pl.chapters[t->first_chapter + ch - 1];
-                last_chapter = ch;
+                s.last_chapter = ch;
                 s.st.chapter = ch;
                 snprintf(s.st.mark_name, sizeof(s.st.mark_name), "%s", mk->name);
                 s.st.mark_data = mk->data;
@@ -353,7 +355,7 @@ static int run_disc(int argc, char **argv)
                 int pl = s.st.playlist;
                 printf("%8.2f s  END title %d\n", s.now / 1e6, pl);
                 s.st.playing = 0;            /* playlist stays: the scripts ask which one ended */
-                last_chapter = 0;
+                s.last_chapter = 0;
                 menu_playlist_ended(m, pl);
             }
         }

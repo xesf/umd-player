@@ -191,16 +191,18 @@ static void start_tween(menu *m, int widget, int prop, const float *to, int n, f
     cur = prop_ptr(&r->w[widget], prop, &count);
     if (n > count)
         n = count;
-    if (dur <= 0) {
-        memcpy(cur, to, (size_t)n * sizeof(float));
-        m->dirty = 1;
-        return;
-    }
-    for (int i = 0; i < MAX_TWEENS; i++)     /* a new tween replaces one on the same property */
+    for (int i = 0; i < MAX_TWEENS; i++)     /* a new step replaces a tween on the same property */
         if (m->tweens[i].active && m->tweens[i].widget == widget && m->tweens[i].prop == prop) {
             t = &m->tweens[i];
             break;
         }
+    if (dur <= 0) {           /* instant; a tween left running would overwrite it when it ends */
+        if (t)
+            t->active = 0;
+        memcpy(cur, to, (size_t)n * sizeof(float));
+        m->dirty = 1;
+        return;
+    }
     for (int i = 0; !t && i < MAX_TWEENS; i++)
         if (!m->tweens[i].active)
             t = &m->tweens[i];

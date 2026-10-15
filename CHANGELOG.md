@@ -9,6 +9,7 @@
 - In disc mode, logos, warnings and menu videos stay in Fit, so the picture no longer switches screen mode.
 - The options panel is titled SETTINGS, as in the library.
 - A title that uses part of a clip stops at its own end. Harry Potter's 1 s "Blank" title no longer plays 20 s of black, and its scene previews stop at the end of their scene.
+- Disc menus: an instant animation step cancels a running fade on the same widget, so Harry Potter's scene previews show through the page instead of staying behind a black panel.
 - Disc menus: the subtitle language chosen in a disc's menu now plays (the menus number subtitle tracks from 0, the player from 0x80).
 
 ## v0.4.0 (2026-10-15)
