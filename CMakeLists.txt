@@ -13,9 +13,28 @@ endif()
 project(umdplayer C)
 include("$ENV{VITASDK}/share/vita.cmake" REQUIRED)
 
+# The version comes from src/app/version.h: "0.3.0" gives the package umdplayer-v0.3.0.vpk
+# and the Vita app version 00.03.
+file(STRINGS src/app/version.h UMDPLAYER_VERSION_LINE REGEX "#define UMDPLAYER_VERSION ")
+string(REGEX MATCH "\"([0-9]+)\\.([0-9]+)\\.([0-9]+)\"" _ "${UMDPLAYER_VERSION_LINE}")
+set(UMDPLAYER_VERSION "${CMAKE_MATCH_1}.${CMAKE_MATCH_2}.${CMAKE_MATCH_3}")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS src/app/version.h)
+
 set(VITA_APP_NAME "UMD Player")
 set(VITA_TITLEID  "UMDP00001")
-set(VITA_VERSION  "00.03")
+if(CMAKE_MATCH_1 LESS 10)
+  set(VITA_MAJOR "0${CMAKE_MATCH_1}")
+else()
+  set(VITA_MAJOR "${CMAKE_MATCH_1}")
+endif()
+if(CMAKE_MATCH_2 LESS 10)
+  set(VITA_MINOR "0${CMAKE_MATCH_2}")
+else()
+  set(VITA_MINOR "${CMAKE_MATCH_2}")
+endif()
+set(VITA_VERSION "${VITA_MAJOR}.${VITA_MINOR}")
+set(VPK_NAME "umdplayer-v${UMDPLAYER_VERSION}.vpk")
+message(STATUS "UMD Player ${UMDPLAYER_VERSION}: ${VPK_NAME}, Vita version ${VITA_VERSION}")
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O2 -mcpu=cortex-a9 -mfpu=neon -Wall -Wextra")
@@ -77,7 +96,7 @@ target_link_libraries(umdplayer
 # UNSAFE: safe homebrew cannot open ux0:pspemu, where Adrenaline users keep their ISOs.
 vita_create_self(umdplayer.self umdplayer UNSAFE)
 # Bubble icon and LiveArea, drawn by tools/make_assets.py.
-vita_create_vpk(umdplayer.vpk ${VITA_TITLEID} umdplayer.self
+vita_create_vpk(${VPK_NAME} ${VITA_TITLEID} umdplayer.self
   VERSION ${VITA_VERSION}
   NAME ${VITA_APP_NAME}
   FILE LICENSE LICENSE

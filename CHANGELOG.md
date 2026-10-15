@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Adds the LICENSE (MIT), NOTICE and COPYING.LGPLv2.1 files, and ships them in the VPK.
+- Names the package after the version (umdplayer-v0.3.0.vpk); the Vita app version also comes from version.h.
 
 ## v0.3.0 (2026-10-15)
 

@@ -210,7 +210,7 @@ Check: the library shows all 5 discs with correct titles and covers, and opens e
 
 ### Phase 6: Vita platform (in progress)
 
-Working on hardware (`cmake -S . -B build/vita && cmake --build build/vita`, then install `build/vita/umdplayer.vpk`):
+Working on hardware (`cmake -S . -B build/vita && cmake --build build/vita`, then install `build/vita/umdplayer-v<version>.vpk`):
 
 - All 5 discs play with audio. L and R switch discs; the log is `ux0:data/umdplayer/log.txt`.
 - Film discs play at 24 fps from `sceAvcdec` straight into the framebuffer.
