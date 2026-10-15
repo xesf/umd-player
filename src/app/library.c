@@ -229,6 +229,8 @@ static void read_disc_info(lib_disc *disc)
     const char *name = strrchr(disc->path, '/');
 
     snprintf(disc->title, sizeof(disc->title), "%.95s", name ? name + 1 : disc->path);
+    if (strlen(disc->title) > 4 && disc->title[strlen(disc->title) - 4] == '.')
+        disc->title[strlen(disc->title) - 4] = 0;   /* the file name, without .iso */
     if (disc_open(&d, disc->path) < 0)
         return;
     if ((buf = disc_read(&d, "UMD_VIDEO/PARAM.SFO", &size, 64 * 1024)) != NULL) {
@@ -852,8 +854,10 @@ static void draw_ui(library *l)
     fill_icon_corners(l);
     draw_info(l);
     draw_settings(l);
-    draw_app_name(c, 18);
-    canvas_text(c, UI_W - 20 - canvas_text_width("v" UMDPLAYER_VERSION, 1), UI_H - 18, 1, TEXT_DIM, "v" UMDPLAYER_VERSION);
+    /* On the backdrop (a disc without PIC1), keep clear of its film strips. */
+    draw_app_name(c, l->bg ? 18 : 72);
+    canvas_text(c, UI_W - 20 - canvas_text_width("v" UMDPLAYER_VERSION, 1), l->bg ? UI_H - 18 : UI_H - 72, 1, TEXT_DIM,
+                "v" UMDPLAYER_VERSION);
 
     l->info.ui_rgba = c->rgba;
     l->info.ui_w = c->w;

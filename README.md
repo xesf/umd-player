@@ -46,6 +46,7 @@ Screen modes:
 - **Fill**: fills the screen with the whole frame and crops what does not fit, for example a 4:3 picture cropped to 16:9.
 - **Stretch**: fills the screen and ignores the aspect ratio.
 
+- [Manual](docs/manual.md): installing, adding movies, all controls, with screenshots
 - [Changelog](CHANGELOG.md)
 - [Build plan](docs/plan.md)
 - [UMD Video format reference](docs/formats/umd-video.md)
