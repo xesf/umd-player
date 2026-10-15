@@ -1755,8 +1755,8 @@ int player_update(player *p, uint32_t pressed)
             p->last_frame_us = plat_time_us();
             p->frames_shown++;
             p->stall_retries = 0;
-            if (!p->power_full)
-                plat_set_power(PLAT_POWER_PLAYBACK);
+            /* The disc menus draw in software: full speed while they show. */
+            plat_set_power(p->power_full || p->layer ? PLAT_POWER_FULL : PLAT_POWER_PLAYBACK);
             memmove(&p->frames[0], &p->frames[best + 1], (size_t)(p->frame_count - best - 1) * sizeof(p->frames[0]));
             p->frame_count -= best + 1;
             update_subtitle(p, now);

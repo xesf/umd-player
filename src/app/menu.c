@@ -93,6 +93,7 @@ struct menu {
     int audio_id, sub_id, sub_on;
     float win[4];
     int win_set;
+    int drawn[4];             /* x0 y0 x1 y1 of what the last menu_draw put on the canvas */
 };
 
 static void mlog(menu *m, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
@@ -1273,6 +1274,8 @@ static void local_matrix(float out[3][3], const float *rot, const float *scale)
 
 /* Draws an image as the parallelogram centre c + u * ex + v * ey (u, v in -0.5..0.5, screen
    pixels), multiplied by color, over what is there (straight alpha). */
+static int *blit_box;          /* grows to cover every blit of a menu_draw */
+
 static void blit(canvas *c, const uint8_t *src, int sw, int sh, const float *crop, float cx, float cy,
                  const float *ex, const float *ey, const float *color)
 {
@@ -1289,6 +1292,12 @@ static void blit(canvas *c, const uint8_t *src, int sw, int sh, const float *cro
     if (y0 < 0) y0 = 0;
     if (x1 > c->w) x1 = c->w;
     if (y1 > c->h) y1 = c->h;
+    if (blit_box && x0 < x1 && y0 < y1) {
+        if (x0 < blit_box[0]) blit_box[0] = x0;
+        if (y0 < blit_box[1]) blit_box[1] = y0;
+        if (x1 > blit_box[2]) blit_box[2] = x1;
+        if (y1 > blit_box[3]) blit_box[3] = y1;
+    }
     for (int y = y0; y < y1; y++) {
         uint8_t *row = c->rgba + (size_t)y * c->stride;
         for (int x = x0; x < x1; x++) {
@@ -1363,8 +1372,19 @@ void menu_draw(menu *m, canvas *c)
         root.l[k][k] = 1;
     for (int k = 0; k < 4; k++)
         root.color[k] = 1;
-    canvas_clear(c);
+    /* Clear only what the last picture covered; the rest of the canvas is still clear. */
+    if (m->drawn[2] > m->drawn[0])
+        canvas_rect(c, m->drawn[0], m->drawn[1], m->drawn[2] - m->drawn[0], m->drawn[3] - m->drawn[1], 0);
+    else if (!m->drawn[3])
+        canvas_clear(c);      /* first picture: the canvas may hold anything */
+    m->drawn[0] = c->w;
+    m->drawn[1] = c->h;
+    m->drawn[2] = m->drawn[3] = 0;
+    blit_box = m->drawn;
     for (int p = 0; p < r->page_count; p++)
         draw_tree(r, c, r->pages[p], &root);
+    blit_box = NULL;
+    if (m->drawn[2] <= m->drawn[0])
+        m->drawn[3] = 1;      /* nothing drawn, but the canvas is known clear */
     m->dirty = 0;
 }
