@@ -94,6 +94,10 @@ struct menu {
     float win[4];
     int win_set;
     int drawn_once;           /* menu_draw has drawn the whole canvas once */
+    int depth;                /* script calls in progress */
+    int settling;
+    struct { const char *event; int widget; res *from; } queue[64];
+    int queued;
 };
 
 static void mlog(menu *m, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
@@ -234,29 +238,87 @@ static void step_tweens(menu *m)
 static void apply_pending(menu *m);
 
 /* Calls an event handler named in the RCO ("script:/main/onPush_btnRootMenu"). */
+static void settle(menu *m);
+
+/* Every script call goes through here. Resource changes and widget events wait until the
+   outermost call returns: a page opened by a script gets its onInit after that script ends,
+   as on the PSP, and a new resource's top level has defined its handlers by then. */
+static void call_value(menu *m, vs_value fn, vs_value self, const vs_value *args, int argc)
+{
+    m->depth++;
+    vs_call(m->res->vm, fn, self, args, argc, NULL);
+    m->depth--;
+    if (m->depth == 0)
+        settle(m);
+}
+
+/* Queues an event handler named in the RCO ("script:/main/onPush_btnRootMenu"). */
 static void call_event(menu *m, const char *event, int widget)
 {
-    const char *name;
+    if (!event)
+        return;
+    if (m->queued < (int)(sizeof(m->queue) / sizeof(m->queue[0]))) {
+        m->queue[m->queued].event = event;
+        m->queue[m->queued].widget = widget;
+        m->queue[m->queued].from = m->res;
+        m->queued++;
+    } else {
+        mlog(m, "menu: too many events at once");
+    }
+    if (m->depth == 0)
+        settle(m);
+}
+
+static void run_event(menu *m, const char *event, int widget)
+{
+    const char *name = strrchr(event, '/');
     vs_value w = vs_undef();
     res *r = m->res;
 
-    if (!event)
-        return;
-    name = strrchr(event, '/');
     name = name ? name + 1 : event;
     if (getenv("MENU_TRACE"))
         mlog(m, "menu: event %s", name);
     if (widget >= 0)
         w = vs_get_index(r->vm, vs_global(r->vm, "\001widgets"), widget);
-    if (vs_call(r->vm, vs_global(r->vm, name), w, &w, 1, NULL) < 0)
+    if (!vs_is_function(vs_global(r->vm, name))) {
         mlog(m, "menu: no handler %s", name);
-    apply_pending(m);
+        return;
+    }
+    call_value(m, vs_global(r->vm, name), w, &w, 1);
 }
 
-static void call_value(menu *m, vs_value fn, vs_value self, const vs_value *args, int argc)
+static void settle(menu *m)
 {
-    vs_call(m->res->vm, fn, self, args, argc, NULL);
-    apply_pending(m);
+    if (m->settling)
+        return;
+    m->settling = 1;
+    for (int guard = 0; guard < 256 && (m->pending[0] || m->queued); guard++) {
+        if (m->pending[0]) {
+            apply_pending(m);
+            continue;
+        }
+        {
+            const char *event = m->queue[0].event;
+            int widget = m->queue[0].widget;
+            res *from = m->queue[0].from;
+            memmove(&m->queue[0], &m->queue[1], (size_t)(m->queued - 1) * sizeof(m->queue[0]));
+            m->queued--;
+            if (from == m->res)          /* events of an unloaded resource are dropped */
+                run_event(m, event, widget);
+        }
+    }
+    m->settling = 0;
+}
+
+static void play_anim(menu *m, int anim, int target);
+
+/* A widget action from the RCO: a script handler, or an animation played on the widget. */
+static void do_action(menu *m, const rco_action *a, int widget)
+{
+    if (a->event)
+        call_event(m, a->event, widget);
+    if (a->anim >= 0)
+        play_anim(m, a->anim, widget);
 }
 
 /* ---- animations ---- */
@@ -332,9 +394,9 @@ static void set_focus(menu *m, int widget)
     r->focus[page] = widget;
     m->dirty = 1;
     if (old >= 0)
-        call_event(m, r->r.objects[old].action[RCO_BTN_FOCUS_OUT].event, old);
+        do_action(m, &r->r.objects[old].action[RCO_BTN_FOCUS_OUT], old);
     if (m->res == r)
-        call_event(m, r->r.objects[widget].action[RCO_BTN_FOCUS_IN].event, widget);
+        do_action(m, &r->r.objects[widget].action[RCO_BTN_FOCUS_IN], widget);
 }
 
 static int first_button(const res *r, int i)
@@ -365,13 +427,13 @@ static void do_input(menu *m, uint32_t pressed)
     if (m->res != r)
         return;
     if (pressed & PLAT_BTN_CIRCLE) {
-        call_event(m, r->r.objects[page].action[RCO_PAGE_CANCEL].event, page);
+        do_action(m, &r->r.objects[page].action[RCO_PAGE_CANCEL], page);
         return;
     }
     if (focus < 0)
         return;
     if (pressed & PLAT_BTN_CROSS) {
-        call_event(m, r->r.objects[focus].action[RCO_BTN_PUSH].event, focus);
+        do_action(m, &r->r.objects[focus].action[RCO_BTN_PUSH], focus);
         return;
     }
     for (unsigned i = 0; i < 4; i++)
@@ -379,8 +441,8 @@ static void do_input(menu *m, uint32_t pressed)
             const rco_action *a = &r->r.objects[focus].action[dirs[i].action];
             if (a->object >= 0)
                 set_focus(m, a->object);
-            else if (a->event)
-                call_event(m, a->event, focus);
+            else
+                do_action(m, a, focus);
             return;
         }
 }
@@ -435,7 +497,7 @@ NATIVE(w_open)
         preload(r, rf->index);
         r->focus[rf->index] = -1;
         r->pages[r->page_count++] = rf->index;
-        call_event(rf->m, r->r.objects[rf->index].action[RCO_PAGE_INIT].event, rf->index);
+        do_action(rf->m, &r->r.objects[rf->index].action[RCO_PAGE_INIT], rf->index);
     }
     rf->m->dirty = 1;
 }
@@ -464,7 +526,7 @@ NATIVE(w_activate)
     (void)vm; (void)args; (void)argc;
     *ret = self;
     r->active = rf->index;
-    call_event(rf->m, r->r.objects[rf->index].action[RCO_PAGE_ACTIVATE].event, rf->index);
+    do_action(rf->m, &r->r.objects[rf->index].action[RCO_PAGE_ACTIVATE], rf->index);
 }
 
 NATIVE(w_set_focus)
@@ -1103,8 +1165,10 @@ static void apply_pending(menu *m)
         free_res(m->res);
         m->res = r;
         m->dirty = 1;
+        m->depth++;
         if (vs_run_main(r->vm) < 0)
             mlog(m, "menu: %s top level failed", name);
+        m->depth--;
         call_value(m, vs_get(r->vm, vs_global(r->vm, "controller"), vs_intern(r->vm, "onChangeResource")),
                    vs_global(r->vm, "controller"), NULL, 0);
     }
@@ -1125,9 +1189,11 @@ menu *menu_open(const menu_player *player, const char *language)
         free(m);
         return NULL;
     }
+    m->depth++;
     if (vs_run_main(m->res->vm) < 0)
         mlog(m, "menu: top level failed");
-    apply_pending(m);
+    m->depth--;
+    settle(m);
     m->dirty = 1;
     return m;
 }

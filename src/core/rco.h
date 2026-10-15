@@ -19,7 +19,8 @@ enum {
    moves, straight to another widget. */
 typedef struct rco_action {
     const char *event;        /* "script:/main/onPush_btnRootMenu", or NULL */
-    int object;               /* widget index, or -1 */
+    int object;               /* widget index (focus moves there), or -1 */
+    int anim;                 /* animation index (played on this widget), or -1 */
 } rco_action;
 
 enum { RCO_BTN_PUSH, RCO_BTN_FOCUS_IN, RCO_BTN_FOCUS_OUT, RCO_BTN_LEFT, RCO_BTN_RIGHT, RCO_BTN_UP, RCO_BTN_DOWN,

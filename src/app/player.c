@@ -1787,7 +1787,7 @@ int player_update(player *p, uint32_t pressed)
     }
     /* Stall log: while playing, if no new frame has been shown for a second, say why once a
        second (queues, audio, clock) so a freeze on hardware can be diagnosed from the log. */
-    if (!p->paused && p->video && plat_time_us() - p->last_frame_us > 1000000 &&
+    if (!p->paused && !p->ended && p->video && plat_time_us() - p->last_frame_us > 1000000 &&
         plat_time_us() - p->last_stall_log_us > 1000000) {
         uint64_t c = 0;
         int have_clock = clock_now(p, &c);

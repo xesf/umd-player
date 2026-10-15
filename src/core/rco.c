@@ -7,6 +7,7 @@
 #define REF_EVENT   0x400
 #define REF_IMAGE   0x402
 #define REF_OBJECT  0x407
+#define REF_ANIM    0x408
 #define REF_ANIMOBJ 0x409
 
 enum { TYPE_MAIN = 1, TYPE_SCRIPT = 2, TYPE_IMAGE = 4, TYPE_OBJECT = 8, TYPE_ANIM = 9 };
@@ -19,6 +20,8 @@ typedef struct parser {
     uint32_t events_size;
     uint32_t img_data, img_size;
     uint32_t *offsets;        /* entry offset of each widget, to resolve references */
+    uint32_t *anim_offsets;   /* and of each animation */
+    int anim_offset_cap;
     int object_cap, image_cap, anim_cap, step_cap;
     int failed;
 } parser;
@@ -69,16 +72,26 @@ static int object_at(const parser *ps, uint32_t off)
     return -1;
 }
 
-static rco_action read_action(parser *ps, uint32_t off, int *pending)
+static rco_action read_action(parser *ps, uint32_t off, int *pending, int *pending_anim)
 {
-    rco_action a = {NULL, -1};
+    rco_action a = {NULL, -1, -1};
     uint32_t type = rd32(ps->r, off), ptr = rd32(ps->r, off + 4);
 
     if (type == REF_EVENT)
         a.event = string_at(ps->events, ps->events_size, ptr);
     else if ((type == REF_OBJECT || type == REF_ANIMOBJ) && ptr != 0xFFFFFFFF)
         *pending = (int)ptr;  /* resolved later */
+    else if (type == REF_ANIM && ptr != 0xFFFFFFFF)
+        *pending_anim = (int)ptr;
     return a;
+}
+
+static int anim_at(const parser *ps, uint32_t off)
+{
+    for (int i = 0; i < ps->r->anim_count; i++)
+        if (ps->anim_offsets[i] == off)
+            return i;
+    return -1;
 }
 
 static void read_object(parser *ps, uint32_t off, int sub, const char *name, int parent)
@@ -86,7 +99,7 @@ static void read_object(parser *ps, uint32_t off, int sub, const char *name, int
     rco *r = ps->r;
     rco_object *o;
     uint32_t d = off + HEADER_SIZE;
-    int pending[RCO_BTN_ACTIONS], cap = ps->object_cap;
+    int pending[RCO_BTN_ACTIONS], pending_anim[RCO_BTN_ACTIONS], cap = ps->object_cap;
 
     if (grow((void **)&r->objects, r->object_count, &ps->object_cap, sizeof(rco_object)) < 0 ||
         grow((void **)&ps->offsets, r->object_count, &cap, sizeof(uint32_t)) < 0) {
@@ -102,13 +115,14 @@ static void read_object(parser *ps, uint32_t off, int sub, const char *name, int
     o->image = -1;
     for (int i = 0; i < RCO_BTN_ACTIONS; i++) {
         o->action[i].object = -1;
-        pending[i] = -1;
+        o->action[i].anim = -1;
+        pending[i] = pending_anim[i] = -1;
     }
     o->scale[0] = o->scale[1] = o->scale[2] = 1;
     o->color[0] = o->color[1] = o->color[2] = o->color[3] = 1;
     if (sub == RCO_PAGE) {
         for (int i = 0; i < RCO_PAGE_ACTIONS; i++)
-            o->action[i] = read_action(ps, d + 4 + (uint32_t)i * 8, &pending[i]);
+            o->action[i] = read_action(ps, d + 4 + (uint32_t)i * 8, &pending[i], &pending_anim[i]);
     } else {
         /* Shared by groups, planes and buttons: position, colour, size, scale. */
         for (int i = 0; i < 3; i++)
@@ -127,10 +141,12 @@ static void read_object(parser *ps, uint32_t off, int sub, const char *name, int
         }
         if (sub == RCO_BUTTON)
             for (int i = 0; i < RCO_BTN_ACTIONS; i++)
-                o->action[i] = read_action(ps, d + 72 + (uint32_t)i * 8, &pending[i]);
+                o->action[i] = read_action(ps, d + 72 + (uint32_t)i * 8, &pending[i], &pending_anim[i]);
     }
-    for (int i = 0; i < RCO_BTN_ACTIONS; i++)
-        o->action[i].object = pending[i];          /* still an entry offset until rco_parse maps it */
+    for (int i = 0; i < RCO_BTN_ACTIONS; i++) {
+        o->action[i].object = pending[i];          /* still entry offsets until rco_parse maps them */
+        o->action[i].anim = pending_anim[i];
+    }
     ps->offsets[r->object_count] = off;
     r->object_count++;
 }
@@ -227,13 +243,17 @@ static uint32_t walk(parser *ps, uint32_t off, int parent_object, int anim)
             *link = me;
         }
     } else if (type == TYPE_ANIM && sub == 1) {
-        if (grow((void **)&r->anims, r->anim_count, &ps->anim_cap, sizeof(rco_anim)) < 0) {
+        int cap = ps->anim_cap;
+        if (grow((void **)&ps->anim_offsets, r->anim_count, &ps->anim_offset_cap, sizeof(uint32_t)) < 0 ||
+            grow((void **)&r->anims, r->anim_count, &cap, sizeof(rco_anim)) < 0) {
             ps->failed = 1;
             return 0;
         }
         r->anims[r->anim_count].name = name;
         r->anims[r->anim_count].first_step = r->step_count;
         r->anims[r->anim_count].step_count = 0;
+        ps->anim_offsets[r->anim_count] = off;
+        ps->anim_cap = cap;
         anim = r->anim_count++;
     } else if (type == TYPE_ANIM && sub > 1 && anim >= 0) {
         read_step(ps, off, (int)sub);
@@ -296,6 +316,7 @@ int rco_parse(rco *r, const uint8_t *data, uint32_t size)
     walk(&ps, rd32(r, 0x10), -1, -1);
     if (ps.failed) {
         free(ps.offsets);
+        free(ps.anim_offsets);
         rco_free(r);
         return -1;
     }
@@ -303,14 +324,18 @@ int rco_parse(rco *r, const uint8_t *data, uint32_t size)
         rco_object *o = &r->objects[i];
         if (o->image >= 0)
             o->image = image_at(r, img_table, (uint32_t)o->image);
-        for (int a = 0; a < RCO_BTN_ACTIONS; a++)
+        for (int a = 0; a < RCO_BTN_ACTIONS; a++) {
             if (o->action[a].object >= 0)
                 o->action[a].object = object_at(&ps, (uint32_t)o->action[a].object);
+            if (o->action[a].anim >= 0)
+                o->action[a].anim = anim_at(&ps, (uint32_t)o->action[a].anim);
+        }
     }
     for (int i = 0; i < r->step_count; i++)
         if (r->steps[i].object >= 0)
             r->steps[i].object = object_at(&ps, (uint32_t)r->steps[i].object);
     free(ps.offsets);
+    free(ps.anim_offsets);
     return 0;
 }
 

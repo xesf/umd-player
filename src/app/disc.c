@@ -255,20 +255,23 @@ int disc_update(disc *d, uint32_t pressed)
 
     if (!menu_update(d->m, menu_focus ? pressed : 0, plat_time_us()))
         return 0;
-    if (d->pl && !player_update(d->pl, menu_has_focus(d->m) ? 0 : pressed)) {
-        /* The player only stops by itself on an error. */
-        player_close(d->pl);
-        d->pl = NULL;
-    }
-
+    /* The menu layer before the player draws, so a frame never shows with the last frame's
+       layer (it decides between Fit and the user's screen mode). */
     if (menu_dirty(d->m)) {
         menu_draw(d->m, &d->layer);
         d->layer_shown = layer_has_pixels(&d->layer);
         d->layer_id++;
     }
-    if (d->pl) {
+    if (d->pl)
         player_set_layer(d->pl, d->layer_shown ? d->layer.rgba : NULL, d->layer.w, d->layer.h, d->layer.stride,
                          d->layer_id);
+    if (d->pl && !player_update(d->pl, menu_has_focus(d->m) ? 0 : pressed)) {
+        /* The player only stops by itself on an error. */
+        player_close(d->pl);
+        d->pl = NULL;
+    }
+    if (d->pl) {
+        /* nothing more: the player presents the layer */
     } else if (d->presented != d->layer_id) {
         /* Nothing playing: the menus alone, over black. */
         {
