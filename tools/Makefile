@@ -4,7 +4,7 @@ CFLAGS ?= -std=c99 -O2 -g -Wall -Wextra -Wpedantic -D_POSIX_C_SOURCE=200809L -D_
 CORE = ../src/core
 BIN = ../build/host
 
-TOOLS = $(BIN)/umdinfo $(BIN)/umddemux $(BIN)/at3pdec $(BIN)/h264prog $(BIN)/pngdec $(BIN)/playtest $(BIN)/imgcmp $(BIN)/menutest
+TOOLS = $(BIN)/umdinfo $(BIN)/umddemux $(BIN)/at3pdec $(BIN)/pngdec $(BIN)/playtest $(BIN)/imgcmp $(BIN)/menutest $(BIN)/h264dectest
 AT3P = $(wildcard $(CORE)/atrac3p/*.c)
 # The FFmpeg-derived files keep upstream's style; silence the warnings it triggers.
 AT3P_CFLAGS = -Wno-pointer-sign -Wno-unused-parameter -Wno-sign-compare -Wno-shift-op-parentheses -Wno-parentheses
@@ -20,13 +20,14 @@ $(BIN)/umddemux: umddemux.c host_source.c $(CORE)/disc_image.c $(CORE)/png.c $(C
 $(BIN)/at3pdec: at3pdec.c $(AT3P) $(wildcard $(CORE)/atrac3p/*.h) | $(BIN)
 	$(CC) $(CFLAGS) $(AT3P_CFLAGS) -o $@ at3pdec.c $(AT3P) -lm
 
-$(BIN)/h264prog: h264prog.c $(CORE)/h264.c ../src/platform/macos/h264_progressive.c | $(BIN)
-	$(CC) $(CFLAGS) -o $@ $^
-
 MENU_SRC = menutest.c host_source.c ../src/app/menu.c $(CORE)/rco.c $(CORE)/vsmx.c $(CORE)/png.c $(CORE)/canvas.c \
            $(CORE)/font8x8.c $(CORE)/iso9660.c $(CORE)/umdv.c $(CORE)/disc_image.c $(CORE)/jpeg.c
 $(BIN)/menutest: $(MENU_SRC) ../src/app/menu.h $(CORE)/rco.h $(CORE)/vsmx.h | $(BIN)
 	$(CC) $(CFLAGS) -o $@ $(MENU_SRC) -lm
+
+H264DEC = $(CORE)/h264dec.c $(CORE)/h264dec_slice.c $(CORE)/h264dec_recon.c $(CORE)/h264dec_deblock.c $(CORE)/h264_cabac_tables.c
+$(BIN)/h264dectest: h264dectest.c $(H264DEC) $(CORE)/h264dec.h $(CORE)/h264dec_int.h $(CORE)/h264_cabac_tables.h | $(BIN)
+	$(CC) $(CFLAGS) -o $@ h264dectest.c $(H264DEC)
 
 $(BIN)/imgcmp: imgcmp.c host_source.c $(CORE)/disc_image.c $(CORE)/png.c | $(BIN)
 	$(CC) $(CFLAGS) -o $@ $^

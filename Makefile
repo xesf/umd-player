@@ -4,18 +4,17 @@ CC ?= cc
 CFLAGS ?= -std=c99 -O2 -g -Wall -Wextra -Wpedantic
 OBJCFLAGS = -fobjc-arc -O2 -g -Wall -Wextra
 AT3P_CFLAGS = -Wno-pointer-sign -Wno-unused-parameter -Wno-sign-compare -Wno-shift-op-parentheses -Wno-parentheses
-FRAMEWORKS = -framework Cocoa -framework QuartzCore -framework VideoToolbox -framework CoreMedia \
-             -framework CoreVideo -framework AudioToolbox
+FRAMEWORKS = -framework Cocoa -framework QuartzCore -framework CoreVideo -framework AudioToolbox
 BUILD = build/macos
 
 CORE = src/core/disc_image.c src/core/iso9660.c src/core/umdv.c src/core/mpeg_ps.c src/core/demux.c src/core/h264.c \
        src/core/vtiming.c src/core/deint.c src/core/png.c src/core/canvas.c src/core/font8x8.c src/core/cropdetect.c src/core/sfo.c src/core/icons.c \
-       src/core/rco.c src/core/vsmx.c src/core/jpeg.c
+       src/core/rco.c src/core/vsmx.c src/core/jpeg.c \
+       src/core/h264dec.c src/core/h264dec_slice.c src/core/h264dec_recon.c src/core/h264dec_deblock.c src/core/h264_cabac_tables.c
 AT3P = $(wildcard src/core/atrac3p/*.c)
 APP = src/app/main.c src/app/player.c src/app/screen.c src/app/osd.c src/app/library.c src/app/resume.c \
       src/app/backdrop.c src/app/backdrop_png.c src/app/settings.c src/app/intro.c src/app/disc.c src/app/menu.c
-MAC = src/platform/macos/mac_sys.c src/platform/macos/mac_video.c src/platform/macos/mac_audio.c \
-      src/platform/macos/h264_progressive.c
+MAC = src/platform/macos/mac_sys.c src/platform/macos/mac_video.c src/platform/macos/mac_audio.c
 
 OBJS = $(patsubst %.c,$(BUILD)/%.o,$(CORE) $(APP) $(MAC)) $(patsubst %.c,$(BUILD)/%.o,$(AT3P)) \
        $(BUILD)/src/platform/macos/mac_main.o

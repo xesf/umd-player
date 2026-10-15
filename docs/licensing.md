@@ -8,7 +8,7 @@ Decision: the project is MIT, copyright (c) 2026 xesf. The ATRAC3plus decoder in
 |---|---|
 | `LICENSE` | The MIT License for the project |
 | `src/core/atrac3p/COPYING.LGPLv2.1` | The full LGPL 2.1 text, for the ATRAC3plus decoder |
-| `NOTICE` | Every third-party notice: FFmpeg, libvita2d, and font8x8 |
+| `NOTICE` | Every third-party notice: FFmpeg, openh264, libvita2d, and font8x8 |
 
 The VPK carries all three files at the root of the app (`ux0:app/UMDP00001/`), because it contains a binary of every part. A GitHub release ships the VPK, so it ships them too.
 
@@ -33,6 +33,7 @@ The VPK carries all three files at the root of the app (`ux0:app/UMDP00001/`), b
 | `src/core/atrac3p/at3p.c` | Port of FFmpeg `libavcodec/atrac3plusdec.c` (`n7.1`) without the AVCodec framework | LGPL-2.1-or-later |
 | `src/core/atrac3p/ffcompat.h`, `at3p.h` | Written for umd-player, kept in the same folder and licence | LGPL-2.1-or-later, Copyright (c) 2026 xesf |
 | `src/platform/vita/vita_shaders.c` | libvita2d `libvita2d/shader/compiled/texture_v_gxp.o` and `texture_f_gxp.o`, extracted as raw `.gxp` programs | MIT, Copyright (c) 2015 Sergi Granell |
+| `src/core/h264_cabac_tables.c` (context initialisation) | The (m, n) values of H.264 tables 9-12 to 9-33 as tabulated in openh264 `codec/common/src/common_tables.cpp`, converted by a script. The engine tables in the same file come from the text of ITU-T H.264 (03/2005). | BSD-2-Clause, Copyright (c) 2013 Cisco Systems |
 | `src/core/font8x8.c` | font8x8_basic by Daniel Hepper, from IBM VGA fonts via Marcel Sondaar (github.com/dhepper/font8x8) | Public domain |
 
 The bubble icon and LiveArea images in `assets/vita/` are original drawings made by `tools/make_assets.py`: a disc in a caddy shaped like a PSP UMD, with a film frame. They follow the physical shape only and do not reuse Sony's UMD label, wordmark, or logo artwork. The app's backdrop (`assets/app/backdrop.png`) is drawn by the same script. All of them are MIT, like the code.

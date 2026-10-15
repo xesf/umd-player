@@ -1,4 +1,4 @@
-# Builds the host tools and the Vita VPK on every push and pull request. A tag named v*
+# Builds the host tools, the Mac app and the Vita VPK on every push and pull request. A tag named v*
 # also publishes a GitHub release with the VPK, and sends it to VitaDB.
 name: build
 
@@ -23,6 +23,13 @@ jobs:
         run: |
           mkdir -p empty
           ./build/host/playtest empty 1
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the Mac app
+        run: make
 
   vita:
     runs-on: ubuntu-24.04
