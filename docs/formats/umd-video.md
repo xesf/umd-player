@@ -228,7 +228,7 @@ The PTS of the first packet is the time when the subtitle appears.
 
 ## `.RCO`
 
-Status: unknown. The PSP uses RCO files for XMB resources. Here they hold the disc menus. Menu support is out of scope for version 1.
+The disc menus: PNG images, widget and animation tables, and a compiled script, in the PSP's RCO resource format. [docs/research/umd-menus.md](../research/umd-menus.md) describes the layout and what the scripts need from the player. The player does not run menus yet.
 
 ## Sources
 
