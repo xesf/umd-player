@@ -23,4 +23,12 @@ void canvas_blit(canvas *c, const uint8_t *rgba, int sw, int sh, int sstride, in
 /* Multiplies the colours in a rectangle by level / 256, to darken a band behind text. */
 void canvas_darken(canvas *c, int x, int y, int w, int h, int level);
 
+/* Rounded rectangles with corner radius r. round_inset gives how far row yy (0 at the top) of
+   an h-row rounded rectangle starts in from its left and right edges. */
+int canvas_round_inset(int r, int h, int yy);
+void canvas_round_rect(canvas *c, int x, int y, int w, int h, int r, uint32_t rgba);
+void canvas_round_darken(canvas *c, int x, int y, int w, int h, int r, int level);
+/* An outline t pixels thick whose outer edge is the rounded rectangle. */
+void canvas_round_ring(canvas *c, int x, int y, int w, int h, int r, int t, uint32_t rgba);
+
 #endif

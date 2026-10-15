@@ -93,3 +93,52 @@ void canvas_darken(canvas *c, int x, int y, int w, int h, int level)
                 row[xx * 4 + k] = (uint8_t)(row[xx * 4 + k] * level >> 8);
     }
 }
+
+int canvas_round_inset(int r, int h, int yy)
+{
+    int d = yy < r ? r - yy : yy >= h - r ? yy - (h - r - 1) : 0;
+    float dy = (float)d - 0.5f, dx;
+
+    if (d <= 0 || r <= 0)
+        return 0;
+    dx = (float)(r * r) - dy * dy;
+    if (dx <= 0)
+        return r;
+    /* The first pixel whose centre is inside the corner circle. */
+    for (int i = 0; i < r; i++) {
+        float cx = (float)(r - i) - 0.5f;
+        if (cx * cx <= dx)
+            return i;
+    }
+    return r;
+}
+
+void canvas_round_rect(canvas *c, int x, int y, int w, int h, int r, uint32_t rgba)
+{
+    for (int yy = 0; yy < h; yy++) {
+        int in = canvas_round_inset(r, h, yy);
+        canvas_rect(c, x + in, y + yy, w - 2 * in, 1, rgba);
+    }
+}
+
+void canvas_round_darken(canvas *c, int x, int y, int w, int h, int r, int level)
+{
+    for (int yy = 0; yy < h; yy++) {
+        int in = canvas_round_inset(r, h, yy);
+        canvas_darken(c, x + in, y + yy, w - 2 * in, 1, level);
+    }
+}
+
+void canvas_round_ring(canvas *c, int x, int y, int w, int h, int r, int t, uint32_t rgba)
+{
+    for (int yy = 0; yy < h; yy++) {
+        int out = canvas_round_inset(r, h, yy), in;
+        if (yy < t || yy >= h - t) {
+            canvas_rect(c, x + out, y + yy, w - 2 * out, 1, rgba);
+            continue;
+        }
+        in = t + canvas_round_inset(r - t, h - 2 * t, yy - t);
+        canvas_rect(c, x + out, y + yy, in - out, 1, rgba);
+        canvas_rect(c, x + w - in, y + yy, in - out, 1, rgba);
+    }
+}

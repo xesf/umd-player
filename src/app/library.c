@@ -24,9 +24,15 @@
 #define UI_H           544
 #define ICON_W         144             /* ICON0.PNG and ICON1.PMF size on every disc */
 #define ICON_H         80
-#define BIG_X          96              /* the selected disc's icon, drawn at twice the size */
+/* The selected disc's icon, drawn at twice the size, and the panel beside it: together they
+   leave the same margin on the left and the right of the screen. */
+#define BIG_X          72
 #define BIG_Y          192
-#define SMALL_X        168
+#define BIG_R          16              /* corner radius of the selected icon */
+#define PANEL_GAP      24
+#define PANEL_X        (BIG_X + 2 * ICON_W + PANEL_GAP)
+#define PANEL_W        (UI_W - BIG_X - PANEL_X)
+#define SMALL_X        (BIG_X + ICON_W / 2)   /* the other discs, centred under the selected one */
 #define CACHE_N        6               /* discs whose art and sound are kept in memory */
 #define FRAMES_AHEAD   3
 #define AU_MAX         4096
@@ -552,8 +558,8 @@ static void draw_resume_mark(library *l)
 {
     const lib_disc *d = &l->discs[l->sel];
     canvas *c = &l->ui;
-    int x = BIG_X + 2 * ICON_W + 32, y = BIG_Y + 16, tx = x + 2 * ICON_SIZE + 10, w = 300;
-    int max_chars = (UI_W - 20 - x) / 16;
+    int x = PANEL_X + 16, y = BIG_Y, tx = x + 2 * ICON_SIZE + 8, w = 300;
+    int max_chars = (PANEL_W - 32) / 16;
     char title[96], at[16], total[16], line[48];
 
     if (!d->has_resume)
@@ -562,24 +568,22 @@ static void draw_resume_mark(library *l)
     if ((int)strlen(title) > max_chars)
         title[max_chars] = 0;
     format_time(at, sizeof(at), d->resume_pos - d->resume_start);
-    canvas_darken(c, x - 14, y - 14, UI_W - 20 - x + 28, 156, 90);
-    canvas_text(c, x, y, 2, RGBA(255, 255, 255, 255), title);
-    y += 36;
-    canvas_icon(c, ICON_BUTTON_CROSS, x, y, 2, COLOR_CROSS);
+    canvas_round_darken(c, PANEL_X, BIG_Y, PANEL_W, 2 * ICON_H, BIG_R, 90);   /* as tall as the icon */
+    canvas_text(c, x, y + 18, 2, RGBA(255, 255, 255, 255), title);
+    canvas_icon(c, ICON_BUTTON_CROSS, x, y + 46, 2, COLOR_CROSS);
     if (d->resume_end > d->resume_start) {
         uint64_t len = d->resume_end - d->resume_start, done = d->resume_pos - d->resume_start;
         int fill = done >= len ? w : (int)(done * (uint64_t)w / len);
         format_time(total, sizeof(total), len);
         snprintf(line, sizeof(line), "Resume at %s of %s", at, total);
-        canvas_rect(c, tx, y + 34, w, 6, RGBA(70, 80, 100, 255));
-        canvas_rect(c, tx, y + 34, fill, 6, RGBA(255, 255, 255, 230));
+        canvas_rect(c, tx, y + 84, w, 6, RGBA(70, 80, 100, 255));
+        canvas_rect(c, tx, y + 84, fill, 6, RGBA(255, 255, 255, 230));
     } else {
         snprintf(line, sizeof(line), "Resume at %s", at);
     }
-    canvas_text(c, tx, y + 8, 2, RGBA(255, 255, 255, 255), line);
-    y += 52;
-    canvas_icon(c, ICON_BUTTON_SQUARE, x, y, 2, COLOR_SQUARE);
-    canvas_text(c, tx, y + 8, 2, TEXT_DIM, "Play from the start");
+    canvas_text(c, tx, y + 54, 2, RGBA(255, 255, 255, 255), line);
+    canvas_icon(c, ICON_BUTTON_SQUARE, x, y + 106, 2, COLOR_SQUARE);
+    canvas_text(c, tx, y + 114, 2, TEXT_DIM, "Play from the start");
 }
 
 /* ---- the disc on screen ---- */
@@ -685,6 +689,20 @@ static int load_media(library *l)
 
 /* ---- drawing ---- */
 
+static uint32_t gradient(int y)
+{
+    return RGBA(12 + y * 20 / UI_H, 18 + y * 30 / UI_H, 40 + y * 60 / UI_H, 255);
+}
+
+/* Puts the background back over n pixels of row y from x (to cut the icon's corners). */
+static void restore_background(library *l, int x, int y, int n)
+{
+    if (l->bg)
+        memcpy(l->ui.rgba + ((size_t)y * UI_W + x) * 4, l->bg + ((size_t)y * UI_W + x) * 4, (size_t)n * 4);
+    else
+        canvas_rect(&l->ui, x, y, n, 1, gradient(y));
+}
+
 static void draw_ui(library *l)
 {
     canvas *c = &l->ui;
@@ -693,7 +711,7 @@ static void draw_ui(library *l)
         memcpy(c->rgba, l->bg, UI_W * UI_H * 4);
     } else {
         for (int y = 0; y < UI_H; y++)
-            canvas_rect(c, 0, y, UI_W, 1, RGBA(12 + y * 20 / UI_H, 18 + y * 30 / UI_H, 40 + y * 60 / UI_H, 255));
+            canvas_rect(c, 0, y, UI_W, 1, gradient(y));
     }
 
     /* Neighbours: icons only, one above and two below. */
@@ -709,15 +727,24 @@ static void draw_ui(library *l)
             canvas_rect(c, SMALL_X, y, ICON_W, ICON_H, RGBA(60, 70, 90, 255));
     }
 
-    /* The selected disc: its ICON1 animation shows through a transparent hole, else ICON0. */
+    /* The selected disc: its ICON1 animation shows through a transparent hole, else ICON0. The
+       corners are rounded, and an outline goes round it. */
     if (l->icon) {
-        canvas_rect(c, BIG_X, BIG_Y, 2 * ICON_W, 2 * ICON_H, RGBA(0, 0, 0, 0));
+        canvas_round_rect(c, BIG_X, BIG_Y, 2 * ICON_W, 2 * ICON_H, BIG_R, RGBA(0, 0, 0, 0));
     } else if (l->discs[l->sel].icon0) {
         const lib_disc *d = &l->discs[l->sel];
         canvas_blit(c, d->icon0, d->icon_w, d->icon_h, d->icon_w * 4, BIG_X, BIG_Y, 2 * ICON_W, 2 * ICON_H);
+        for (int yy = 0; yy < 2 * ICON_H; yy++) {
+            int in = canvas_round_inset(BIG_R, 2 * ICON_H, yy);
+            if (in) {
+                restore_background(l, BIG_X, BIG_Y + yy, in);
+                restore_background(l, BIG_X + 2 * ICON_W - in, BIG_Y + yy, in);
+            }
+        }
     } else {
-        canvas_rect(c, BIG_X, BIG_Y, 2 * ICON_W, 2 * ICON_H, RGBA(60, 70, 90, 255));
+        canvas_round_rect(c, BIG_X, BIG_Y, 2 * ICON_W, 2 * ICON_H, BIG_R, RGBA(60, 70, 90, 255));
     }
+    canvas_round_ring(c, BIG_X - 7, BIG_Y - 7, 2 * ICON_W + 14, 2 * ICON_H + 14, BIG_R + 7, 3, RGBA(255, 255, 255, 230));
     draw_resume_mark(l);
     canvas_text(c, UI_W - 20 - canvas_text_width("v" UMDPLAYER_VERSION, 1), UI_H - 18, 1, TEXT_DIM, "v" UMDPLAYER_VERSION);
 
