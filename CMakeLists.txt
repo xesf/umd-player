@@ -101,7 +101,8 @@ target_link_libraries(umdplayer
 
 # UNSAFE: safe homebrew cannot open ux0:pspemu, where Adrenaline users keep their ISOs.
 vita_create_self(umdplayer.self umdplayer UNSAFE)
-# Bubble icon and LiveArea, drawn by tools/make_assets.py.
+# Bubble icon and LiveArea, drawn by tools/make_assets.py; the manual pages (the LiveArea's
+# Manual button), drawn by tools/make_manual.py from docs/manual.md.
 vita_create_vpk(${VPK_NAME} ${VITA_TITLEID} umdplayer.self
   VERSION ${VITA_VERSION}
   NAME ${VITA_APP_NAME}
@@ -112,4 +113,12 @@ vita_create_vpk(${VPK_NAME} ${VITA_TITLEID} umdplayer.self
   FILE assets/vita/livearea/contents/bg.png sce_sys/livearea/contents/bg.png
   FILE assets/vita/livearea/contents/startup.png sce_sys/livearea/contents/startup.png
   FILE assets/vita/livearea/contents/template.xml sce_sys/livearea/contents/template.xml
+  FILE assets/vita/manual/001.png sce_sys/manual/001.png
+  FILE assets/vita/manual/002.png sce_sys/manual/002.png
+  FILE assets/vita/manual/003.png sce_sys/manual/003.png
+  FILE assets/vita/manual/004.png sce_sys/manual/004.png
+  FILE assets/vita/manual/005.png sce_sys/manual/005.png
+  FILE assets/vita/manual/006.png sce_sys/manual/006.png
+  FILE assets/vita/manual/007.png sce_sys/manual/007.png
+  FILE assets/vita/manual/008.png sce_sys/manual/008.png
 )

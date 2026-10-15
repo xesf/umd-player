@@ -6,7 +6,7 @@
 - Settings: "Start with: Disc" plays a disc through its own menus, as a PSP does (a script interpreter, the menu widgets and animations, and JPEG menu images); discs without menus play their intro titles first.
 - The time bar shows the disc's name; the options panel no longer lists the playlist entry.
 - A disc without PIC1 art keeps the app name and version clear of the backdrop's film strip, and shows its file name without the extension.
-- Adds a user manual with screenshots (docs/manual.md).
+- Adds a user manual with screenshots (docs/manual.md), and an 8-page version in the VPK for the LiveArea's Manual button.
 - Names the package after the version (umdplayer-v0.3.0.vpk); the Vita app version also comes from version.h.
 
 ## v0.3.0 (2026-10-15)

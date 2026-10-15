@@ -10,7 +10,7 @@ The screenshots show the app's own screens with placeholder discs. With your dis
 2. In VitaShell, open the file and install it.
 3. In the HENkaku settings, turn on "Enable unsafe homebrew". Adrenaline needs this setting too, so it is probably on already.
 
-UMD Player appears on the home screen with a UMD caddy icon.
+UMD Player appears on the home screen with a UMD caddy icon. Its LiveArea has a Manual button with a short version of this guide (drawn by `tools/make_manual.py`).
 
 ## Add your movies
 
