@@ -21,6 +21,7 @@ typedef struct osd_view {
     char header[64];          /* panel title: the disc name */
     char subheader[64];       /* the title being played, when the disc has several */
     osd_row rows[OSD_ROWS];
+    char cross_hint[24];      /* what × does in the panel; empty for no hint */
     icon_id toast_icon;
     char toast[64];           /* short message, top left; empty for none */
     int show_status;          /* clock and battery, top right */
@@ -32,6 +33,9 @@ typedef struct osd_view {
     char time_text[48];
     float progress;           /* 0..1 */
 } osd_view;
+
+/* Draws only the options panel (no clear), for screens that draw their own background. */
+void osd_draw_menu(const osd_view *v, canvas *c);
 
 /* Returns 1 if anything is visible. */
 int osd_visible(const osd_view *v);

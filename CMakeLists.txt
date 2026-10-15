@@ -32,6 +32,7 @@ add_executable(umdplayer
   src/app/osd.c
   src/app/library.c
   src/app/backdrop.c
+  src/app/settings.c
   src/app/backdrop_png.c
   src/app/resume.c
   src/core/disc_image.c
@@ -70,6 +71,7 @@ target_link_libraries(umdplayer
   SceAudio_stub
   ScePower_stub
   SceRtc_stub
+  SceAppUtil_stub
 )
 
 # UNSAFE: safe homebrew cannot open ux0:pspemu, where Adrenaline users keep their ISOs.

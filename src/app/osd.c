@@ -58,7 +58,7 @@ int osd_visible(const osd_view *v)
     return v->menu_open || v->toast[0] || v->show_bar || v->show_status;
 }
 
-static void draw_menu(const osd_view *v, canvas *c)
+void osd_draw_menu(const osd_view *v, canvas *c)
 {
     int sub = v->subheader[0] != 0;
     int h = PAD + LINE + (sub ? 14 : 0) + PAD + v->row_count * ROW_H + PAD + 2 * 20 + PAD;
@@ -89,7 +89,8 @@ static void draw_menu(const osd_view *v, canvas *c)
         }
     }
     hx = x + PAD;
-    hx += osd_draw_hint(c, hx, y + PAD, ICON_BUTTON_CROSS, "Go to chapter");
+    if (v->cross_hint[0])
+        hx += osd_draw_hint(c, hx, y + PAD, ICON_BUTTON_CROSS, v->cross_hint);
     osd_draw_hint(c, hx, y + PAD, ICON_BUTTON_CIRCLE, "Close");
     canvas_text(c, x + PAD, y + PAD + 24, 1, TEXT_DIM, "Up/Down: choose     Left/Right: change");
 }
@@ -128,7 +129,7 @@ void osd_draw(const osd_view *v, canvas *c)
     if (v->show_status)
         osd_draw_status(c, c->w - 24, 24, v->clock, v->battery, v->charging);
     if (v->menu_open)
-        draw_menu(v, c);
+        osd_draw_menu(v, c);
     if (v->show_bar)
         draw_bar(v, c);
 }

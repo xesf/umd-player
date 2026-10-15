@@ -18,6 +18,8 @@
 #include "backdrop.h"
 #include "osd.h"
 #include "resume.h"
+#include "screen.h"
+#include "settings.h"
 #include "version.h"
 
 #define LIB_MAX        64
@@ -126,7 +128,8 @@ struct library {
     canvas ui;
     plat_present_info info;
     int ui_dirty;
-    int show_info;                   /* △ toggles the title and resume panel */
+    int show_info;                   /* SELECT toggles the title and resume panel */
+    int settings_open, settings_row; /* △: the defaults for new discs */
     int marks_stale;                 /* reread the resume points: a movie was played */
 };
 
@@ -731,6 +734,80 @@ static void fill_icon_corners(library *l)
     }
 }
 
+/* ---- the settings panel (△) ---- */
+
+enum { SET_SCREEN, SET_AUDIO, SET_SUBS, SET_ROWS };
+
+static int lang_index(const char *code)
+{
+    for (int i = 0; i < LANG_CHOICES; i++)
+        if (strcmp(lang_choices[i], code) == 0)
+            return i;
+    return -1;
+}
+
+static void settings_input(library *l, uint32_t pressed)
+{
+    app_settings *s = settings_get();
+    int dir = (pressed & PLAT_BTN_RIGHT) ? 1 : (pressed & PLAT_BTN_LEFT) ? -1 : 0;
+
+    if (pressed & (PLAT_BTN_CIRCLE | PLAT_BTN_TRIANGLE)) {
+        l->settings_open = 0;
+        l->ui_dirty = 1;
+        settings_save();
+        return;
+    }
+    if (pressed & PLAT_BTN_UP)
+        l->settings_row = (l->settings_row + SET_ROWS - 1) % SET_ROWS;
+    if (pressed & PLAT_BTN_DOWN)
+        l->settings_row = (l->settings_row + 1) % SET_ROWS;
+    if (dir && l->settings_row == SET_SCREEN) {
+        s->screen = (s->screen + dir + SCREEN_MODES) % SCREEN_MODES;
+    } else if (dir && l->settings_row == SET_AUDIO) {
+        int i = lang_index(s->audio);
+        i = i < 0 ? 0 : (i + dir + LANG_CHOICES) % LANG_CHOICES;
+        snprintf(s->audio, sizeof(s->audio), "%s", lang_choices[i]);
+    } else if (dir && l->settings_row == SET_SUBS) {
+        /* Off, System, then each language. */
+        int n = LANG_CHOICES + 2, i = strcmp(s->subs, SUBS_OFF) == 0 ? 0 : strcmp(s->subs, SUBS_SYSTEM) == 0 ? 1
+                                                                       : 2 + lang_index(s->subs);
+        if (i < 0 || i >= n)
+            i = 1;
+        i = (i + dir + n) % n;
+        snprintf(s->subs, sizeof(s->subs), "%s", i == 0 ? SUBS_OFF : i == 1 ? SUBS_SYSTEM : lang_choices[i - 2]);
+    }
+    if (pressed)
+        l->ui_dirty = 1;
+}
+
+static void draw_settings(library *l)
+{
+    const app_settings *s = settings_get();
+    osd_view v;
+    char sys[3];
+
+    if (!l->settings_open)
+        return;
+    memset(&v, 0, sizeof(v));
+    v.menu_open = 1;
+    v.row_count = SET_ROWS;
+    v.menu_row = l->settings_row;
+    plat_language(sys);
+    snprintf(v.header, sizeof(v.header), "SETTINGS");
+    snprintf(v.subheader, sizeof(v.subheader), "For discs not played yet. System: %s", lang_name(sys));
+    v.rows[SET_SCREEN].icon = ICON_SCREEN;
+    snprintf(v.rows[SET_SCREEN].label, sizeof(v.rows[0].label), "Screen");
+    snprintf(v.rows[SET_SCREEN].value, sizeof(v.rows[0].value), "%s", screen_mode_name((screen_mode)s->screen));
+    v.rows[SET_AUDIO].icon = ICON_AUDIO;
+    snprintf(v.rows[SET_AUDIO].label, sizeof(v.rows[0].label), "Audio");
+    snprintf(v.rows[SET_AUDIO].value, sizeof(v.rows[0].value), "%s", lang_name(s->audio));
+    v.rows[SET_SUBS].icon = ICON_SUBTITLES;
+    snprintf(v.rows[SET_SUBS].label, sizeof(v.rows[0].label), "Subtitles");
+    snprintf(v.rows[SET_SUBS].value, sizeof(v.rows[0].value), "%s",
+             strcmp(s->subs, SUBS_OFF) == 0 ? "Off" : strcmp(s->subs, SUBS_SYSTEM) == 0 ? "System" : lang_name(s->subs));
+    osd_draw_menu(&v, &l->ui);
+}
+
 /* "UMD Player" at the top left, with "by xesf" below it in small text like the version. */
 static void draw_app_name(canvas *c, int y)
 {
@@ -769,6 +846,7 @@ static void draw_ui(library *l)
     }
     fill_icon_corners(l);
     draw_info(l);
+    draw_settings(l);
     draw_app_name(c, 18);
     canvas_text(c, UI_W - 20 - canvas_text_width("v" UMDPLAYER_VERSION, 1), UI_H - 18, 1, TEXT_DIM, "v" UMDPLAYER_VERSION);
 
@@ -973,13 +1051,10 @@ static void draw_empty(library *l)
     }
     y += 40;
     {
-        const char *again = "Look again", *quit = "START  Quit";
-        int w = ICON_SIZE * 2 + 10 + canvas_text_width(again, 2) + 60 + canvas_text_width(quit, 2);
-        int x = (UI_W - w) / 2;
+        const char *again = "Look again";
+        int x = (UI_W - (ICON_SIZE * 2 + 10 + canvas_text_width(again, 2))) / 2;
         canvas_icon(c, ICON_BUTTON_CROSS, x, y - 8, 2, COLOR_CROSS);
-        x += ICON_SIZE * 2 + 10;
-        x += canvas_text(c, x, y, 2, TEXT_DIM, again) + 60;
-        canvas_text(c, x, y, 2, TEXT_DIM, quit);
+        canvas_text(c, x + ICON_SIZE * 2 + 10, y, 2, TEXT_DIM, again);
     }
     canvas_text(c, UI_W - 20 - canvas_text_width("v" UMDPLAYER_VERSION, 1), UI_H - 72, 1, TEXT_DIM,
                 "v" UMDPLAYER_VERSION);   /* above the film strip */
@@ -995,8 +1070,6 @@ int library_update(library *l, uint32_t pressed)
 {
     int present = 0;
 
-    if (pressed & PLAT_BTN_START)
-        return -2;
     if (l->count == 0) {
         if (pressed & PLAT_BTN_CROSS) {
             scan(l);
@@ -1017,9 +1090,19 @@ int library_update(library *l, uint32_t pressed)
         load_resume_marks(l);
         l->ui_dirty = 1;
     }
+    if (l->settings_open) {
+        settings_input(l, pressed);
+        pressed = 0;
+    }
+    if (pressed & PLAT_BTN_TRIANGLE) {
+        l->settings_open = 1;
+        l->settings_row = 0;
+        l->ui_dirty = 1;
+        pressed = 0;
+    }
     if (pressed & PLAT_BTN_CROSS)
         return l->sel;
-    if (pressed & PLAT_BTN_TRIANGLE) {
+    if (pressed & PLAT_BTN_SELECT) {
         l->show_info = !l->show_info;
         l->ui_dirty = 1;
     }

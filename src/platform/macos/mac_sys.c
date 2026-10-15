@@ -146,6 +146,23 @@ void plat_set_power(int mode)
     (void)mode;
 }
 
+/* The first two letters of UMD_LANG or LANG ("fr_FR.UTF-8"), else English. */
+void plat_language(char out[3])
+{
+    const char *l = getenv("UMD_LANG");
+
+    if (!l || !*l)
+        l = getenv("LANG");
+    if (l && l[0] >= 'a' && l[0] <= 'z' && l[1] >= 'a' && l[1] <= 'z') {
+        out[0] = l[0];
+        out[1] = l[1];
+    } else {
+        out[0] = 'e';
+        out[1] = 'n';
+    }
+    out[2] = 0;
+}
+
 void plat_get_status(plat_status *s)
 {
     time_t now = time(NULL);

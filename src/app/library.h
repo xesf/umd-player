@@ -15,7 +15,7 @@ typedef struct library library;
 library *library_open(const char *dir);
 
 /* Call once per display refresh. Returns the index of the disc to play when the user picks
-   one, -1 to keep browsing, or -2 to quit. */
+   one, or -1 to keep browsing. (Quitting is the PS button.) */
 int library_update(library *l, uint32_t pressed);
 
 const char *library_path(const library *l, int index);

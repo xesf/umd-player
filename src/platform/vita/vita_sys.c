@@ -12,7 +12,9 @@
 #include <psp2/io/stat.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
+#include <psp2/apputil.h>
 #include <psp2/power.h>
+#include <psp2/system_param.h>
 #include <psp2/rtc.h>
 
 #define THREAD_PRIORITY 0x10000100
@@ -151,6 +153,30 @@ void plat_log(const char *fmt, ...)
 void plat_keep_awake(void)
 {
     sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DEFAULT);
+}
+
+void plat_language(char out[3])
+{
+    /* SceSystemParamLang order: Japanese, English (US), French, Spanish, German, Italian, Dutch,
+       Portuguese (PT), Russian, Korean, Chinese (traditional, simplified), Finnish, Swedish,
+       Danish, Norwegian, Polish, Portuguese (BR), English (GB), Turkish. */
+    static const char codes[][3] = {"ja", "en", "fr", "es", "de", "it", "nl", "pt", "ru", "ko", "zh",
+                                    "zh", "fi", "sv", "da", "no", "pl", "pt", "en", "tr"};
+    static int inited;
+    int lang = 1;
+
+    if (!inited) {
+        SceAppUtilInitParam init;
+        SceAppUtilBootParam boot;
+        memset(&init, 0, sizeof(init));
+        memset(&boot, 0, sizeof(boot));
+        sceAppUtilInit(&init, &boot);
+        inited = 1;
+    }
+    if (sceAppUtilSystemParamGetInt(SCE_SYSTEM_PARAM_ID_LANG, &lang) < 0 || lang < 0 ||
+        lang >= (int)(sizeof(codes) / sizeof(codes[0])))
+        lang = 1;
+    memcpy(out, codes[lang], 3);
 }
 
 void plat_set_power(int mode)

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Library: Triangle opens a settings panel with the default screen mode, audio language and subtitle language for new discs.
+- Library: Select shows or hides the title and resume panel; the icon outline is gone; "by xesf" sits under the app name.
+- Start pauses and plays during a movie, and no longer quits from the library.
+
 ## v0.2.0 (2026-10-15)
 
 - Plays CSO and ZSO compressed disc images as well as ISO.

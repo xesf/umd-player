@@ -16,6 +16,7 @@
 #include "../platform/platform.h"
 #include "osd.h"
 #include "resume.h"
+#include "settings.h"
 #include "screen.h"
 
 #define VQ_BYTES      (4 * 1024 * 1024)  /* queued video access units */
@@ -867,25 +868,6 @@ static void toast(player *p, icon_id icon, const char *fmt, ...)
     p->toast_until = plat_time_us() + TOAST_US;
 }
 
-static const char *language(const char *code)
-{
-    static const struct { const char *code, *name; } names[] = {
-        {"en", "English"}, {"fr", "French"}, {"de", "German"}, {"es", "Spanish"}, {"it", "Italian"},
-        {"pt", "Portuguese"}, {"nl", "Dutch"}, {"ja", "Japanese"}, {"zh", "Chinese"}, {"ko", "Korean"},
-        {"ru", "Russian"}, {"pl", "Polish"}, {"sv", "Swedish"}, {"da", "Danish"}, {"no", "Norwegian"},
-        {"fi", "Finnish"}, {"el", "Greek"}, {"tr", "Turkish"}, {"cs", "Czech"}, {"hu", "Hungarian"},
-        {"ar", "Arabic"}, {"he", "Hebrew"}, {"hi", "Hindi"}, {"th", "Thai"}, {"hr", "Croatian"},
-        {"ro", "Romanian"}, {"is", "Icelandic"}};
-    static char other[3];
-
-    for (unsigned i = 0; i < sizeof(names) / sizeof(names[0]); i++)
-        if (code[0] == names[i].code[0] && code[1] == names[i].code[1])
-            return names[i].name;
-    other[0] = code[0];
-    other[1] = code[1];
-    return other;
-}
-
 /* The streams of one kind in the clip, as indexes into clip.streams. */
 static int list_streams(const player *p, int kind, int *out)
 {
@@ -918,9 +900,9 @@ static const char *stream_name(const player *p, int kind, int sub_id, char *buf,
         total++;
     }
     if (total > 1)
-        snprintf(buf, size, "%s %d", language(found->lang), nth + 1);
+        snprintf(buf, size, "%s %d", lang_name(found->lang), nth + 1);
     else
-        snprintf(buf, size, "%s", language(found->lang));
+        snprintf(buf, size, "%s", lang_name(found->lang));
     return buf;
 }
 
@@ -1052,6 +1034,7 @@ static void build_osd(player *p, osd_view *v)
     v->menu_open = p->menu_open;
     if (p->menu_open) {
         v->row_count = MENU_ROWS;
+        snprintf(v->cross_hint, sizeof(v->cross_hint), "Go to chapter");
         v->menu_row = p->menu_row;
         v->rows[ROW_AUDIO].icon = ICON_AUDIO;
         v->rows[ROW_SUBTITLES].icon = ICON_SUBTITLES;
@@ -1320,6 +1303,7 @@ static void toggle_pause(player *p)
     p->paused = !p->paused;
     toast(p, p->paused ? ICON_PAUSE : ICON_PLAY, p->paused ? "Paused" : "Play");
     p->clk_raw = 0;   /* restart the extrapolation after a pause */
+    p->last_frame_us = plat_time_us();   /* time paused is not a stall */
     if (p->has_audio)
         plat_audio_pause(p->paused);
     else if (p->wall_base_us && !p->paused)
@@ -1354,9 +1338,9 @@ static void play_input(player *p, uint32_t pressed)
         cycle_screen(p, 1);
     if (pressed & PLAT_BTN_SELECT)
         toast(p, ICON_NONE, "%s", p->title->name);
-    if (pressed & PLAT_BTN_CROSS)
+    if (pressed & (PLAT_BTN_CROSS | PLAT_BTN_START))
         toggle_pause(p);
-    if (pressed & (PLAT_BTN_CIRCLE | PLAT_BTN_START))
+    if (pressed & PLAT_BTN_CIRCLE)
         p->leave = 1;
 }
 
@@ -1454,6 +1438,16 @@ static void save_resume(player *p)
     p->last_frame_us = plat_time_us();
 }
 
+/* The first stream of a kind in a language, as its substream id, or -1. */
+static int stream_in_language(const player *p, int kind, const char *lang)
+{
+    for (int i = 0; i < p->clip.stream_count; i++)
+        if (p->clip.streams[i].kind == kind && p->clip.streams[i].lang[0] == lang[0] &&
+            p->clip.streams[i].lang[1] == lang[1])
+            return p->clip.streams[i].sub_id;
+    return -1;
+}
+
 static int has_stream(const player *p, int kind, int sub_id)
 {
     for (int i = 0; i < p->clip.stream_count; i++)
@@ -1517,10 +1511,13 @@ player *player_open(const player_options *opt)
         plat_log("cannot find %s\n", path);
         goto fail;
     }
-    /* Audio: the asked-for track, else the remembered one, else the first. */
+    /* Audio: the asked-for track, else the remembered one, else the first in the language from
+       the settings, else the first. */
     audio = opt->audio;
     if (audio < 0 && have_resume && has_stream(p, UMDV_STREAM_AUDIO, resume.audio))
         audio = resume.audio;
+    if (audio < 0 && !have_resume)
+        audio = stream_in_language(p, UMDV_STREAM_AUDIO, settings_get()->audio);
     for (i = 0; audio < 0 && i < p->clip.stream_count; i++)
         if (p->clip.streams[i].kind == UMDV_STREAM_AUDIO)
             audio = p->clip.streams[i].sub_id;
@@ -1528,6 +1525,11 @@ player *player_open(const player_options *opt)
     p->has_audio = has_stream(p, UMDV_STREAM_AUDIO, p->audio_sub);
     if (have_resume && resume.sub >= 0 && has_stream(p, UMDV_STREAM_SUBTITLE, resume.sub))
         sub = resume.sub;
+    if (!have_resume && settings_subtitle_language()[0]) {
+        int s = stream_in_language(p, UMDV_STREAM_SUBTITLE, settings_subtitle_language());
+        if (s >= 0)
+            sub = s;
+    }
     plat_log("title \"%s\" (clip %s), audio track 0x%02x%s\n", p->title->name, p->title->clip, p->audio_sub,
            p->has_audio ? "" : " not found: playing without audio");
 
@@ -1544,7 +1546,7 @@ player *player_open(const player_options *opt)
     p->ui.h = UI_H;
     p->ui.stride = UI_W * 4;
     p->ui.rgba = malloc(UI_W * UI_H * 4);
-    p->mode = SCREEN_ZOOM;
+    p->mode = (screen_mode)settings_get()->screen;
     if (have_resume && resume.screen >= 0 && resume.screen < SCREEN_MODES)
         p->mode = (screen_mode)resume.screen;
     for (i = 0; i < p->clip.stream_count; i++) {

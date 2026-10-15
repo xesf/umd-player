@@ -130,6 +130,9 @@ void plat_keep_awake(void);
 enum { PLAT_POWER_FULL, PLAT_POWER_PLAYBACK };
 void plat_set_power(int mode);
 
+/* The system language as an ISO 639-1 code ("en"), for the default subtitle language. */
+void plat_language(char out[3]);
+
 typedef struct plat_status {
     int year, month, day, hour, minute;   /* local time */
     int battery;                          /* percent, or -1 when there is no battery */
