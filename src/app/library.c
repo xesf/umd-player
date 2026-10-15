@@ -191,8 +191,10 @@ static void on_entry(void *user, const char *name)
     list_ctx *c = (list_ctx *)user;
     size_t n = strlen(name);
 
-    if (c->count >= LIB_MAX || n <= 4 || !image_name_supported(name))
+    if (c->count >= LIB_MAX || n <= 4 || !image_name_supported(name)) {
+        plat_log("library: skipped %s/%s\n", c->dir, name);
         return;
+    }
     /* The same file in two folders shows once; resume data is keyed by the file name. */
     for (int i = 0; i < c->count; i++)
         if (strcmp(file_name(c->discs[i].path), name) == 0)
@@ -834,8 +836,13 @@ static void scan(library *l)
         size_t n = strcspn(p, ";");
         snprintf(one, sizeof(one), "%.*s", (int)(n < sizeof(one) ? n : sizeof(one) - 1), p);
         ctx.dir = one;
-        if (n)
-            plat_list_dir(one, on_entry, &ctx);
+        if (n) {
+            int before = ctx.count;
+            if (plat_list_dir(one, on_entry, &ctx) < 0)
+                plat_log("library: cannot open %s\n", one);
+            else
+                plat_log("library: %d discs in %s\n", ctx.count - before, one);
+        }
         p += n + (p[n] == ';');
     }
     count = ctx.count;
@@ -850,7 +857,7 @@ static void scan(library *l)
     if (l->cache_lock)
         plat_mutex_unlock(l->cache_lock);
     load_resume_marks(l);
-    plat_log("library: %d discs in %s\n", count, l->dirs);
+    plat_log("library: %d discs in total\n", count);
 }
 
 library *library_open(const char *dir)
