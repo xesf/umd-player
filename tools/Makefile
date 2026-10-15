@@ -4,7 +4,7 @@ CFLAGS ?= -std=c99 -O2 -g -Wall -Wextra -Wpedantic -D_POSIX_C_SOURCE=200809L -D_
 CORE = ../src/core
 BIN = ../build/host
 
-TOOLS = $(BIN)/umdinfo $(BIN)/umddemux $(BIN)/at3pdec $(BIN)/h264prog $(BIN)/pngdec $(BIN)/playtest $(BIN)/imgcmp
+TOOLS = $(BIN)/umdinfo $(BIN)/umddemux $(BIN)/at3pdec $(BIN)/h264prog $(BIN)/pngdec $(BIN)/playtest $(BIN)/imgcmp $(BIN)/menutest
 AT3P = $(wildcard $(CORE)/atrac3p/*.c)
 # The FFmpeg-derived files keep upstream's style; silence the warnings it triggers.
 AT3P_CFLAGS = -Wno-pointer-sign -Wno-unused-parameter -Wno-sign-compare -Wno-shift-op-parentheses -Wno-parentheses
@@ -22,6 +22,9 @@ $(BIN)/at3pdec: at3pdec.c $(AT3P) $(wildcard $(CORE)/atrac3p/*.h) | $(BIN)
 
 $(BIN)/h264prog: h264prog.c $(CORE)/h264.c ../src/platform/macos/h264_progressive.c | $(BIN)
 	$(CC) $(CFLAGS) -o $@ $^
+
+$(BIN)/menutest: menutest.c $(CORE)/rco.c $(CORE)/rco.h | $(BIN)
+	$(CC) $(CFLAGS) -o $@ menutest.c $(CORE)/rco.c
 
 $(BIN)/imgcmp: imgcmp.c host_source.c $(CORE)/disc_image.c $(CORE)/png.c | $(BIN)
 	$(CC) $(CFLAGS) -o $@ $^
