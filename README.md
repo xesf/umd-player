@@ -58,7 +58,7 @@ make -C tools                                          # host tools in build/hos
 ./tools/image_check.sh                                 # check the CSO and ZSO readers
 ```
 
-GitHub Actions builds the host tools and the VPK on every push and runs the checks that need no disc. A `v*` tag publishes a release with the VPK. The macOS player is parked: VideoToolbox cannot decode the field-coded H.264 some discs use.
+GitHub Actions builds the host tools and the VPK on every push and runs the checks that need no disc. A `v*` tag publishes a release with the VPK and sends it to [VitaDB](https://vitadb.rinnegatamante.eu), using the `VITA_SECRET` repository secret. The macOS player is parked: VideoToolbox cannot decode the field-coded H.264 some discs use.
 
 ## Documentation
 

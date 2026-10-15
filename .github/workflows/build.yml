@@ -1,5 +1,5 @@
 # Builds the host tools and the Vita VPK on every push and pull request. A tag named v*
-# also publishes a GitHub release with the VPK.
+# also publishes a GitHub release with the VPK, and sends it to VitaDB.
 name: build
 
 on:
@@ -52,3 +52,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" umdplayer-v*.vpk --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
+      # VitaDB copies the VPK from the release just published. The secret comes from the
+      # app's VitaDB page; without it (forks) the step does nothing.
+      - name: Publish to VitaDB
+        env:
+          VITADB_SECRET: ${{ secrets.VITA_SECRET }}
+        run: |
+          if [ -z "$VITADB_SECRET" ]; then
+            echo "VITA_SECRET is not set: skipping VitaDB"
+            exit 0
+          fi
+          curl --fail-with-body --show-error -X POST \
+            -F "secret=$VITADB_SECRET" \
+            -F "vpk_url=https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/umdplayer-$GITHUB_REF_NAME.vpk" \
+            https://www.rinnegatamante.eu/vitadb/publish_nightly.php
