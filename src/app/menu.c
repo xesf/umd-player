@@ -340,15 +340,16 @@ static int script_handler(menu *m, int widget, const char *name)
 }
 
 /* A widget action: a handler the script set on the widget wins; otherwise the RCO's script
-   handler, or an animation played on the widget. */
-static void do_action_named(menu *m, const rco_action *a, int widget, const char *name)
+   handler, or an animation played on the widget. Returns 0 if there was nothing to do. */
+static int do_action_named(menu *m, const rco_action *a, int widget, const char *name)
 {
     if (name && script_handler(m, widget, name))
-        return;
+        return 1;
     if (a->event)
         call_event(m, a->event, widget);
     if (a->anim >= 0)
         play_anim(m, a->anim, widget);
+    return a->event || a->anim >= 0;
 }
 
 static void do_action(menu *m, const rco_action *a, int widget)
@@ -469,9 +470,11 @@ static void do_input(menu *m, uint32_t pressed)
     if (m->res != r)
         return;
     if (pressed & PLAT_BTN_CIRCLE) {
-        /* The focused widget's script handler, then the page's. */
-        if (!script_handler(m, focus, "onCancel"))
-            do_action_named(m, &r->r.objects[page].action[RCO_PAGE_CANCEL], page, "onCancel");
+        /* The focused widget's script handler, then the page's. A page with neither (Saw's
+           title descriptions) leaves Back to the disc's menu event, as the menu button. */
+        if (!script_handler(m, focus, "onCancel") &&
+            !do_action_named(m, &r->r.objects[page].action[RCO_PAGE_CANCEL], page, "onCancel"))
+            menu_menu_button(m);
         return;
     }
     if (focus < 0)
@@ -909,8 +912,9 @@ NATIVE(mp_status)
     (void)self; (void)args; (void)argc;
     m->p.status(m->p.user, &st);
     *ret = vs_new_object(vm);
-    /* playStatus: 0 stopped, 1 paused, 2 playing (as the scripts compare it) */
-    vs_set(vm, *ret, vs_intern(vm, "playStatus"), vs_int(!st.playing ? 0 : st.paused ? 1 : 2));
+    /* playStatus: 0 stopped, 1 playing, 2 paused. Harry Potter logs "successfully playing
+       video" on 1, and Speed waits for 1 before it uncovers the movie. */
+    vs_set(vm, *ret, vs_intern(vm, "playStatus"), vs_int(!st.playing ? 0 : st.paused ? 2 : 1));
     vs_set(vm, *ret, vs_intern(vm, "playListNumber"), vs_int(st.playlist));
     vs_set(vm, *ret, vs_intern(vm, "chapterNumber"), vs_int(st.chapter));
     /* 0 is normal speed, anything else paused or fast play; the scripts only test for 0.
@@ -1520,7 +1524,9 @@ int menu_dirty(const menu *m)
 
 int menu_has_focus(const menu *m)
 {
-    return m->res->active >= 0;
+    /* A page without buttons takes no input: Saw leaves pageWaitDummy, a lone picture, active
+       while the movie plays, and the player keeps its buttons. */
+    return m->res->active >= 0 && first_button(m->res, m->res->active) >= 0;
 }
 
 /* ---- drawing ---- */

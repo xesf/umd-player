@@ -81,7 +81,7 @@ void menu_debug(const menu *m);
 int menu_dirty(const menu *m);
 /* Draws the open pages into c (UI layer, transparent where nothing is drawn). */
 void menu_draw(menu *m, canvas *c);
-/* 1 while a page is open and takes the buttons; the player should not handle them. */
+/* 1 while the active page has a button to take the buttons; the player should not handle them. */
 int menu_has_focus(const menu *m);
 
 #endif

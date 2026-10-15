@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Disc menus: getPlayerStatus reports playStatus as the PSP does (0 stopped, 1 playing, 2 paused). Speed no longer stays black after Play Movie.
+- Disc menus: a page without buttons no longer holds the buttons. After choosing a scene in Saw, the movie takes Cross, Triangle and Circle again.
+- Disc menus: Circle on a page that has no Back handler sends the disc's menu event. Saw's Great Titles descriptions go back to the list.
 - Discs with more than about 40 files in a folder play all their titles: a folder whose listing spans several sectors was searched from the wrong place after its first sector (Summer Days clips 35 to 46).
 - Disc menus: movieplayer.play(0, 0), with no title, no longer starts title 1. Speed now shows its warnings and menu instead of starting the movie.
 - Disc menus: images keep their shape inside their widget, and only tiny colour fills stretch. 2Fast2Furious's main menu and The Bourne Supremacy's language list are no longer squashed or overlapping.
