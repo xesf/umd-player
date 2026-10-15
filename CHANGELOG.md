@@ -1,10 +1,12 @@
 # Changelog
 
-## Unreleased
+## v0.5.2 (2026-10-15)
 
-- Disc menus: Triangle, while a disc menu has focus, is the PSP's menu button. Saw's scene list over the movie now leads on to the main menu.
-- Disc menus: play's second argument marks a menu's own video, as on a PSP. Stopping it no longer replaces the resume point, getPlayerStatus reports menuMode, and a title that the menu replaces keeps its place. Speed's Play Movie, after the movie was watched once, plays the movie again instead of looping the menu background.
 - The library takes the touch screen: drag up or down to move through the discs, tap a disc above or below to select it, and tap the selected disc to play it.
+- Speed: Play Movie, after the movie was watched once, plays the movie again instead of looping the menu background. play's second argument marks a menu's own video, as on a PSP: stopping it no longer replaces the resume point, getPlayerStatus reports menuMode, and a title that the menu replaces keeps its place.
+- Disc menus: Triangle, while a disc menu has focus, is the PSP's menu button. Saw's scene list over the movie now leads on to the main menu.
+- Releases are also published to VitaDB.
+- Tested with Casino Royale.
 
 ## v0.5.1 (2026-10-15)
 
