@@ -19,6 +19,7 @@ typedef struct player_options {
     int title;          /* -1: the longest title */
     int audio;          /* audio substream 0x00-0x0F, or -1 for the first */
     const char *resume_key;   /* remember position and settings under this name, or NULL */
+    int intro;                /* an intro before the movie: × or START skips it, L and R do nothing */
 } player_options;
 
 player *player_open(const player_options *opt);
@@ -27,6 +28,9 @@ player *player_open(const player_options *opt);
 int player_update(player *p, uint32_t pressed);
 /* After player_update returned 0: the title to open next on the same disc, or -1. */
 int player_next_title(const player *p);
+/* After player_update returned 0: 1 if the title played to its end or was skipped, 0 if the
+   user left. */
+int player_finished(const player *p);
 void player_close(player *p);
 
 #endif

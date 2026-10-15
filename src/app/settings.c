@@ -57,6 +57,8 @@ app_settings *settings_get(void)
             s.screen = screen;
         else if (strcmp(key, "audio") == 0 && strlen(value) == 2)
             snprintf(s.audio, sizeof(s.audio), "%s", value);
+        else if (strcmp(key, "start") == 0)
+            s.start_disc = strcmp(value, "disc") == 0;
         else if (strcmp(key, "subtitles") == 0 && strlen(value) <= 3)
             snprintf(s.subs, sizeof(s.subs), "%s", value);
     }
@@ -67,7 +69,8 @@ void settings_save(void)
 {
     const app_settings *s = settings_get();
     char buf[128];
-    int n = snprintf(buf, sizeof(buf), "screen %d\naudio %s\nsubtitles %s\n", s->screen, s->audio, s->subs);
+    int n = snprintf(buf, sizeof(buf), "screen %d\naudio %s\nsubtitles %s\nstart %s\n", s->screen, s->audio, s->subs,
+                     s->start_disc ? "disc" : "movie");
 
     if (plat_data_save(FILE_NAME, buf, n) < 0)
         plat_log("cannot save the settings\n");

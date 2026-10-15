@@ -8,13 +8,17 @@
 #include "../core/disc_image.h"
 #include "../platform/platform.h"
 #include "backdrop.h"
+#include "intro.h"
+#include "resume.h"
+#include "settings.h"
 #include "library.h"
 #include "player.h"
 
 static library *lib;
 static player *current;
 static char current_path[512];
-static player_options direct = {NULL, -1, -1, NULL};
+static player_options direct = {NULL, -1, -1, NULL, 0};
+static int intros[INTRO_MAX], intro_count, intro_next;   /* "Start with: Disc" */
 
 static const char *base_name(const char *path)
 {
@@ -50,6 +54,28 @@ int app_init(int argc, char **argv)
     return lib ? 0 : 1;
 }
 
+static int has_saved_position(const char *key)
+{
+    resume_entry e;
+    return resume_load(key, &e) == 0 && e.pos > e.start && e.pos > 0;
+}
+
+/* Opens the next intro, or the movie after the last one. Returns 1 if something opened. */
+static int start_next_intro(void)
+{
+    player_options opt = {current_path, -1, -1, base_name(current_path), 0};
+
+    backdrop_present();
+    while (intro_next < intro_count) {
+        player_options in = {current_path, intros[intro_next++], -1, NULL, 1};
+        if ((current = player_open(&in)) != NULL)
+            return 1;
+    }
+    intro_next = intro_count + 1;    /* the movie is playing: the intros are over */
+    current = player_open(&opt);
+    return current != NULL;
+}
+
 int app_frame(void)
 {
     uint32_t held = plat_buttons(), pressed = held & ~prev_buttons;
@@ -57,15 +83,21 @@ int app_frame(void)
 
     prev_buttons = held;
     if (current) {
-        int next;
+        int next, finished;
         if (player_update(current, pressed))
             return 1;
         next = player_next_title(current);
+        finished = player_finished(current);
         player_close(current);
         current = NULL;
-        if (next >= 0) {
+        if (intro_next > 0 && intro_next <= intro_count) {
+            /* An intro ended or was skipped: the next one, then the movie. Circle leaves. */
+            if (finished && start_next_intro())
+                return 1;
+            intro_next = intro_count = 0;
+        } else if (next >= 0) {
             /* L or R: another title of the same disc. */
-            player_options opt = {current_path, next, -1, base_name(current_path)};
+            player_options opt = {current_path, next, -1, base_name(current_path), 0};
             backdrop_present();
             if ((current = player_open(&opt)) != NULL)
                 return 1;
@@ -84,6 +116,12 @@ int app_frame(void)
         opt.resume_key = base_name(current_path);
         library_suspend(lib);
         backdrop_present();          /* until the movie's first frame */
+        intro_count = intro_next = 0;
+        if (settings_get()->start_disc && !has_saved_position(opt.resume_key))
+            intro_count = intro_titles(current_path, intros, INTRO_MAX);
+        if (intro_count > 0 && start_next_intro())
+            return 1;
+        intro_count = 0;
         current = player_open(&opt);
         if (!current)
             plat_log("cannot play %s\n", opt.iso_path);

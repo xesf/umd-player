@@ -736,7 +736,7 @@ static void fill_icon_corners(library *l)
 
 /* ---- the settings panel (△) ---- */
 
-enum { SET_SCREEN, SET_AUDIO, SET_SUBS, SET_ROWS };
+enum { SET_START, SET_SCREEN, SET_AUDIO, SET_SUBS, SET_ROWS };
 
 static int lang_index(const char *code)
 {
@@ -761,7 +761,9 @@ static void settings_input(library *l, uint32_t pressed)
         l->settings_row = (l->settings_row + SET_ROWS - 1) % SET_ROWS;
     if (pressed & PLAT_BTN_DOWN)
         l->settings_row = (l->settings_row + 1) % SET_ROWS;
-    if (dir && l->settings_row == SET_SCREEN) {
+    if (dir && l->settings_row == SET_START) {
+        s->start_disc = !s->start_disc;
+    } else if (dir && l->settings_row == SET_SCREEN) {
         s->screen = (s->screen + dir + SCREEN_MODES) % SCREEN_MODES;
     } else if (dir && l->settings_row == SET_AUDIO) {
         int i = lang_index(s->audio);
@@ -795,6 +797,9 @@ static void draw_settings(library *l)
     plat_language(sys);
     snprintf(v.header, sizeof(v.header), "SETTINGS");
     snprintf(v.subheader, sizeof(v.subheader), "For discs not played yet. System: %s", lang_name(sys));
+    v.rows[SET_START].icon = ICON_PLAY;
+    snprintf(v.rows[SET_START].label, sizeof(v.rows[0].label), "Start with");
+    snprintf(v.rows[SET_START].value, sizeof(v.rows[0].value), "%s", s->start_disc ? "Disc" : "Movie");
     v.rows[SET_SCREEN].icon = ICON_SCREEN;
     snprintf(v.rows[SET_SCREEN].label, sizeof(v.rows[0].label), "Screen");
     snprintf(v.rows[SET_SCREEN].value, sizeof(v.rows[0].value), "%s", screen_mode_name((screen_mode)s->screen));

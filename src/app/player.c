@@ -169,7 +169,8 @@ struct player {
     icon_id toast_icon;
     uint64_t toast_until;
     int paused, audio_open;
-    int leave;                       /* circle or start: back to the library */
+    int leave;                       /* circle: back to the library */
+    int intro, skipped;              /* player_options.intro; × skipped it */
     char resume_key[128];            /* empty: do not remember */
     char disc_title[96];             /* PARAM.SFO TITLE */
     int next_title;                  /* L or R: the title to switch to, or -1 */
@@ -1293,6 +1294,11 @@ static void switch_title(player *p, int dir)
     toast(p, ICON_CHAPTERS, "This disc has one title");
 }
 
+int player_finished(const player *p)
+{
+    return p->ended || p->skipped;
+}
+
 int player_next_title(const player *p)
 {
     return p ? p->next_title : -1;
@@ -1313,6 +1319,15 @@ static void toggle_pause(player *p)
 /* Buttons during playback. */
 static void play_input(player *p, uint32_t pressed)
 {
+    if (p->intro) {
+        if (pressed & (PLAT_BTN_CROSS | PLAT_BTN_START)) {
+            p->skipped = 1;
+            p->leave = 1;
+        }
+        if (pressed & PLAT_BTN_CIRCLE)
+            p->leave = 1;
+        return;
+    }
     if (pressed & PLAT_BTN_TRIANGLE) {
         p->menu_open = 1;
         p->menu_row = ROW_AUDIO;
@@ -1483,6 +1498,7 @@ player *player_open(const player_options *opt)
         sfo_get_string(buf, size, "TITLE", p->disc_title, sizeof(p->disc_title));
         free(buf);
     }
+    p->intro = opt->intro;
     if (opt->resume_key) {
         snprintf(p->resume_key, sizeof(p->resume_key), "%s", opt->resume_key);
         have_resume = resume_load(opt->resume_key, &resume) == 0;
