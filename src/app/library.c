@@ -544,31 +544,40 @@ static void format_time(char *out, size_t size, uint64_t ticks)
     snprintf(out, size, "%u:%02u:%02u", s / 3600, s / 60 % 60, s % 60);
 }
 
-/* Right of the selected icon: how far the disc was played, and □ to start over. */
+/* Right of the selected icon: the disc's title, how far it was played with × to resume, and
+   □ to start over. */
 static void draw_resume_mark(library *l)
 {
     const lib_disc *d = &l->discs[l->sel];
     canvas *c = &l->ui;
-    int x = BIG_X + 2 * ICON_W + 32, y = BIG_Y + 2 * ICON_H - 78, w = 300;
-    char at[16], total[16], line[48];
+    int x = BIG_X + 2 * ICON_W + 32, y = BIG_Y + 16, tx = x + 2 * ICON_SIZE + 10, w = 300;
+    int max_chars = (UI_W - 20 - x) / 16;
+    char title[96], at[16], total[16], line[48];
 
     if (!d->has_resume)
         return;
+    snprintf(title, sizeof(title), "%s", d->title);
+    if ((int)strlen(title) > max_chars)
+        title[max_chars] = 0;
     format_time(at, sizeof(at), d->resume_pos - d->resume_start);
-    canvas_darken(c, x - 14, y - 14, w + 132, 96, 90);
+    canvas_darken(c, x - 14, y - 14, UI_W - 20 - x + 28, 156, 90);
+    canvas_text(c, x, y, 2, RGBA(255, 255, 255, 255), title);
+    y += 36;
+    canvas_icon(c, ICON_BUTTON_CROSS, x, y, 2, COLOR_CROSS);
     if (d->resume_end > d->resume_start) {
         uint64_t len = d->resume_end - d->resume_start, done = d->resume_pos - d->resume_start;
         int fill = done >= len ? w : (int)(done * (uint64_t)w / len);
         format_time(total, sizeof(total), len);
         snprintf(line, sizeof(line), "Resume at %s of %s", at, total);
-        canvas_rect(c, x, y + 24, w, 6, RGBA(70, 80, 100, 255));
-        canvas_rect(c, x, y + 24, fill, 6, RGBA(255, 255, 255, 230));
+        canvas_rect(c, tx, y + 34, w, 6, RGBA(70, 80, 100, 255));
+        canvas_rect(c, tx, y + 34, fill, 6, RGBA(255, 255, 255, 230));
     } else {
         snprintf(line, sizeof(line), "Resume at %s", at);
     }
-    canvas_text(c, x, y, 2, RGBA(255, 255, 255, 255), line);
-    canvas_icon(c, ICON_BUTTON_SQUARE, x, y + 44, 2, COLOR_SQUARE);
-    canvas_text(c, x + 2 * ICON_SIZE + 10, y + 52, 2, TEXT_DIM, "Play from the start");
+    canvas_text(c, tx, y + 8, 2, RGBA(255, 255, 255, 255), line);
+    y += 52;
+    canvas_icon(c, ICON_BUTTON_SQUARE, x, y, 2, COLOR_SQUARE);
+    canvas_text(c, tx, y + 8, 2, TEXT_DIM, "Play from the start");
 }
 
 /* ---- the disc on screen ---- */
