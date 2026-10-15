@@ -172,6 +172,7 @@ struct player {
     int leave;                       /* circle: back to the library */
     int intro, skipped;              /* player_options.intro; × skipped it */
     int menu_mode, menu_request;     /* player_options.menu; Circle asked for the disc menu */
+    int menu_short;                  /* a short title in menu mode: always Fit */
     int window_on;                   /* player_set_window */
     float window[4];
     const uint8_t *layer;            /* player_set_layer */
@@ -1084,7 +1085,7 @@ static void build_osd(player *p, osd_view *v)
     }
     v->show_bar = p->menu_open || plat_time_us() < p->bar_until;
     if (p->menu_open) {
-        snprintf(v->header, sizeof(v->header), "%.60s", p->disc_title[0] ? p->disc_title : p->title->name);
+        snprintf(v->header, sizeof(v->header), "SETTINGS");   /* as in the library; the time bar names the disc */
 
     }
     if (v->show_bar) {
@@ -1169,8 +1170,10 @@ static void present(player *p)
     if (!p->shown)
         return;
     plat_screen_size(&sw, &sh);
-    /* Disc menus are drawn for the whole 16:9 frame: while they show, the picture is Fit. */
-    screen_layout(p->layer ? SCREEN_FIT : p->mode, p->present.video_w, p->present.video_h, p->sps.sar_w, p->sps.sar_h,
+    /* Disc menus are drawn for the whole 16:9 frame: while they show, and for the short titles
+       of a disc's menus (logos, warnings, menu videos), the picture is Fit, so it never
+       switches mode as menus come and go. */
+    screen_layout(p->layer || p->menu_short ? SCREEN_FIT : p->mode, p->present.video_w, p->present.video_h, p->sps.sar_w, p->sps.sar_h,
                   p->have_active ? &p->active : NULL, (float)sw / (float)sh, &g);
     p->present.src_x = g.src_x;
     p->present.src_y = g.src_y;
@@ -1609,6 +1612,7 @@ player *player_open(const player_options *opt)
         goto fail;
     }
     p->title = &p->playlist.titles[i];
+    p->menu_short = opt->menu && p->title->end_pts - p->title->start_pts < 10u * 60 * 90000;
     snprintf(path, sizeof(path), "UMD_VIDEO/CLIPINF/%s.CLP", p->title->clip);
     if ((p->clp_buf = read_file(p, path, &size)) == NULL || umdv_clip_parse(p->clp_buf, size, &p->clip) < 0) {
         plat_log("cannot read %s\n", path);

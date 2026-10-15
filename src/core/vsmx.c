@@ -111,12 +111,47 @@ static void log_msg(vsmx *vm, const char *fmt, ...)
 
 /* ---- values ---- */
 
-vs_value vs_undef(void) { vs_value v; v.type = VS_UNDEF; v.u.n = 0; return v; }
-vs_value vs_null(void) { vs_value v; v.type = VS_NULL; v.u.n = 0; return v; }
-vs_value vs_bool(int b) { vs_value v; v.type = VS_BOOL; v.u.b = b != 0; return v; }
-vs_value vs_num(double n) { vs_value v; v.type = VS_NUM; v.u.n = n; return v; }
-static vs_value obj_value(vs_obj *o) { vs_value v; v.type = VS_OBJ; v.u.o = o; return v; }
-static vs_value str_value(vs_str *s) { vs_value v; v.type = VS_STR; v.u.s = s; return v; }
+vs_value vs_undef(void) { vs_value v; v.type = VS_UNDEF; v.is_int = 0; v.u.n = 0; return v; }
+vs_value vs_null(void) { vs_value v; v.type = VS_NULL; v.is_int = 0; v.u.n = 0; return v; }
+vs_value vs_bool(int b) { vs_value v; v.type = VS_BOOL; v.is_int = 0; v.u.b = b != 0; return v; }
+vs_value vs_num(double n) { vs_value v; v.type = VS_NUM; v.is_int = 0; v.u.n = n; return v; }
+static vs_value obj_value(vs_obj *o) { vs_value v; v.type = VS_OBJ; v.is_int = 0; v.u.o = o; return v; }
+static vs_value str_value(vs_str *s) { vs_value v; v.type = VS_STR; v.is_int = 0; v.u.s = s; return v; }
+
+vs_value vs_int(double n)
+{
+    vs_value v = vs_num(isnan(n) || isinf(n) ? n : (n < 0 ? ceil(n) : floor(n)));
+    v.is_int = !(isnan(n) || isinf(n));
+    return v;
+}
+
+/* Integer arithmetic when both sides are integers (booleans and null count as integers),
+   as the PSP's VSMX does: scripts write 2.0 where they want a fraction. */
+static int int_operands(vs_value a, vs_value b)
+{
+    int ia = (a.type == VS_NUM && a.is_int) || a.type == VS_BOOL || a.type == VS_NULL;
+    int ib = (b.type == VS_NUM && b.is_int) || b.type == VS_BOOL || b.type == VS_NULL;
+    return ia && ib;
+}
+
+static vs_value arith(int op, vs_value a, vs_value b)
+{
+    double x = vs_number(a), y = vs_number(b);
+    int ints = int_operands(a, b);
+
+    switch (op) {
+    case 0x03: return ints ? vs_int(x - y) : vs_num(x - y);
+    case 0x04: return ints ? vs_int(x * y) : vs_num(x * y);
+    case 0x05:
+        if (ints && y != 0)
+            return vs_int(x / y);          /* truncates toward zero */
+        return vs_num(x / y);
+    default:
+        if (ints && y != 0)
+            return vs_int(fmod(x, y));
+        return vs_num(fmod(x, y));
+    }
+}
 
 const char *vs_intern(vsmx *vm, const char *s)
 {
@@ -343,7 +378,7 @@ vs_value vs_get(vsmx *vm, vs_value obj, const char *key)
 
     if (obj.type == VS_STR) {
         if (key == vm->k_length)
-            return vs_num(obj.u.s->len);
+            return vs_int(obj.u.s->len);
         return vs_undef();
     }
     if (obj.type != VS_OBJ)
@@ -354,7 +389,7 @@ vs_value vs_get(vsmx *vm, vs_value obj, const char *key)
         return out;
     if (obj.u.o->kind == OBJ_ARRAY) {
         if (key == vm->k_length)
-            return vs_num(obj.u.o->length);
+            return vs_int(obj.u.o->length);
         if (key == vm->k_slice)
             return vs_new_native(vm, native_slice, NULL);
         if (key == vm->k_push)
@@ -477,7 +512,7 @@ static void native_push(vsmx *vm, void *user, vs_value self, const vs_value *arg
     (void)user;
     for (int i = 0; i < argc; i++)
         vs_set_index(vm, self, vs_length(self), args[i]);
-    *ret = vs_num(vs_length(self));
+    *ret = vs_int(vs_length(self));
 }
 
 static void native_array(vsmx *vm, void *user, vs_value self, const vs_value *args, int argc, vs_value *ret)
@@ -509,10 +544,10 @@ static void native_math(vsmx *vm, void *user, vs_value self, const vs_value *arg
 
     (void)vm;
     (void)self;
-    if (strcmp(fn, "abs") == 0) *ret = vs_num(fabs(a));
-    else if (strcmp(fn, "ceil") == 0) *ret = vs_num(ceil(a));
-    else if (strcmp(fn, "floor") == 0) *ret = vs_num(floor(a));
-    else if (strcmp(fn, "round") == 0) *ret = vs_num(floor(a + 0.5));
+    if (strcmp(fn, "abs") == 0) *ret = argc > 0 && args[0].is_int ? vs_int(fabs(a)) : vs_num(fabs(a));
+    else if (strcmp(fn, "ceil") == 0) *ret = vs_int(ceil(a));
+    else if (strcmp(fn, "floor") == 0) *ret = vs_int(floor(a));
+    else if (strcmp(fn, "round") == 0) *ret = vs_int(floor(a + 0.5));
     else if (strcmp(fn, "min") == 0) *ret = vs_num(a < b ? a : b);
     else if (strcmp(fn, "max") == 0) *ret = vs_num(a > b ? a : b);
     else if (strcmp(fn, "sin") == 0) *ret = vs_num(sin(a));
@@ -533,7 +568,7 @@ static void native_convert(vsmx *vm, void *user, vs_value self, const vs_value *
     (void)self;
     if (strcmp(fn, "Int") == 0) {
         double d = vs_number(a);
-        *ret = vs_num(isnan(d) ? 0 : d < 0 ? ceil(d) : floor(d));
+        *ret = vs_int(isnan(d) ? 0 : d);
     } else if (strcmp(fn, "Float") == 0 || strcmp(fn, "Number") == 0 || strcmp(fn, "parseFloat") == 0) {
         *ret = vs_num(vs_number(a));
     } else if (strcmp(fn, "parseInt") == 0) {
@@ -541,7 +576,7 @@ static void native_convert(vsmx *vm, void *user, vs_value self, const vs_value *
         const char *t = vs_text(a, buf, sizeof(buf));
         char *end;
         long v = strtol(t, &end, radix >= 2 && radix <= 36 ? radix : 10);
-        *ret = end == t ? vs_num(NAN) : vs_num((double)v);
+        *ret = end == t ? vs_num(NAN) : vs_int((double)v);
     } else if (strcmp(fn, "isNaN") == 0) {
         *ret = vs_bool(isnan(vs_number(a)));
     } else if (strcmp(fn, "String") == 0) {
@@ -930,7 +965,7 @@ static vs_value add(vsmx *vm, vs_value a, vs_value b)
         free(buf);
         return s ? str_value(s) : vs_undef();
     }
-    return vs_num(vs_number(a) + vs_number(b));
+    return int_operands(a, b) ? vs_int(vs_number(a) + vs_number(b)) : vs_num(vs_number(a) + vs_number(b));
 }
 
 static int compare(vs_value a, vs_value b, int op)
@@ -1079,20 +1114,25 @@ static int run(vsmx *vm, uint32_t pc, int stop_fp, vs_value *result)
             push_value(vm, a);
             break;
         case 0x02: b = pop_value(vm); a = pop_value(vm); push_value(vm, add(vm, a, b)); break;
-        case 0x03: b = pop_value(vm); a = pop_value(vm); push_value(vm, vs_num(vs_number(a) - vs_number(b))); break;
-        case 0x04: b = pop_value(vm); a = pop_value(vm); push_value(vm, vs_num(vs_number(a) * vs_number(b))); break;
-        case 0x05: b = pop_value(vm); a = pop_value(vm); push_value(vm, vs_num(vs_number(a) / vs_number(b))); break;
-        case 0x06: b = pop_value(vm); a = pop_value(vm); push_value(vm, vs_num(fmod(vs_number(a), vs_number(b)))); break;
-        case 0x07: a = pop_value(vm); push_value(vm, vs_num(vs_number(a))); break;
-        case 0x08: a = pop_value(vm); push_value(vm, vs_num(-vs_number(a))); break;
+        case 0x03: case 0x04: case 0x05: case 0x06:
+            b = pop_value(vm); a = pop_value(vm); push_value(vm, arith((int)op, a, b)); break;
+        case 0x07: a = pop_value(vm); push_value(vm, a.type == VS_NUM ? a : vs_num(vs_number(a))); break;
+        case 0x08:
+            a = pop_value(vm);
+            push_value(vm, a.type == VS_NUM && a.is_int ? vs_int(-a.u.n) : vs_num(-vs_number(a)));
+            break;
         case 0x09: a = pop_value(vm); push_value(vm, vs_bool(!vs_truthy(a))); break;
         case 0x0A: case 0x0B: case 0x0C: case 0x0D: {   /* ++x --x x++ x-- */
             double old, now;
             s = pop(vm);
-            old = vs_number(read_slot(vm, &s));
+            a = read_slot(vm, &s);
+            old = vs_number(a);
             now = old + ((op == 0x0A || op == 0x0C) ? 1 : -1);
-            write_slot(vm, &s, vs_num(now));
-            push_value(vm, vs_num(op <= 0x0B ? now : old));
+            {
+                int ii = a.type != VS_NUM || a.is_int;   /* undefined++ and friends count as integers */
+                write_slot(vm, &s, ii ? vs_int(now) : vs_num(now));
+                push_value(vm, ii ? vs_int(op <= 0x0B ? now : old) : vs_num(op <= 0x0B ? now : old));
+            }
             break;
         }
         case 0x0E: b = pop_value(vm); a = pop_value(vm); push_value(vm, vs_bool(loose_equal(a, b))); break;
@@ -1102,13 +1142,13 @@ static int run(vsmx *vm, uint32_t pc, int stop_fp, vs_value *result)
         case 0x12: case 0x13: case 0x14: case 0x15:
             b = pop_value(vm); a = pop_value(vm); push_value(vm, vs_bool(compare(a, b, (int)op))); break;
         case 0x18: a = pop_value(vm); push_value(vm, vs_string(vm, type_name(a))); break;
-        case 0x19: b = pop_value(vm); a = pop_value(vm); push_value(vm, vs_num(to_int32(a) & to_int32(b))); break;
-        case 0x1A: b = pop_value(vm); a = pop_value(vm); push_value(vm, vs_num(to_int32(a) ^ to_int32(b))); break;
-        case 0x1B: b = pop_value(vm); a = pop_value(vm); push_value(vm, vs_num(to_int32(a) | to_int32(b))); break;
-        case 0x1C: a = pop_value(vm); push_value(vm, vs_num(~to_int32(a))); break;
-        case 0x1D: b = pop_value(vm); a = pop_value(vm); push_value(vm, vs_num((int32_t)((uint32_t)to_int32(a) << (to_int32(b) & 31)))); break;
-        case 0x1E: b = pop_value(vm); a = pop_value(vm); push_value(vm, vs_num(to_int32(a) >> (to_int32(b) & 31))); break;
-        case 0x1F: b = pop_value(vm); a = pop_value(vm); push_value(vm, vs_num((uint32_t)to_int32(a) >> (to_int32(b) & 31))); break;
+        case 0x19: b = pop_value(vm); a = pop_value(vm); push_value(vm, vs_int(to_int32(a) & to_int32(b))); break;
+        case 0x1A: b = pop_value(vm); a = pop_value(vm); push_value(vm, vs_int(to_int32(a) ^ to_int32(b))); break;
+        case 0x1B: b = pop_value(vm); a = pop_value(vm); push_value(vm, vs_int(to_int32(a) | to_int32(b))); break;
+        case 0x1C: a = pop_value(vm); push_value(vm, vs_int(~to_int32(a))); break;
+        case 0x1D: b = pop_value(vm); a = pop_value(vm); push_value(vm, vs_int((int32_t)((uint32_t)to_int32(a) << (to_int32(b) & 31)))); break;
+        case 0x1E: b = pop_value(vm); a = pop_value(vm); push_value(vm, vs_int(to_int32(a) >> (to_int32(b) & 31))); break;
+        case 0x1F: b = pop_value(vm); a = pop_value(vm); push_value(vm, vs_int((uint32_t)to_int32(a) >> (to_int32(b) & 31))); break;
         case 0x20:            /* duplicate */
             if (vm->sp > 0)
                 push(vm, vm->stack[vm->sp - 1]);
@@ -1124,7 +1164,7 @@ static int run(vsmx *vm, uint32_t pc, int stop_fp, vs_value *result)
         case 0x23: push_value(vm, vs_undef()); break;
         case 0x24: push_value(vm, vs_null()); break;
         case 0x25: push_value(vm, vs_bool((int)val)); break;
-        case 0x26: push_value(vm, vs_num((int32_t)val)); break;
+        case 0x26: push_value(vm, vs_int((int32_t)val)); break;
         case 0x27: {
             float f;
             memcpy(&f, &val, 4);

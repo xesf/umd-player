@@ -19,6 +19,7 @@ enum { VS_UNDEF, VS_NULL, VS_BOOL, VS_NUM, VS_STR, VS_OBJ };
 
 typedef struct vs_value {
     int type;
+    int is_int;               /* VS_NUM: an integer. int op int stays integer; / truncates */
     union {
         int b;
         double n;
@@ -62,6 +63,7 @@ vs_value vs_undef(void);
 vs_value vs_null(void);
 vs_value vs_bool(int b);
 vs_value vs_num(double n);
+vs_value vs_int(double n);    /* an integer number (truncated) */
 vs_value vs_string(vsmx *vm, const char *s);
 vs_value vs_new_object(vsmx *vm);
 vs_value vs_new_array(vsmx *vm, int length);

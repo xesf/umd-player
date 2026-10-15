@@ -57,6 +57,7 @@ typedef struct ref {
 
 typedef struct user_value {
     int type;                 /* VS_NUM, VS_STR, VS_BOOL, or VS_UNDEF */
+    int is_int;
     double n;
     char s[64];
 } user_value;
@@ -727,7 +728,7 @@ static int children_get(vsmx *vm, void *host, const char *key, vs_value *out)
         }
     }
     if (strcmp(key, "length") == 0) {
-        *out = vs_num(n);
+        *out = vs_int(n);
         return 1;
     }
     *out = vs_undef();
@@ -870,12 +871,12 @@ NATIVE(mp_status)
     m->p.status(m->p.user, &st);
     *ret = vs_new_object(vm);
     /* playStatus: 0 stopped, 1 paused, 2 playing (as the scripts compare it) */
-    vs_set(vm, *ret, vs_intern(vm, "playStatus"), vs_num(!st.playing ? 0 : st.paused ? 1 : 2));
-    vs_set(vm, *ret, vs_intern(vm, "playListNumber"), vs_num(st.playlist));
-    vs_set(vm, *ret, vs_intern(vm, "chapterNumber"), vs_num(st.chapter));
-    vs_set(vm, *ret, vs_intern(vm, "audioNumber"), vs_num(0xBD00 + st.audio));
-    vs_set(vm, *ret, vs_intern(vm, "subtitleNumber"), vs_num(st.subtitle >= 0 ? 0xBD80 + st.subtitle : -1));
-    vs_set(vm, *ret, vs_intern(vm, "subtitleFlag"), vs_num(st.subtitle >= 0));
+    vs_set(vm, *ret, vs_intern(vm, "playStatus"), vs_int(!st.playing ? 0 : st.paused ? 1 : 2));
+    vs_set(vm, *ret, vs_intern(vm, "playListNumber"), vs_int(st.playlist));
+    vs_set(vm, *ret, vs_intern(vm, "chapterNumber"), vs_int(st.chapter));
+    vs_set(vm, *ret, vs_intern(vm, "audioNumber"), vs_int(0xBD00 + st.audio));
+    vs_set(vm, *ret, vs_intern(vm, "subtitleNumber"), vs_int(st.subtitle >= 0 ? 0xBD80 + st.subtitle : -1));
+    vs_set(vm, *ret, vs_intern(vm, "subtitleFlag"), vs_int(st.subtitle >= 0));
 }
 
 NATIVE(mp_resume_info)
@@ -885,11 +886,11 @@ NATIVE(mp_resume_info)
     if (!m->resume_playlist)
         return;               /* undefined: nothing to resume */
     *ret = vs_new_object(vm);
-    vs_set(vm, *ret, vs_intern(vm, "playListNumber"), vs_num(m->resume_playlist));
-    vs_set(vm, *ret, vs_intern(vm, "chapterNumber"), vs_num(m->resume_chapter));
-    vs_set(vm, *ret, vs_intern(vm, "audioNumber"), vs_num(0xBD00 + m->audio_id));
-    vs_set(vm, *ret, vs_intern(vm, "subtitleNumber"), vs_num(0xBD80 + m->sub_id));
-    vs_set(vm, *ret, vs_intern(vm, "subtitleFlag"), vs_num(m->sub_on));
+    vs_set(vm, *ret, vs_intern(vm, "playListNumber"), vs_int(m->resume_playlist));
+    vs_set(vm, *ret, vs_intern(vm, "chapterNumber"), vs_int(m->resume_chapter));
+    vs_set(vm, *ret, vs_intern(vm, "audioNumber"), vs_int(0xBD00 + m->audio_id));
+    vs_set(vm, *ret, vs_intern(vm, "subtitleNumber"), vs_int(0xBD80 + m->sub_id));
+    vs_set(vm, *ret, vs_intern(vm, "subtitleFlag"), vs_int(m->sub_on));
 }
 
 NATIVE(mp_change_resume)
@@ -1009,7 +1010,7 @@ NATIVE(c_get_user)
     *ret = vs_new_array(vm, m->user_count);
     for (int i = 0; i < m->user_count; i++) {
         const user_value *u = &m->user[i];
-        vs_set_index(vm, *ret, i, u->type == VS_NUM ? vs_num(u->n) : u->type == VS_BOOL ? vs_bool((int)u->n)
+        vs_set_index(vm, *ret, i, u->type == VS_NUM ? (u->is_int ? vs_int(u->n) : vs_num(u->n)) : u->type == VS_BOOL ? vs_bool((int)u->n)
                                   : u->type == VS_STR ? vs_string(vm, u->s) : vs_undef());
     }
 }
@@ -1025,6 +1026,7 @@ NATIVE(c_set_user)
         char buf[64];
         m->user[i].type = v.type == VS_NUM || v.type == VS_BOOL || v.type == VS_STR ? v.type : VS_UNDEF;
         m->user[i].n = vs_number(v);
+        m->user[i].is_int = v.is_int;
         snprintf(m->user[i].s, sizeof(m->user[i].s), "%s", vs_text(v, buf, sizeof(buf)));
     }
 }
@@ -1058,7 +1060,7 @@ NATIVE(t_set)
             t->self = -1;
             t->interval = (uint32_t)argf(args, argc, 1, 0);
             t->due = m->now + (uint64_t)t->interval * 1000;
-            *ret = vs_num(t->id);
+            *ret = vs_int(t->id);
             return;
         }
     mlog(m, "menu: too many timers");
@@ -1281,7 +1283,7 @@ void menu_playlist_ended(menu *m, int playlist)
     vsmx *vm = m->res->vm;
     vs_value info = vs_new_object(vm);
 
-    vs_set(vm, info, vs_intern(vm, "playListNumber"), vs_num(playlist));
+    vs_set(vm, info, vs_intern(vm, "playListNumber"), vs_int(playlist));
     call_handler(m, "movieplayer", "onPlayListEnd", &info, 1);
 }
 
@@ -1292,8 +1294,8 @@ void menu_chapter_changed(menu *m, int chapter)
     menu_status st;
 
     m->p.status(m->p.user, &st);
-    vs_set(vm, info, vs_intern(vm, "chapterNumber"), vs_num(chapter));
-    vs_set(vm, info, vs_intern(vm, "playListNumber"), vs_num(st.playlist));
+    vs_set(vm, info, vs_intern(vm, "chapterNumber"), vs_int(chapter));
+    vs_set(vm, info, vs_intern(vm, "playListNumber"), vs_int(st.playlist));
     call_handler(m, "movieplayer", "onChapter", &info, 1);
 }
 
@@ -1589,8 +1591,13 @@ void menu_draw(menu *m, canvas *c)
         root.l[k][k] = 1;
     for (int k = 0; k < 4; k++)
         root.color[k] = 1;
-    for (int p = 0; p < r->page_count; p++)
-        collect(r, c, r->pages[p], &root, now, &n);
+    /* Pages draw in their order in the RCO, not the order they opened: a script that reopens
+       a background page must not cover the pages in front of it. */
+    for (int i = 0; i < r->r.object_count; i++)
+        if (r->r.objects[i].kind == RCO_PAGE)
+            for (int p = 0; p < r->page_count; p++)
+                if (r->pages[p] == i)
+                    collect(r, c, i, &root, now, &n);
     /* The region to redraw: every sprite that differs from the last picture, where it was
        and where it is now. A new resource or canvas starts from a full redraw. */
     if (!valid || !m->drawn_once) {
