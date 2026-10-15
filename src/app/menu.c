@@ -93,7 +93,7 @@ struct menu {
     int audio_id, sub_id, sub_on;
     float win[4];
     int win_set;
-    int drawn[4];             /* x0 y0 x1 y1 of what the last menu_draw put on the canvas */
+    int drawn_once;           /* menu_draw has drawn the whole canvas once */
 };
 
 static void mlog(menu *m, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
@@ -244,6 +244,8 @@ static void call_event(menu *m, const char *event, int widget)
         return;
     name = strrchr(event, '/');
     name = name ? name + 1 : event;
+    if (getenv("MENU_TRACE"))
+        mlog(m, "menu: event %s", name);
     if (widget >= 0)
         w = vs_get_index(r->vm, vs_global(r->vm, "\001widgets"), widget);
     if (vs_call(r->vm, vs_global(r->vm, name), w, &w, 1, NULL) < 0)
@@ -262,6 +264,9 @@ static void call_value(menu *m, vs_value fn, vs_value self, const vs_value *args
 static void play_anim(menu *m, int anim, int target)
 {
     anim_run *run = NULL;
+
+    if (getenv("MENU_TRACE"))
+        mlog(m, "menu: play animation %s", m->res->r.anims[anim].name ? m->res->r.anims[anim].name : "?");
 
     for (int i = 0; i < MAX_RUNS; i++)
         if (m->runs[i].active && m->runs[i].anim == anim)
@@ -402,6 +407,19 @@ static vs_value array3(vsmx *vm, const float *v, int n)
 
 #define NATIVE(name) static void name(vsmx *vm, void *user, vs_value self, const vs_value *args, int argc, vs_value *ret)
 
+static const uint8_t *image_rgba(res *r, int i, int *w, int *h);
+
+/* Decodes the images of a page before it shows, so animations do not stall on PNG decoding. */
+static void preload(res *r, int i)
+{
+    int w, h;
+
+    if (r->w[i].image >= 0)
+        image_rgba(r, r->w[i].image, &w, &h);
+    for (int c = r->r.objects[i].first_child; c >= 0; c = r->r.objects[c].next_sibling)
+        preload(r, c);
+}
+
 NATIVE(w_open)
 {
     ref *rf = user;
@@ -414,6 +432,7 @@ NATIVE(w_open)
     mlog(rf->m, "menu: open page %s", r->r.objects[rf->index].name ? r->r.objects[rf->index].name : "?");
     if (r->page_count < MAX_PAGES) {
         reset_tree(r, rf->index);
+        preload(r, rf->index);
         r->focus[rf->index] = -1;
         r->pages[r->page_count++] = rf->index;
         call_event(rf->m, r->r.objects[rf->index].action[RCO_PAGE_INIT].event, rf->index);
@@ -1274,62 +1293,94 @@ static void local_matrix(float out[3][3], const float *rot, const float *scale)
 
 /* Draws an image as the parallelogram centre c + u * ex + v * ey (u, v in -0.5..0.5, screen
    pixels), multiplied by color, over what is there (straight alpha). */
-static int *blit_box;          /* grows to cover every blit of a menu_draw */
+/* One image to draw: where it goes on the canvas and how. menu_draw builds the list each
+   time, compares it with the last one, and redraws only the region that changed. */
+typedef struct sprite {
+    int widget;
+    const uint8_t *img;
+    int iw, ih;
+    float cx, cy, ex[2], ey[2], color[4], crop[4];
+    int has_crop;
+    int box[4];               /* x0 y0 x1 y1 on the canvas */
+} sprite;
 
-static void blit(canvas *c, const uint8_t *src, int sw, int sh, const float *crop, float cx, float cy,
-                 const float *ex, const float *ey, const float *color)
+#define MAX_SPRITES 512
+
+static void sprite_box(sprite *s, int cw, int ch)
 {
-    float det = ex[0] * ey[1] - ex[1] * ey[0];
-    float ext = fabsf(ex[0]) / 2 + fabsf(ey[0]) / 2, eyt = fabsf(ex[1]) / 2 + fabsf(ey[1]) / 2;
-    int x0 = (int)floorf(cx - ext), x1 = (int)ceilf(cx + ext), y0 = (int)floorf(cy - eyt), y1 = (int)ceilf(cy + eyt);
-    /* crop: the visible part as x, y, w, h fractions of the image; the rest is not drawn */
-    float u0 = crop ? crop[0] : 0, v0 = crop ? crop[1] : 0, u1 = crop ? crop[0] + crop[2] : 1;
-    float v1 = crop ? crop[1] + crop[3] : 1;
+    float hx = fabsf(s->ex[0]) / 2 + fabsf(s->ey[0]) / 2, hy = fabsf(s->ex[1]) / 2 + fabsf(s->ey[1]) / 2;
+    s->box[0] = (int)floorf(s->cx - hx);
+    s->box[1] = (int)floorf(s->cy - hy);
+    s->box[2] = (int)ceilf(s->cx + hx) + 1;
+    s->box[3] = (int)ceilf(s->cy + hy) + 1;
+    if (s->box[0] < 0) s->box[0] = 0;
+    if (s->box[1] < 0) s->box[1] = 0;
+    if (s->box[2] > cw) s->box[2] = cw;
+    if (s->box[3] > ch) s->box[3] = ch;
+}
 
-    if (fabsf(det) < 0.5f || color[3] <= 0.004f)
+/* Draws s inside the clip rectangle: the image as the parallelogram centre + u * ex + v * ey
+   (u, v in -0.5..0.5), multiplied by its colour, over what is there (straight alpha). The
+   texture coordinates step in 16.16 fixed point along each row. */
+static void blit(canvas *c, const sprite *s, const int *clip)
+{
+    float det = s->ex[0] * s->ey[1] - s->ex[1] * s->ey[0];
+    int x0 = s->box[0] > clip[0] ? s->box[0] : clip[0], x1 = s->box[2] < clip[2] ? s->box[2] : clip[2];
+    int y0 = s->box[1] > clip[1] ? s->box[1] : clip[1], y1 = s->box[3] < clip[3] ? s->box[3] : clip[3];
+    /* crop: the visible part as x, y, w, h fractions of the image; the rest is not drawn */
+    float u0 = s->has_crop ? s->crop[0] : 0, v0 = s->has_crop ? s->crop[1] : 0;
+    float u1 = s->has_crop ? s->crop[0] + s->crop[2] : 1, v1 = s->has_crop ? s->crop[1] + s->crop[3] : 1;
+    int32_t umin, umax, vmin, vmax, dudx, dvdx;
+    int cr = (int)(s->color[0] * 256), cg = (int)(s->color[1] * 256), cb = (int)(s->color[2] * 256);
+    int ca = (int)(s->color[3] * 256);
+
+    if (fabsf(det) < 0.5f || ca <= 0 || x0 >= x1 || y0 >= y1)
         return;
-    if (x0 < 0) x0 = 0;
-    if (y0 < 0) y0 = 0;
-    if (x1 > c->w) x1 = c->w;
-    if (y1 > c->h) y1 = c->h;
-    if (blit_box && x0 < x1 && y0 < y1) {
-        if (x0 < blit_box[0]) blit_box[0] = x0;
-        if (y0 < blit_box[1]) blit_box[1] = y0;
-        if (x1 > blit_box[2]) blit_box[2] = x1;
-        if (y1 > blit_box[3]) blit_box[3] = y1;
-    }
+    if (u0 < 0) u0 = 0;
+    if (v0 < 0) v0 = 0;
+    if (u1 > 1) u1 = 1;
+    if (v1 > 1) v1 = 1;
+    /* u, v in image pixels, 16.16 */
+    umin = (int32_t)(u0 * (float)s->iw * 65536);
+    umax = (int32_t)(u1 * (float)s->iw * 65536);
+    vmin = (int32_t)(v0 * (float)s->ih * 65536);
+    vmax = (int32_t)(v1 * (float)s->ih * 65536);
+    dudx = (int32_t)(s->ey[1] / det * (float)s->iw * 65536);
+    dvdx = (int32_t)(-s->ex[1] / det * (float)s->ih * 65536);
     for (int y = y0; y < y1; y++) {
-        uint8_t *row = c->rgba + (size_t)y * c->stride;
-        for (int x = x0; x < x1; x++) {
-            float dx = (float)x + 0.5f - cx, dy = (float)y + 0.5f - cy;
-            float u = (dx * ey[1] - dy * ey[0]) / det + 0.5f, v = (ex[0] * dy - ex[1] * dx) / det + 0.5f;
-            const uint8_t *s;
-            uint8_t *d;
-            float a, da, oa;
-            int sx, sy;
-            if (u < u0 || u >= u1 || v < v0 || v >= v1 || u < 0 || u >= 1 || v < 0 || v >= 1)
+        uint8_t *d = c->rgba + (size_t)y * c->stride + (size_t)x0 * 4;
+        float dx = (float)x0 + 0.5f - s->cx, dy = (float)y + 0.5f - s->cy;
+        int32_t u = (int32_t)(((dx * s->ey[1] - dy * s->ey[0]) / det + 0.5f) * (float)s->iw * 65536);
+        int32_t v = (int32_t)(((s->ex[0] * dy - s->ex[1] * dx) / det + 0.5f) * (float)s->ih * 65536);
+        for (int x = x0; x < x1; x++, d += 4, u += dudx, v += dvdx) {
+            const uint8_t *p;
+            int a, da, oa;
+            if (u < umin || u >= umax || v < vmin || v >= vmax)
                 continue;
-            sx = (int)(u * (float)sw);
-            sy = (int)(v * (float)sh);
-            if (sx >= sw || sy >= sh)
+            p = s->img + ((size_t)(v >> 16) * s->iw + (size_t)(u >> 16)) * 4;
+            a = p[3] * ca >> 8;
+            if (a <= 0)
                 continue;
-            s = src + ((size_t)sy * sw + sx) * 4;
-            a = s[3] / 255.0f * color[3];
-            if (a <= 0.004f)
+            da = d[3];
+            if (a >= 255 || da == 0) {
+                /* nothing under it to blend with, or fully opaque */
+                d[0] = (uint8_t)(p[0] * cr >> 8);
+                d[1] = (uint8_t)(p[1] * cg >> 8);
+                d[2] = (uint8_t)(p[2] * cb >> 8);
+                d[3] = (uint8_t)(a > 255 ? 255 : a);
                 continue;
-            d = row + x * 4;
-            da = d[3] / 255.0f;
-            oa = a + da * (1 - a);
-            for (int k = 0; k < 3; k++) {
-                float sv = s[k] * color[k];
-                d[k] = (uint8_t)((sv * a + d[k] * da * (1 - a)) / oa + 0.5f);
             }
-            d[3] = (uint8_t)(oa * 255 + 0.5f);
+            /* out = src * a + dst * da * (1 - a), over oa = a + da * (1 - a); in 0..255 */
+            oa = a + da * (255 - a) / 255;
+            d[0] = (uint8_t)(((p[0] * cr >> 8) * a + d[0] * da * (255 - a) / 255) / oa);
+            d[1] = (uint8_t)(((p[1] * cg >> 8) * a + d[1] * da * (255 - a) / 255) / oa);
+            d[2] = (uint8_t)(((p[2] * cb >> 8) * a + d[2] * da * (255 - a) / 255) / oa);
+            d[3] = (uint8_t)oa;
         }
     }
 }
 
-static void draw_tree(res *r, canvas *c, int i, const xform *parent)
+static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list, int *count)
 {
     const wstate *w = &r->w[i];
     float lm[3][3];
@@ -1344,27 +1395,71 @@ static void draw_tree(res *r, canvas *c, int i, const xform *parent)
         x.t[k] = parent->t[k] + parent->l[k][0] * w->pos[0] + parent->l[k][1] * w->pos[1] + parent->l[k][2] * w->pos[2];
     local_matrix(lm, w->rot, w->scale);
     mat_mul(x.l, (float (*)[3])parent->l, lm);
-    if (w->image >= 0 && r->r.objects[i].kind != RCO_PAGE && r->r.objects[i].kind != RCO_GROUP) {
+    if (w->image >= 0 && r->r.objects[i].kind != RCO_PAGE && r->r.objects[i].kind != RCO_GROUP && *count < MAX_SPRITES) {
         int iw, ih;
         const uint8_t *img = image_rgba(r, w->image, &iw, &ih);
         /* Facing away (the plane's normal points into the screen): not drawn. */
         if (img && x.l[2][2] > -0.001f) {
+            sprite *s = &list[*count];
             float sxu = (float)c->w / UNITS_W, syu = (float)c->h / UNITS_H;
             float width = w->size[0] > 0 ? w->size[0] : (float)iw, height = w->size[1] > 0 ? w->size[1] : (float)ih;
+            /* Left- or right-anchored images: pos is that edge, so move the centre half a width. */
+            float shift = r->r.objects[i].anchor == 1 ? width / 2 : r->r.objects[i].anchor == 2 ? -width / 2 : 0;
+            memset(s, 0, sizeof(*s));
+            s->widget = i;
+            s->img = img;
+            s->iw = iw;
+            s->ih = ih;
             /* Image axes on screen: x right, and y down (the image's rows go down). */
-            float ex[2] = {x.l[0][0] * width * sxu, -x.l[1][0] * width * syu};
-            float ey[2] = {-x.l[0][1] * height * sxu, x.l[1][1] * height * syu};
-            float cx = (UNITS_W / 2 + x.t[0]) * sxu, cy = (UNITS_H / 2 - x.t[1]) * syu;
-            blit(c, img, iw, ih, w->has_crop ? w->crop : NULL, cx, cy, ex, ey, x.color);
+            s->ex[0] = x.l[0][0] * width * sxu;
+            s->ex[1] = -x.l[1][0] * width * syu;
+            s->ey[0] = -x.l[0][1] * height * sxu;
+            s->ey[1] = x.l[1][1] * height * syu;
+            s->cx = (UNITS_W / 2 + x.t[0] + x.l[0][0] * shift) * sxu;
+            s->cy = (UNITS_H / 2 - x.t[1] - x.l[1][0] * shift) * syu;
+            memcpy(s->color, x.color, sizeof(s->color));
+            s->has_crop = w->has_crop;
+            if (w->has_crop)
+                memcpy(s->crop, w->crop, sizeof(s->crop));
+            sprite_box(s, c->w, c->h);
+            if (s->box[2] > s->box[0] && s->box[3] > s->box[1])
+                (*count)++;
         }
     }
     for (int ch = r->r.objects[i].first_child; ch >= 0; ch = r->r.objects[ch].next_sibling)
-        draw_tree(r, c, ch, &x);
+        collect(r, c, ch, &x, list, count);
+}
+
+static void grow_box(int *b, const int *add)
+{
+    if (add[2] <= add[0] || add[3] <= add[1])
+        return;
+    if (b[2] <= b[0] || b[3] <= b[1]) {
+        memcpy(b, add, 4 * sizeof(int));
+        return;
+    }
+    if (add[0] < b[0]) b[0] = add[0];
+    if (add[1] < b[1]) b[1] = add[1];
+    if (add[2] > b[2]) b[2] = add[2];
+    if (add[3] > b[3]) b[3] = add[3];
+}
+
+static int same_sprite(const sprite *a, const sprite *b)
+{
+    return a->widget == b->widget && a->img == b->img && memcmp(a->box, b->box, sizeof(a->box)) == 0 &&
+           fabsf(a->cx - b->cx) < 0.01f && fabsf(a->cy - b->cy) < 0.01f && fabsf(a->ex[0] - b->ex[0]) < 0.01f &&
+           fabsf(a->ex[1] - b->ex[1]) < 0.01f && fabsf(a->ey[0] - b->ey[0]) < 0.01f &&
+           fabsf(a->ey[1] - b->ey[1]) < 0.01f && memcmp(a->color, b->color, sizeof(a->color)) == 0 &&
+           a->has_crop == b->has_crop && (!a->has_crop || memcmp(a->crop, b->crop, sizeof(a->crop)) == 0);
 }
 
 void menu_draw(menu *m, canvas *c)
 {
+    static sprite lists[2][MAX_SPRITES];
+    static int counts[2], cur, valid;
     res *r = m->res;
+    sprite *now = lists[cur ^ 1], *before = lists[cur];
+    int n = 0, dirty[4] = {0, 0, 0, 0};
     xform root;
 
     memset(&root, 0, sizeof(root));
@@ -1372,19 +1467,30 @@ void menu_draw(menu *m, canvas *c)
         root.l[k][k] = 1;
     for (int k = 0; k < 4; k++)
         root.color[k] = 1;
-    /* Clear only what the last picture covered; the rest of the canvas is still clear. */
-    if (m->drawn[2] > m->drawn[0])
-        canvas_rect(c, m->drawn[0], m->drawn[1], m->drawn[2] - m->drawn[0], m->drawn[3] - m->drawn[1], 0);
-    else if (!m->drawn[3])
-        canvas_clear(c);      /* first picture: the canvas may hold anything */
-    m->drawn[0] = c->w;
-    m->drawn[1] = c->h;
-    m->drawn[2] = m->drawn[3] = 0;
-    blit_box = m->drawn;
     for (int p = 0; p < r->page_count; p++)
-        draw_tree(r, c, r->pages[p], &root);
-    blit_box = NULL;
-    if (m->drawn[2] <= m->drawn[0])
-        m->drawn[3] = 1;      /* nothing drawn, but the canvas is known clear */
+        collect(r, c, r->pages[p], &root, now, &n);
+    /* The region to redraw: every sprite that differs from the last picture, where it was
+       and where it is now. A new resource or canvas starts from a full redraw. */
+    if (!valid || !m->drawn_once) {
+        dirty[2] = c->w;
+        dirty[3] = c->h;
+        m->drawn_once = 1;
+    } else {
+        int k = 0;
+        for (; k < n && k < counts[cur] && same_sprite(&now[k], &before[k]); k++)
+            ;
+        for (int j = k; j < n; j++)
+            grow_box(dirty, now[j].box);
+        for (int j = k; j < counts[cur]; j++)
+            grow_box(dirty, before[j].box);
+    }
+    if (dirty[2] > dirty[0] && dirty[3] > dirty[1]) {
+        canvas_rect(c, dirty[0], dirty[1], dirty[2] - dirty[0], dirty[3] - dirty[1], 0);
+        for (int k = 0; k < n; k++)
+            blit(c, &now[k], dirty);
+    }
+    counts[cur ^ 1] = n;
+    cur ^= 1;
+    valid = 1;
     m->dirty = 0;
 }

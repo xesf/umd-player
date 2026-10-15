@@ -1332,6 +1332,16 @@ int player_chapter(const player *p)
     return current_chapter((player *)p) + 1;
 }
 
+void player_restart(player *p, int chapter)
+{
+    uint64_t start = p->title->start_pts;
+
+    if (chapter > 1 && chapter <= p->title->chapter_count)
+        start = p->playlist.chapters[p->title->first_chapter + chapter - 1].pts;
+    p->ended = 0;
+    restart_reader(p, start, p->want_audio, p->sub_sub);
+}
+
 void player_set_audio(player *p, int audio)
 {
     if (has_stream(p, UMDV_STREAM_AUDIO, audio)) {

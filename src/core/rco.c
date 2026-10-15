@@ -119,6 +119,7 @@ static void read_object(parser *ps, uint32_t off, int sub, const char *name, int
             o->size[i] = rdf(r, d + 28 + (uint32_t)i * 4);
         for (int i = 0; i < 3; i++)
             o->scale[i] = rdf(r, d + 40 + (uint32_t)i * 4);
+        o->anchor = (int)rd32(r, d + 52);
         if (sub == RCO_PLANE || sub == RCO_BUTTON) {
             uint32_t type = rd32(r, d + 64), ptr = rd32(r, d + 68);
             if (type == REF_IMAGE && ptr != 0xFFFFFFFF)

@@ -80,6 +80,13 @@ static void d_play(void *user, int playlist, int chapter, int audio, int subtitl
 {
     disc *d = user;
 
+    /* The same title again (a looping menu video): restart it in place, which is quick. */
+    if (d->pl && d->title == playlist && audio == d->audio && subtitle == d->subtitle) {
+        player_restart(d->pl, chapter);
+        d->last_chapter = 0;
+        d->end_sent = 0;
+        return;
+    }
     d->audio = audio;
     d->subtitle = subtitle;
     start(d, playlist, chapter, 0);
@@ -219,7 +226,9 @@ int disc_update(disc *d, uint32_t pressed)
     int menu_focus = menu_has_focus(d->m);
     plat_present_info info;
 
-    /* Holding Circle leaves the disc. */
+    /* Select, or holding Circle, leaves the disc. */
+    if (pressed & PLAT_BTN_SELECT)
+        return 0;
     if (held & PLAT_BTN_CIRCLE) {
         if (!d->circle_since)
             d->circle_since = plat_time_us();

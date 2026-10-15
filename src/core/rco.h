@@ -34,6 +34,7 @@ typedef struct rco_object {
     float color[4];           /* multiplies the image; [3] is alpha */
     float size[3];            /* 0: the image's own size */
     float scale[3];
+    int anchor;               /* what pos.x is: 0 the image's centre, 1 its left edge, 2 its right edge */
     int image;                /* image index, or -1 */
     rco_action action[RCO_BTN_ACTIONS];      /* buttons: RCO_BTN_*; pages: RCO_PAGE_* */
 } rco_object;
