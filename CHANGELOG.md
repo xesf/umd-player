@@ -1,20 +1,25 @@
 # Changelog
 
-## Unreleased
+## v0.5.0 (2026-10-15)
 
-- Manual: interactive movies (UMD-PG) and their passwords, in docs/manual.md and two new pages of the Vita manual.
-- Disc menus: getPlayerStatus has playSpeed (0 at normal speed), so Summer Days shows its password with Circle during the story, and hides it when paused.
-- Discs played through their menus continue where you left them, UMD-PG games included. Leaving a disc runs its controller.onExit, which saves the disc's own state; the next time, controller.onContinuePlay picks up from it, as on a PSP. The state is kept in ux0:data/umdplayer/discs.txt. In the library, the disc shows "Continue where you left off", and □ starts it from the beginning.
-- Disc menus: movieplayer.resume returns 0 when it continues (Harry Potter tests it), and resource.soundtable sound effects are accepted silently (UMD9660).
-- UMD-PG interactive movies (such as Summer Days): detected in the library, always played through their own menus, with their Japanese start menus (JA100000), chapter marks (mark_name, mark_data) and more than 64 titles.
-- Disc menus: integer arithmetic as on the PSP, string methods, top-level script calls, movieplayer.getPos and getSize, and pages drawn in their RCO order (Up in Smoke's song list works).
-- UMD-PG: the game starts where the title menu sends it (getUserData returns an empty array to fill, not undefined), choice windows open between clips (getPlayerStatus still names the title that just ended), and play(-1) holds the picture under a choice.
-- Harry Potter: menu items open their pages (events from an animation get its widget as "this").
+- Interactive movies (UMD-PG), such as Summer Days: the library detects them and always plays them through their own menus. Choice windows open between clips, the D-pad and Cross choose, and Circle during the story shows the password that carries the game to the next disc.
+- Discs played through their menus continue where you left them, UMD-PG games included. Leaving a disc runs its controller.onExit, which saves the disc's own state; the next time, controller.onContinuePlay picks up from it, as on a PSP. The state is kept in ux0:data/umdplayer/discs.txt. In the library, the disc shows "Continue where you left off", and Square starts it from the beginning.
+- A title that uses part of a clip stops at its own end. Harry Potter's 1 s "Blank" title no longer plays 20 s of black, and its scene previews stop at the end of their scene.
+- The subtitle language chosen in a disc's menu now plays (the menus number subtitle tracks from 0, the player from 0x80).
+- Harry Potter: menu items open their pages, scene previews show through the scenes page, and the movie continues from where it was left.
+- Up in Smoke: the song list works.
 - In disc mode, logos, warnings and menu videos stay in Fit, so the picture no longer switches screen mode.
 - The options panel is titled SETTINGS, as in the library.
-- A title that uses part of a clip stops at its own end. Harry Potter's 1 s "Blank" title no longer plays 20 s of black, and its scene previews stop at the end of their scene.
-- Disc menus: an instant animation step cancels a running fade on the same widget, so Harry Potter's scene previews show through the page instead of staying behind a black panel.
-- Disc menus: the subtitle language chosen in a disc's menu now plays (the menus number subtitle tracks from 0, the player from 0x80).
+- Disc menu scripts:
+  - integer arithmetic as on the PSP, string methods and top-level script calls
+  - movieplayer.getPos, getSize and resume (which returns 0 when it continues)
+  - getPlayerStatus has playSpeed, and still names the title that just ended
+  - getUserData returns an empty array to fill; play(-1) holds the picture under a choice
+  - chapter marks (mark_name, mark_data) and more than 64 titles
+  - pages drawn in their RCO order; events from an animation get its widget as "this"; an instant animation step cancels a running fade on the same widget
+  - resource.soundtable sound effects are accepted and not played
+  - Japanese start menus (JA100000) when the disc has no English ones
+- Manual: interactive movies and their passwords, in docs/manual.md and two new pages of the Vita manual (10 pages).
 
 ## v0.4.0 (2026-10-15)
 
