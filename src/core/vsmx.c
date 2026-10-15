@@ -44,6 +44,7 @@ struct vs_obj {
     void *user;
     const vs_class *cls;      /* host objects */
     void *host;
+    vs_obj *proto;            /* objects made by "new F": F.prototype */
 };
 
 /* A stack entry: a value, or a reference that an instruction reads or writes. */
@@ -333,6 +334,7 @@ vs_value vs_get(vsmx *vm, vs_value obj, const char *key)
 {
     vs_value out = vs_undef();
     prop *p;
+    int depth = 0;
 
     if (obj.type == VS_STR) {
         if (key == vm->k_length)
@@ -358,6 +360,15 @@ vs_value vs_get(vsmx *vm, vs_value obj, const char *key)
     }
     if ((obj.u.o->kind == OBJ_FUNC || obj.u.o->kind == OBJ_NATIVE) && key == vm->k_call)
         return vs_new_native(vm, native_call, NULL);
+    if (obj.u.o->kind == OBJ_FUNC && key == vm->k_prototype) {
+        out = vs_new_object(vm);            /* made on first use */
+        put_prop(vm, obj.u.o, key, out);
+        return out;
+    }
+    /* Up the prototype chain: methods set with F.prototype.init = function ... */
+    for (vs_obj *o = obj.u.o->proto; o && depth < 16; o = o->proto, depth++)
+        if ((p = find_prop(o, key)) != NULL)
+            return p->value;
     return vs_undef();
 }
 
@@ -507,8 +518,35 @@ static void native_math(vsmx *vm, void *user, vs_value self, const vs_value *arg
     else if (strcmp(fn, "random") == 0) *ret = vs_num((double)rand() / ((double)RAND_MAX + 1));
 }
 
+/* Int, Float, Number, String, parseInt, parseFloat, isNaN: user is the name. */
+static void native_convert(vsmx *vm, void *user, vs_value self, const vs_value *args, int argc, vs_value *ret)
+{
+    const char *fn = (const char *)user;
+    vs_value a = argc > 0 ? args[0] : vs_undef();
+    char buf[64];
+
+    (void)self;
+    if (strcmp(fn, "Int") == 0) {
+        double d = vs_number(a);
+        *ret = vs_num(isnan(d) ? 0 : d < 0 ? ceil(d) : floor(d));
+    } else if (strcmp(fn, "Float") == 0 || strcmp(fn, "Number") == 0 || strcmp(fn, "parseFloat") == 0) {
+        *ret = vs_num(vs_number(a));
+    } else if (strcmp(fn, "parseInt") == 0) {
+        int radix = argc > 1 ? (int)vs_number(args[1]) : 10;
+        const char *t = vs_text(a, buf, sizeof(buf));
+        char *end;
+        long v = strtol(t, &end, radix >= 2 && radix <= 36 ? radix : 10);
+        *ret = end == t ? vs_num(NAN) : vs_num((double)v);
+    } else if (strcmp(fn, "isNaN") == 0) {
+        *ret = vs_bool(isnan(vs_number(a)));
+    } else if (strcmp(fn, "String") == 0) {
+        *ret = vs_string(vm, vs_text(a, buf, sizeof(buf)));
+    }
+}
+
 static void add_builtins(vsmx *vm)
 {
+    static const char *const convert[] = {"Int", "Float", "Number", "String", "parseInt", "parseFloat", "isNaN"};
     static const char *const math[] = {"abs", "ceil", "floor", "round", "min", "max", "sin", "cos", "sqrt", "pow",
                                        "atan2", "random"};
     vs_value m = vs_new_object(vm);
@@ -519,7 +557,10 @@ static void add_builtins(vsmx *vm)
         vs_set(vm, m, vs_intern(vm, math[i]), vs_new_native(vm, native_math, (void *)math[i]));
     vs_set(vm, m, vs_intern(vm, "PI"), vs_num(3.14159265358979323846));
     vs_set_global(vm, "Math", m);
+    for (unsigned i = 0; i < sizeof(convert) / sizeof(convert[0]); i++)
+        vs_set_global(vm, convert[i], vs_new_native(vm, native_convert, (void *)convert[i]));
     vs_set_global(vm, "undefined", vs_undef());
+    vs_set_global(vm, "NULL", vs_null());
     vs_set_global(vm, "NaN", vs_num(NAN));
 }
 
@@ -532,6 +573,8 @@ static void mark_obj(vs_obj *o)
     if (o->gc.marked)
         return;
     o->gc.marked = 1;
+    if (o->proto)
+        mark_obj(o->proto);
     for (int i = 0; i < o->prop_count; i++)
         mark_value(o->props[i].value);
     for (int i = 0; i < o->length; i++)
@@ -954,8 +997,12 @@ static void invoke(vsmx *vm, int argc, int method, int construct, uint32_t *pc)
         push_value(vm, vs_undef());
         return;
     }
-    if (construct && fn.u.o->kind == OBJ_FUNC)
+    if (construct && fn.u.o->kind == OBJ_FUNC) {
+        vs_value proto = vs_get(vm, fn, vm->k_prototype);
         self = vs_new_object(vm);
+        if (self.type == VS_OBJ && proto.type == VS_OBJ)
+            self.u.o->proto = proto.u.o;
+    }
     if (fn.u.o->kind == OBJ_NATIVE) {
         fn.u.o->native(vm, fn.u.o->user, self, args, n, &ret);
         push_value(vm, ret);

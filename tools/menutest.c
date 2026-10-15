@@ -8,7 +8,8 @@
                                       player on a virtual clock: titles end after their length,
                                       buttons are pressed at the given times (up down left right
                                       cross circle triangle start), and with -o every new menu
-                                      picture is saved as dir/menu-<ms>.ppm */
+                                      picture is saved as dir/menu-<ms>.ppm, over the 960x544
+                                      PNG given with -b (a frame of the menu video) */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,6 +17,7 @@
 #include "../src/app/menu.h"
 #include "../src/core/canvas.h"
 #include "../src/core/iso9660.h"
+#include "../src/core/png.h"
 #include "../src/core/rco.h"
 #include "../src/core/umdv.h"
 #include "../src/core/vsmx.h"
@@ -248,6 +250,8 @@ static uint32_t button(const char *name)
     return 0;
 }
 
+static uint8_t *background;   /* 960x544 RGBA, or NULL for a grey checker */
+
 static void save_ppm(const canvas *c, const char *path)
 {
     FILE *f = fopen(path, "wb");
@@ -256,12 +260,34 @@ static void save_ppm(const canvas *c, const char *path)
     fprintf(f, "P6 %d %d 255\n", c->w, c->h);
     for (int i = 0; i < c->w * c->h; i++) {
         const uint8_t *p = c->rgba + i * 4;
-        /* over a grey checker so transparency shows */
-        int bg = ((i % c->w) / 16 + (i / c->w) / 16) % 2 ? 60 : 90;
-        for (int k = 0; k < 3; k++)
+        int checker = ((i % c->w) / 16 + (i / c->w) / 16) % 2 ? 60 : 90;
+        for (int k = 0; k < 3; k++) {
+            int bg = background ? background[i * 4 + k] : checker;
             fputc((p[k] * p[3] + bg * (255 - p[3])) / 255, f);
+        }
     }
     fclose(f);
+}
+
+static void load_background(const char *path)
+{
+    uint32_t size;
+    uint8_t *png = load(path, &size), *work;
+    int w, h;
+
+    if (!png || png_info(png, size, &w, &h) < 0 || w != 960 || h != 544) {
+        fprintf(stderr, "%s: need a 960x544 PNG\n", path);
+        free(png);
+        return;
+    }
+    background = malloc(960 * 544 * 4);
+    work = malloc((960 * 8 + 1) * 544);
+    if (png_decode(png, size, background, 960 * 4, work, (960 * 8 + 1) * 544) < 0) {
+        free(background);
+        background = NULL;
+    }
+    free(work);
+    free(png);
 }
 
 static int run_disc(int argc, char **argv)
@@ -276,11 +302,15 @@ static int run_disc(int argc, char **argv)
     double seconds = argc > 3 ? atof(argv[3]) : 30;
     const char *outdir = NULL;
     canvas c = {NULL, 960, 544, 960 * 4};
-    int last_chapter = 0;
+    int last_chapter = 0, unsaved = 0;
+    uint64_t last_save = 0;
 
-    for (int i = 4; i < argc; i++)
+    for (int i = 4; i < argc; i++) {
         if (strcmp(argv[i], "-o") == 0 && i + 1 < argc)
             outdir = argv[i + 1];
+        if (strcmp(argv[i], "-b") == 0 && i + 1 < argc)
+            load_background(argv[i + 1]);
+    }
     if (host_source_open(&src, argv[2]) < 0 || iso_open(&s.vol, &src) < 0 ||
         iso_find(&s.vol, "UMD_VIDEO/PLAYLIST.UMD", &e) < 0 || !(buf = malloc(e.size)) ||
         iso_read(&s.vol, &e, 0, buf, e.size) != (int64_t)e.size || umdv_playlist_parse(buf, e.size, &s.pl) < 0) {
@@ -336,15 +366,15 @@ static int run_disc(int argc, char **argv)
         }
         if (menu_dirty(m)) {
             menu_draw(m, &c);
-            if (outdir) {
-                static uint64_t last_save;
-                if (s.now - last_save >= 500000 || pressed) {
-                    char path[512];
-                    snprintf(path, sizeof(path), "%s/menu-%06llu.ppm", outdir, (unsigned long long)(s.now / 1000));
-                    save_ppm(&c, path);
-                    last_save = s.now;
-                }
-            }
+            unsaved = 1;
+        }
+        /* Save at most every 0.5 s, but always the latest picture. */
+        if (outdir && unsaved && (s.now - last_save >= 500000 || pressed)) {
+            char path[512];
+            snprintf(path, sizeof(path), "%s/menu-%06llu.ppm", outdir, (unsigned long long)(s.now / 1000));
+            save_ppm(&c, path);
+            last_save = s.now;
+            unsaved = 0;
         }
     }
     menu_close(m);
@@ -382,6 +412,9 @@ static int run_rco(int argc, char **argv)
                 printf(" [%d %s]", a, o->action[a].event ? o->action[a].event : nm(r.objects[o->action[a].object].name));
         printf("\n");
     }
+    for (int i = 0; i < r.image_count; i++)
+        printf("image %3d %-26s %u bytes%s\n", i, nm(r.images[i].name), r.images[i].size,
+               r.images[i].data ? "" : " (no data)");
     for (int i = 0; i < r.anim_count; i++) {
         const rco_anim *a = &r.anims[i];
         printf("anim %-26s %d steps:", nm(a->name), a->step_count);

@@ -27,6 +27,7 @@ enum { P_POS, P_COLOR, P_SCALE, P_ROT, P_CROP, P_SIZE, P_ALPHA };
 typedef struct wstate {
     float pos[3], color[4], size[3], scale[3], rot[3], crop[4];
     int image, has_crop;
+    int hidden;               /* widget.visible = false: it and its children are not drawn */
 } wstate;
 
 typedef struct tween {
@@ -136,6 +137,7 @@ static void reset_widget(res *r, int i)
     memset(w->rot, 0, sizeof(w->rot));
     w->image = o->image;
     w->has_crop = 0;
+    w->hidden = 0;
 }
 
 static void reset_tree(res *r, int i)
@@ -537,6 +539,10 @@ static int widget_get(vsmx *vm, void *host, const char *key, vs_value *out)
         *out = vs_string(vm, o->name ? o->name : "");
         return 1;
     }
+    if (strcmp(key, "visible") == 0) {
+        *out = vs_bool(!r->w[rf->index].hidden);
+        return 1;
+    }
     if (strcmp(key, "children") == 0) {
         *out = vs_new_host(vm, &children_class, rf);
         return 1;
@@ -569,6 +575,11 @@ static int widget_set(vsmx *vm, void *host, const char *key, vs_value value)
     res *r = rf->m->res;
 
     (void)vm;
+    if (strcmp(key, "visible") == 0) {
+        r->w[rf->index].hidden = !vs_truthy(value);
+        rf->m->dirty = 1;
+        return 1;
+    }
     if (strcmp(key, "texture") == 0) {
         ref *t = vs_host(value, &texture_class);
         r->w[rf->index].image = t ? t->index : -1;
@@ -648,13 +659,14 @@ static int table_get(vsmx *vm, void *host, const char *key, vs_value *out)
     } else if (rf->index == 1) {
         if ((i = rco_find_anim(&r->r, key)) >= 0)
             *out = vs_new_host(vm, &anim_class, &r->aref[i]);
-    }
-    if (out->type == VS_UNDEF)
-        mlog(rf->m, "menu: no %s \"%s\"", rf->index == 0 ? "page" : rf->index == 1 ? "animation" : "texture", key); else {
+    } else {
         for (i = 0; i < r->r.image_count; i++)
             if (r->r.images[i].name && strcmp(r->r.images[i].name, key) == 0)
                 *out = vs_new_host(vm, &texture_class, &r->iref[i]);
     }
+    /* Scripts probe for optional pages (p_CMMM_2 and so on), so a miss is only worth a note. */
+    if (out->type == VS_UNDEF)
+        mlog(rf->m, "menu: no %s \"%s\"", rf->index == 0 ? "page" : rf->index == 1 ? "animation" : "texture", key);
     return 1;
 }
 
@@ -679,18 +691,15 @@ NATIVE(mp_play)
     menu *m = user;
     int playlist, chapter;
     (void)vm; (void)self; (void)ret;
-    /* play(0, 0, playlist, chapter, video, audio, audio on, subtitle, subtitle on) */
+    /* play(0, 0, playlist, chapter[, video, audio, audio on, subtitle, subtitle on]) */
+    playlist = (int)argf(args, argc, 2, 1);
+    chapter = (int)argf(args, argc, 3, 1);
     if (argc >= 9) {
-        playlist = (int)vs_number(args[2]);
-        chapter = (int)vs_number(args[3]);
         if (args[5].type == VS_NUM && vs_number(args[5]) >= 0)
             m->audio_id = stream_number(args[5], 0xBD00);
         m->sub_on = vs_truthy(args[8]) && vs_number(args[7]) >= 0;
         if (m->sub_on)
             m->sub_id = stream_number(args[7], 0xBD80);
-    } else {
-        playlist = (int)argf(args, argc, 0, 1);
-        chapter = (int)argf(args, argc, 1, 1);
     }
     if (chapter < 1)
         chapter = 1;
@@ -1049,6 +1058,7 @@ static res *load_res(menu *m, const char *name)
     vs_set_global(r->vm, "timer", vs_new_host(r->vm, &timer_class, m));
     vs_set_global(r->vm, "resource", vs_new_host(r->vm, &resource_class, m));
     vs_set_global(r->vm, "writeln", vs_new_native(r->vm, g_writeln, m));
+    vs_set_global(r->vm, "write", vs_new_native(r->vm, g_writeln, m));
     mlog(m, "menu: loaded %s (%d widgets, %d animations, %d images)", name, r->r.object_count, r->r.anim_count,
          r->r.image_count);
     return r;
@@ -1139,8 +1149,14 @@ void menu_playlist_ended(menu *m, int playlist)
 
 void menu_chapter_changed(menu *m, int chapter)
 {
-    vs_value c = vs_num(chapter);
-    call_handler(m, "movieplayer", "onChapter", &c, 1);
+    vsmx *vm = m->res->vm;
+    vs_value info = vs_new_object(vm);
+    menu_status st;
+
+    m->p.status(m->p.user, &st);
+    vs_set(vm, info, vs_intern(vm, "chapterNumber"), vs_num(chapter));
+    vs_set(vm, info, vs_intern(vm, "playListNumber"), vs_num(st.playlist));
+    call_handler(m, "movieplayer", "onChapter", &info, 1);
 }
 
 void menu_menu_button(menu *m)
@@ -1177,8 +1193,8 @@ void menu_debug(const menu *m)
     for (int p = 0; p < r->page_count; p++)
         for (int i = 0; i < r->r.object_count; i++)
             if (page_of(r, i) == r->pages[p])
-                mlog((menu *)m, "menu:   %-22s pos %6.1f %6.1f scale %.2f alpha %.2f image %d", r->r.objects[i].name ? r->r.objects[i].name : "?",
-                     r->w[i].pos[0], r->w[i].pos[1], r->w[i].scale[0], r->w[i].color[3], r->w[i].image);
+                mlog((menu *)m, "menu:   %-22s pos %6.1f %6.1f %6.1f scale %.2f rot %.2f %.2f %.2f rgba %.2f %.2f %.2f %.2f image %d", r->r.objects[i].name ? r->r.objects[i].name : "?",
+                     r->w[i].pos[0], r->w[i].pos[1], r->w[i].pos[2], r->w[i].scale[0], r->w[i].rot[0], r->w[i].rot[1], r->w[i].rot[2], r->w[i].color[0], r->w[i].color[1], r->w[i].color[2], r->w[i].color[3], r->w[i].image);
 }
 
 int menu_dirty(const menu *m)
@@ -1224,20 +1240,50 @@ static const uint8_t *image_rgba(res *r, int i, int *w, int *h)
     return r->rgba[i];
 }
 
-/* Draws an image scaled into dst (screen pixels), multiplied by color, rotated by angle
-   around its centre, over what is there (straight alpha). */
-static void blit(canvas *c, const uint8_t *src, int sw, int sh, const float *crop, float cx, float cy, float dw,
-                 float dh, float angle, const float *color)
+/* A widget's place in the scene: origin t and axes (columns of l), in menu units, y up. */
+typedef struct xform {
+    float t[3];
+    float l[3][3];            /* l[row][column] */
+    float color[4];
+} xform;
+
+static void mat_mul(float out[3][3], float a[3][3], float b[3][3])
 {
-    float ca = cosf(angle), sa = sinf(angle);
-    float hw = fabsf(dw) / 2, hh = fabsf(dh) / 2;
-    float ext = sqrtf(hw * hw + hh * hh);
-    int x0 = (int)floorf(cx - ext), x1 = (int)ceilf(cx + ext), y0 = (int)floorf(cy - ext), y1 = (int)ceilf(cy + ext);
+    float r[3][3];
+    for (int i = 0; i < 3; i++)
+        for (int j = 0; j < 3; j++)
+            r[i][j] = a[i][0] * b[0][j] + a[i][1] * b[1][j] + a[i][2] * b[2][j];
+    memcpy(out, r, sizeof(r));
+}
+
+/* Rotation about x, then y, then z (setRotate(x, y, z), radians), then scale. */
+static void local_matrix(float out[3][3], const float *rot, const float *scale)
+{
+    float cx = cosf(rot[0]), sx = sinf(rot[0]), cy = cosf(rot[1]), sy = sinf(rot[1]);
+    float cz = cosf(rot[2]), sz = sinf(rot[2]);
+    float rx[3][3] = {{1, 0, 0}, {0, cx, -sx}, {0, sx, cx}};
+    float ry[3][3] = {{cy, 0, sy}, {0, 1, 0}, {-sy, 0, cy}};
+    float rz[3][3] = {{cz, -sz, 0}, {sz, cz, 0}, {0, 0, 1}};
+    float s[3][3] = {{scale[0], 0, 0}, {0, scale[1], 0}, {0, 0, scale[2]}};
+
+    mat_mul(out, rz, ry);
+    mat_mul(out, out, rx);
+    mat_mul(out, out, s);
+}
+
+/* Draws an image as the parallelogram centre c + u * ex + v * ey (u, v in -0.5..0.5, screen
+   pixels), multiplied by color, over what is there (straight alpha). */
+static void blit(canvas *c, const uint8_t *src, int sw, int sh, const float *crop, float cx, float cy,
+                 const float *ex, const float *ey, const float *color)
+{
+    float det = ex[0] * ey[1] - ex[1] * ey[0];
+    float ext = fabsf(ex[0]) / 2 + fabsf(ey[0]) / 2, eyt = fabsf(ex[1]) / 2 + fabsf(ey[1]) / 2;
+    int x0 = (int)floorf(cx - ext), x1 = (int)ceilf(cx + ext), y0 = (int)floorf(cy - eyt), y1 = (int)ceilf(cy + eyt);
     /* crop: the visible part as x, y, w, h fractions of the image; the rest is not drawn */
     float u0 = crop ? crop[0] : 0, v0 = crop ? crop[1] : 0, u1 = crop ? crop[0] + crop[2] : 1;
     float v1 = crop ? crop[1] + crop[3] : 1;
 
-    if (dw == 0 || dh == 0 || color[3] <= 0.004f)
+    if (fabsf(det) < 0.5f || color[3] <= 0.004f)
         return;
     if (x0 < 0) x0 = 0;
     if (y0 < 0) y0 = 0;
@@ -1246,10 +1292,8 @@ static void blit(canvas *c, const uint8_t *src, int sw, int sh, const float *cro
     for (int y = y0; y < y1; y++) {
         uint8_t *row = c->rgba + (size_t)y * c->stride;
         for (int x = x0; x < x1; x++) {
-            /* Back into the image: unrotate, then normalise to 0..1. */
             float dx = (float)x + 0.5f - cx, dy = (float)y + 0.5f - cy;
-            float lx = dx * ca + dy * sa, ly = -dx * sa + dy * ca;
-            float u = lx / dw + 0.5f, v = ly / dh + 0.5f;
+            float u = (dx * ey[1] - dy * ey[0]) / det + 0.5f, v = (ex[0] * dy - ex[1] * dx) / det + 0.5f;
             const uint8_t *s;
             uint8_t *d;
             float a, da, oa;
@@ -1258,7 +1302,7 @@ static void blit(canvas *c, const uint8_t *src, int sw, int sh, const float *cro
                 continue;
             sx = (int)(u * (float)sw);
             sy = (int)(v * (float)sh);
-            if (sx < 0 || sy < 0 || sx >= sw || sy >= sh)
+            if (sx >= sw || sy >= sh)
                 continue;
             s = src + ((size_t)sy * sw + sx) * 4;
             a = s[3] / 255.0f * color[3];
@@ -1276,46 +1320,51 @@ static void blit(canvas *c, const uint8_t *src, int sw, int sh, const float *cro
     }
 }
 
-static void draw_tree(res *r, canvas *c, int i, float px, float py, float ps_x, float ps_y, float pangle,
-                      const float *pcolor)
+static void draw_tree(res *r, canvas *c, int i, const xform *parent)
 {
     const wstate *w = &r->w[i];
-    float color[4], x, y, sx, sy, angle;
-    float lx = w->pos[0] * ps_x, ly = w->pos[1] * ps_y;
+    float lm[3][3];
+    xform x;
 
     for (int k = 0; k < 4; k++)
-        color[k] = pcolor[k] * w->color[k];
-    /* Position relative to the parent, turned by the parent's rotation. */
-    x = px + lx * cosf(pangle) - ly * sinf(pangle);
-    y = py + lx * sinf(pangle) + ly * cosf(pangle);
-    sx = ps_x * w->scale[0];
-    sy = ps_y * w->scale[1];
-    angle = pangle + w->rot[0];   /* setRotate(angle, ...) in radians */
-    if (color[3] <= 0.004f)
+        x.color[k] = parent->color[k] * w->color[k];
+    if (x.color[3] <= 0.004f || w->hidden)
         return;
+    /* Position in the parent's frame, then this widget's own rotation and scale. */
+    for (int k = 0; k < 3; k++)
+        x.t[k] = parent->t[k] + parent->l[k][0] * w->pos[0] + parent->l[k][1] * w->pos[1] + parent->l[k][2] * w->pos[2];
+    local_matrix(lm, w->rot, w->scale);
+    mat_mul(x.l, (float (*)[3])parent->l, lm);
     if (w->image >= 0 && r->r.objects[i].kind != RCO_PAGE && r->r.objects[i].kind != RCO_GROUP) {
         int iw, ih;
         const uint8_t *img = image_rgba(r, w->image, &iw, &ih);
-        if (img) {
-            float dw = (w->size[0] > 0 ? w->size[0] : (float)iw) * sx;
-            float dh = (w->size[1] > 0 ? w->size[1] : (float)ih) * sy;
-            /* menu units, centre origin, y up -> canvas pixels */
-            float cx = (UNITS_W / 2 + x) * (float)c->w / UNITS_W, cy = (UNITS_H / 2 - y) * (float)c->h / UNITS_H;
-            blit(c, img, iw, ih, w->has_crop ? w->crop : NULL, cx, cy, dw * (float)c->w / UNITS_W,
-                 dh * (float)c->h / UNITS_H, -angle, color);
+        /* Facing away (the plane's normal points into the screen): not drawn. */
+        if (img && x.l[2][2] > -0.001f) {
+            float sxu = (float)c->w / UNITS_W, syu = (float)c->h / UNITS_H;
+            float width = w->size[0] > 0 ? w->size[0] : (float)iw, height = w->size[1] > 0 ? w->size[1] : (float)ih;
+            /* Image axes on screen: x right, and y down (the image's rows go down). */
+            float ex[2] = {x.l[0][0] * width * sxu, -x.l[1][0] * width * syu};
+            float ey[2] = {-x.l[0][1] * height * sxu, x.l[1][1] * height * syu};
+            float cx = (UNITS_W / 2 + x.t[0]) * sxu, cy = (UNITS_H / 2 - x.t[1]) * syu;
+            blit(c, img, iw, ih, w->has_crop ? w->crop : NULL, cx, cy, ex, ey, x.color);
         }
     }
     for (int ch = r->r.objects[i].first_child; ch >= 0; ch = r->r.objects[ch].next_sibling)
-        draw_tree(r, c, ch, x, y, sx, sy, angle, color);
+        draw_tree(r, c, ch, &x);
 }
 
 void menu_draw(menu *m, canvas *c)
 {
-    static const float white[4] = {1, 1, 1, 1};
     res *r = m->res;
+    xform root;
 
+    memset(&root, 0, sizeof(root));
+    for (int k = 0; k < 3; k++)
+        root.l[k][k] = 1;
+    for (int k = 0; k < 4; k++)
+        root.color[k] = 1;
     canvas_clear(c);
     for (int p = 0; p < r->page_count; p++)
-        draw_tree(r, c, r->pages[p], 0, 0, 1, 1, 0, white);
+        draw_tree(r, c, r->pages[p], &root);
     m->dirty = 0;
 }
