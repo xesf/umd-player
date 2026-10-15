@@ -77,12 +77,14 @@ static int name_eq(const char *a, const char *b, size_t blen)
 /* Records never cross a sector boundary; a zero length byte pads to the next sector. */
 static int find_in_dir(iso_volume *v, const iso_entry *dir, const char *name, size_t len, iso_entry *out)
 {
-    uint32_t sectors = (dir->size + UMD_SECTOR_SIZE - 1) / UMD_SECTOR_SIZE;
+    /* out may be dir itself (iso_find walks in place), and each record parsed overwrites it,
+       so keep where the directory is. */
+    uint32_t lba = dir->lba, sectors = (dir->size + UMD_SECTOR_SIZE - 1) / UMD_SECTOR_SIZE;
     uint32_t s;
 
     for (s = 0; s < sectors; s++) {
         uint32_t off = 0;
-        if (read_sector(v, dir->lba + s, v->sector) < 0)
+        if (read_sector(v, lba + s, v->sector) < 0)
             return -1;
         while (off < UMD_SECTOR_SIZE && v->sector[off] != 0) {
             const uint8_t *r = &v->sector[off];

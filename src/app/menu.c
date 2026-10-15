@@ -17,6 +17,7 @@
 #define MAX_TIMERS   32
 #define MAX_PAGES    16
 #define MAX_USERDATA 64
+#define FILL_MAX     16          /* images this small or smaller are colour fills: they stretch */
 #define USERDATA_EMPTY 32           /* getUserData before anything was saved */
 #define UNITS_W      854.0f           /* menu coordinates: a 16:9 screen 480 units high */
 #define UNITS_H      480.0f
@@ -853,6 +854,13 @@ NATIVE(mp_play)
     int playlist, chapter;
     (void)vm; (void)self; (void)ret;
     /* play(0, 0, playlist, chapter[, video, audio, audio on, subtitle, subtitle on]) */
+    if (argc < 3) {
+        /* play(0, 0) names no title. Speed calls it near the end of its warnings and Harry
+           Potter after its credits; the title plays on to its end, where onPlayListEnd decides
+           what follows. */
+        mlog(m, "menu: play with no title: playback carries on");
+        return;
+    }
     playlist = (int)argf(args, argc, 2, 1);
     chapter = (int)argf(args, argc, 3, 1);
     if (argc >= 9) {
@@ -1692,6 +1700,15 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
             sprite *s = &list[*count];
             float sxu = (float)c->w / UNITS_W, syu = (float)c->h / UNITS_H;
             float width = w->size[0] > 0 ? w->size[0] : (float)iw, height = w->size[1] > 0 ? w->size[1] : (float)ih;
+            /* The image keeps its shape inside the widget's size: 2Fast2Furious and The Bourne
+               Supremacy size their label buttons for the longest translation, and the PSP
+               draws each label at its own proportions. Tiny images (a 1x1 black fade, a 5x5
+               blank) are colour fills and stretch over the whole widget. */
+            if ((iw > FILL_MAX || ih > FILL_MAX) && iw > 0 && ih > 0) {
+                float k = width / (float)iw < height / (float)ih ? width / (float)iw : height / (float)ih;
+                width = (float)iw * k;
+                height = (float)ih * k;
+            }
             /* Left- or right-anchored images: pos is that edge, so move the centre half a width. */
             float shift = r->r.objects[i].anchor == 1 ? width / 2 : r->r.objects[i].anchor == 2 ? -width / 2 : 0;
             memset(s, 0, sizeof(*s));

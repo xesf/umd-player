@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Discs with more than about 40 files in a folder play all their titles: a folder whose listing spans several sectors was searched from the wrong place after its first sector (Summer Days clips 35 to 46).
+- Disc menus: movieplayer.play(0, 0), with no title, no longer starts title 1. Speed now shows its warnings and menu instead of starting the movie.
+- Disc menus: images keep their shape inside their widget, and only tiny colour fills stretch. 2Fast2Furious's main menu and The Bourne Supremacy's language list are no longer squashed or overlapping.
+
 ## v0.5.0 (2026-10-15)
 
 - Interactive movies (UMD-PG), such as Summer Days: the library detects them and always plays them through their own menus. Choice windows open between clips, the D-pad and Cross choose, and Circle during the story shows the password that carries the game to the next disc.
