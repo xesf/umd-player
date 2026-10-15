@@ -15,7 +15,7 @@ include("$ENV{VITASDK}/share/vita.cmake" REQUIRED)
 
 set(VITA_APP_NAME "UMD Player")
 set(VITA_TITLEID  "UMDP00001")
-set(VITA_VERSION  "00.02")
+set(VITA_VERSION  "00.03")
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O2 -mcpu=cortex-a9 -mfpu=neon -Wall -Wextra")

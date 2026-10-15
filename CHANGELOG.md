@@ -1,10 +1,15 @@
 # Changelog
 
-## Unreleased
+## v0.3.0 (2026-10-15)
 
 - Library: Triangle opens a settings panel with the default screen mode, audio language and subtitle language for new discs.
-- Library: Select shows or hides the title and resume panel; the icon outline is gone; "by xesf" sits under the app name.
+- Subtitles default to the Vita's system language, audio to English, and the screen to Zoom.
+- Library: Select shows or hides the title and resume panel.
+- Library: Square plays a disc from the start whether or not the panel shows.
+- Library: the selected icon has no outline now that it sits on the PIC1 placeholder.
+- Library: "by xesf" sits under the app name.
 - Start pauses and plays during a movie, and no longer quits from the library.
+- A pause no longer logs a false stall.
 
 ## v0.2.0 (2026-10-15)
 
