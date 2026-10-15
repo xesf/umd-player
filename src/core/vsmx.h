@@ -39,6 +39,8 @@ typedef struct vs_class {
     int (*set)(vsmx *vm, void *host, const char *key, vs_value value);
     /* Non-NULL makes the object callable. */
     void (*call)(vsmx *vm, void *host, vs_value self, const vs_value *args, int argc, vs_value *ret);
+    /* The object's type in its text form, "[object Plane]"; NULL for "Object". */
+    const char *(*type)(void *host);
 } vs_class;
 
 typedef void (*vs_log_fn)(void *user, const char *msg);

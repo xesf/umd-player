@@ -90,6 +90,7 @@ struct vsmx {
     vs_log_fn log;
     void *log_user;
     int error;
+    int trace;                /* VSMX_TRACE: log every call of a script function */
     /* interned keys used by the interpreter */
     const char *k_length, *k_call, *k_slice, *k_push, *k_prototype;
 };
@@ -273,6 +274,10 @@ const char *vs_text(vs_value v, char *buf, int size)
             snprintf(buf, (size_t)size, "%.15g", v.u.n);
         return buf;
     default:
+        if (v.u.o->kind == OBJ_HOST && v.u.o->cls->type) {
+            snprintf(buf, (size_t)size, "[object %s]", v.u.o->cls->type(v.u.o->host));
+            return buf;
+        }
         return v.u.o->kind == OBJ_ARRAY ? "" : "[object Object]";
     }
 }
@@ -710,6 +715,7 @@ vsmx *vs_create(const uint8_t *s, uint32_t size, vs_log_fn log, void *log_user)
         return NULL;
     vm->log = log;
     vm->log_user = log_user;
+    vm->trace = getenv("VSMX_TRACE") != NULL;
     vm->code_len = cl / 8;
     vm->code = malloc(cl ? cl : 8);
     texts = split(s + to, tl, tn, 1);
@@ -873,6 +879,11 @@ static int loose_equal(vs_value a, vs_value b)
         return 0;
     if (a.type == VS_STR && b.type == VS_STR)
         return strcmp(a.u.s->text, b.u.s->text) == 0;
+    if ((a.type == VS_OBJ && b.type == VS_STR) || (a.type == VS_STR && b.type == VS_OBJ)) {
+        /* an object against a string compares its text: child == "[object Plane]" */
+        char ba[64], bb[64];
+        return strcmp(vs_text(a, ba, sizeof(ba)), vs_text(b, bb, sizeof(bb))) == 0;
+    }
     if (a.type == VS_OBJ || b.type == VS_OBJ)
         return a.type == b.type && a.u.o == b.u.o;
     return vs_number(a) == vs_number(b);
@@ -990,6 +1001,8 @@ static void invoke(vsmx *vm, int argc, int method, int construct, uint32_t *pc)
     }
     fs = pop(vm);
     fn = read_slot(vm, &fs);
+    if (vm->trace && fs.key && fn.type == VS_OBJ && fn.u.o->kind == OBJ_FUNC)
+        log_msg(vm, "call %s", fs.key);
     if (method)
         self = pop_value(vm);
     if (!vs_is_function(fn)) {

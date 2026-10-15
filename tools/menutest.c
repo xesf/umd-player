@@ -56,7 +56,7 @@ typedef struct probe {
 static int probe_get(vsmx *vm, void *host, const char *key, vs_value *out);
 static int probe_set(vsmx *vm, void *host, const char *key, vs_value value);
 static void probe_call(vsmx *vm, void *host, vs_value self, const vs_value *args, int argc, vs_value *ret);
-static const vs_class probe_class = {"probe", probe_get, probe_set, probe_call};
+static const vs_class probe_class = {"probe", probe_get, probe_set, probe_call, NULL};
 
 static vs_value new_probe(vsmx *vm, const char *path)
 {
@@ -318,7 +318,7 @@ static int run_disc(int argc, char **argv)
         return 1;
     }
     c.rgba = calloc(960 * 544, 4);
-    if ((m = menu_open(&mp, "en")) == NULL) {
+    if ((m = menu_open(&mp, getenv("MENU_LANG") ? getenv("MENU_LANG") : "en")) == NULL) {
         printf("no menus\n");
         return 1;
     }

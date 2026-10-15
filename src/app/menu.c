@@ -13,7 +13,7 @@
 #include "../platform/platform.h"
 
 #define MAX_TWEENS   256
-#define MAX_RUNS     32
+#define MAX_RUNS     128
 #define MAX_TIMERS   32
 #define MAX_PAGES    16
 #define MAX_USERDATA 64
@@ -21,13 +21,14 @@
 #define UNITS_H      480.0f
 #define START_RCO    "EN100000"
 
-enum { P_POS, P_COLOR, P_SCALE, P_ROT, P_CROP, P_SIZE, P_ALPHA };
+enum { P_POS, P_COLOR, P_SCALE, P_ROT, P_CROP, P_SIZE, P_FADE };
 
 /* What the script can change on a widget. */
 typedef struct wstate {
     float pos[3], color[4], size[3], scale[3], rot[3], crop[4];
     int image, has_crop;
     int hidden;               /* widget.visible = false: it and its children are not drawn */
+    float fade;               /* fade steps (RCO step 6): an opacity apart from the colour's alpha */
 } wstate;
 
 typedef struct tween {
@@ -144,6 +145,7 @@ static void reset_widget(res *r, int i)
     w->image = o->image;
     w->has_crop = 0;
     w->hidden = 0;
+    w->fade = 1;
 }
 
 static void reset_tree(res *r, int i)
@@ -169,7 +171,7 @@ static float *prop_ptr(wstate *w, int prop, int *n)
     case P_ROT: *n = 3; return w->rot;
     case P_CROP: *n = 4; return w->crop;
     case P_SIZE: *n = 3; return w->size;
-    default: *n = 1; return &w->color[3];
+    default: *n = 1; return &w->fade;
     }
 }
 
@@ -358,8 +360,9 @@ static void play_anim(menu *m, int anim, int target)
     if (getenv("MENU_TRACE"))
         mlog(m, "menu: play animation %s", m->res->r.anims[anim].name ? m->res->r.anims[anim].name : "?");
 
+    /* The same animation can run on several widgets at once (a list hides each item). */
     for (int i = 0; i < MAX_RUNS; i++)
-        if (m->runs[i].active && m->runs[i].anim == anim)
+        if (m->runs[i].active && m->runs[i].anim == anim && m->runs[i].target == target)
             run = &m->runs[i];
     for (int i = 0; !run && i < MAX_RUNS; i++)
         if (!m->runs[i].active)
@@ -394,7 +397,7 @@ static void step_anims(menu *m)
             case RCO_STEP_MOVE: start_tween(m, obj, P_POS, s->value, 3, s->duration); break;
             case RCO_STEP_COLOR: start_tween(m, obj, P_COLOR, s->value, 4, s->duration); break;
             case RCO_STEP_SCALE: start_tween(m, obj, P_SCALE, s->value, 3, s->duration); break;
-            case RCO_STEP_FADE: start_tween(m, obj, P_ALPHA, s->value, 1, s->duration); break;
+            case RCO_STEP_FADE: start_tween(m, obj, P_FADE, s->value, 1, s->duration); break;
             case RCO_STEP_DELAY: run->wait_until = m->now + (uint64_t)(s->duration * 1000); break;
             case RCO_STEP_LOCK: run->locked = 1; break;
             case RCO_STEP_UNLOCK: run->locked = 0; break;
@@ -419,6 +422,9 @@ static void set_focus(menu *m, int widget)
     if (page < 0)
         return;
     old = r->focus[page];
+    if (getenv("MENU_TRACE"))
+        mlog(m, "menu: focus %s -> %s", old >= 0 && r->r.objects[old].name ? r->r.objects[old].name : "-",
+             r->r.objects[widget].name ? r->r.objects[widget].name : "?");
     if (old == widget)
         return;
     r->focus[page] = widget;
@@ -786,11 +792,23 @@ static int table_get(vsmx *vm, void *host, const char *key, vs_value *out)
     return 1;
 }
 
-static const vs_class widget_class = {"widget", widget_get, widget_set, NULL};
-static const vs_class children_class = {"children", children_get, NULL, NULL};
-static const vs_class anim_class = {"anim", anim_get, NULL, NULL};
-static const vs_class table_class = {"table", table_get, NULL, NULL};
-static const vs_class texture_class = {"texture", NULL, NULL, NULL};
+static const char *widget_type(void *host)
+{
+    ref *rf = host;
+    switch (rf->m->res->r.objects[rf->index].kind) {
+    case RCO_PAGE: return "Page";
+    case RCO_PLANE: return "Plane";
+    case RCO_GROUP: return "Group";
+    case RCO_BUTTON: return "Button";
+    default: return "Object";
+    }
+}
+
+static const vs_class widget_class = {"widget", widget_get, widget_set, NULL, widget_type};
+static const vs_class children_class = {"children", children_get, NULL, NULL, NULL};
+static const vs_class anim_class = {"anim", anim_get, NULL, NULL, NULL};
+static const vs_class table_class = {"table", table_get, NULL, NULL, NULL};
+static const vs_class texture_class = {"texture", NULL, NULL, NULL, NULL};
 
 /* ---- movieplayer ---- */
 
@@ -1087,10 +1105,10 @@ static int resource_get(vsmx *vm, void *host, const char *key, vs_value *out)
     return 1;
 }
 
-static const vs_class movieplayer_class = {"movieplayer", movieplayer_get, NULL, NULL};
-static const vs_class controller_class = {"controller", controller_get, NULL, NULL};
-static const vs_class timer_class = {"timer", timer_get, NULL, NULL};
-static const vs_class resource_class = {"resource", resource_get, NULL, NULL};
+static const vs_class movieplayer_class = {"movieplayer", movieplayer_get, NULL, NULL, NULL};
+static const vs_class controller_class = {"controller", controller_get, NULL, NULL, NULL};
+static const vs_class timer_class = {"timer", timer_get, NULL, NULL, NULL};
+static const vs_class resource_class = {"resource", resource_get, NULL, NULL, NULL};
 
 NATIVE(g_writeln)
 {
@@ -1491,6 +1509,7 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
 
     for (int k = 0; k < 4; k++)
         x.color[k] = parent->color[k] * w->color[k];
+    x.color[3] *= w->fade;
     if (x.color[3] <= 0.004f || w->hidden)
         return;
     /* Position in the parent's frame, then this widget's own rotation and scale. */
