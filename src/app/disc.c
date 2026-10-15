@@ -326,7 +326,17 @@ int disc_update(disc *d, uint32_t pressed)
     if (d->pl)
         player_set_layer(d->pl, d->layer_shown ? d->layer.rgba : NULL, d->layer.w, d->layer.h, d->layer.stride,
                          d->layer_id);
-    if (d->pl && !player_update(d->pl, menu_has_focus(d->m) ? 0 : pressed)) {
+    if (menu_focus || menu_has_focus(d->m)) {
+        int tx, ty, down = plat_touch(&tx, &ty);
+        menu_touch(d->m, down, tx, ty);
+    } else {
+        menu_touch(d->m, 0, 0, 0);    /* a finger lifted as the menus closed is no tap */
+    }
+    if (d->pl)
+        player_set_touch(d->pl, !(menu_focus || menu_has_focus(d->m)));
+    /* A press the menus took this frame is theirs, even if it closed their page: the Cross
+       that picks a scene would otherwise also pause the movie it starts. */
+    if (d->pl && !player_update(d->pl, menu_focus || menu_has_focus(d->m) ? 0 : pressed)) {
         /* The player only stops by itself on an error. */
         player_close(d->pl);
         d->pl = NULL;

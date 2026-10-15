@@ -186,6 +186,7 @@ struct player {
     int scrubbing;                   /* held long enough to scrub; the seek happens on release */
     uint64_t scrub_start_us, scrub_last_us;
     int touch_down, touch_drag, touch_x, touch_y;   /* a finger on the screen, where it went down */
+    int touch_off;                   /* player_set_touch(0): the disc's menus have the screen */
     int touch_moved;                 /* it moved too far to count as a tap */
     uint64_t touch_us;
     int64_t scrub_target;
@@ -1743,7 +1744,10 @@ int player_update(player *p, uint32_t pressed)
     else
         play_input(p, pressed);
     scrub(p);
-    touch_input(p);
+    if (!p->touch_off)
+        touch_input(p);
+    else
+        p->touch_down = 0;
     if (p->leave)
         return 0;
     if (!p->paused && plat_time_us() - p->last_awake_us > 1000000) {
@@ -1899,4 +1903,9 @@ void player_close(player *p)
     free(p->clp_buf);
     plat_iso_close(&p->src);
     free(p);
+}
+
+void player_set_touch(player *p, int on)
+{
+    p->touch_off = !on;
 }

@@ -101,6 +101,9 @@ With "Start with: Disc", UMD Player runs the disc's own menus: the menu screens,
 | ✕ | Choose the item | Pause or play |
 | ○ | Back, as the disc defines it | Open the disc's menu |
 | Select | Back to the library | Back to the library |
+| Touch | Tap an item to choose it. Swipe to move, as with the D-pad. | As in "Watching a movie" |
+
+Some discs move their highlight themselves and have no items to tap. On those, swipe to the item, then tap anywhere to choose it.
 
 Holding ○ for 1.5 seconds also goes back to the library.
 

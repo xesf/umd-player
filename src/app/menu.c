@@ -99,6 +99,7 @@ struct menu {
     float win[4];
     int win_set;
     int drawn_once;           /* menu_draw has drawn the whole canvas once */
+    int touch_down, touch_x0, touch_y0, touch_x, touch_y;   /* menu_touch: where a finger went down, and is */
     int depth;                /* script calls in progress */
     int settling;
     struct { const char *event; int widget; res *from; } queue[64];
@@ -1706,14 +1707,17 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
             sprite *s = &list[*count];
             float sxu = (float)c->w / UNITS_W, syu = (float)c->h / UNITS_H;
             float width = w->size[0] > 0 ? w->size[0] : (float)iw, height = w->size[1] > 0 ? w->size[1] : (float)ih;
-            /* The image keeps its shape inside the widget's size: 2Fast2Furious and The Bourne
-               Supremacy size their label buttons for the longest translation, and the PSP
-               draws each label at its own proportions. Tiny images (a 1x1 black fade, a 5x5
-               blank) are colour fills and stretch over the whole widget. */
-            if ((iw > FILL_MAX || ih > FILL_MAX) && iw > 0 && ih > 0) {
-                float k = width / (float)iw < height / (float)ih ? width / (float)iw : height / (float)ih;
-                width = (float)iw * k;
-                height = (float)ih * k;
+            /* An image stretches to its widget's size only when the two have the same shape
+               (16:9 cards and backgrounds) or the image is a tiny colour fill (a 1x1 black
+               fade). Otherwise it is drawn at its own size: 2Fast2Furious and The Bourne
+               Supremacy size their label buttons for the longest translation, and on a PSP
+               each label keeps its own size. */
+            if ((iw > FILL_MAX || ih > FILL_MAX) && iw > 0 && ih > 0 && width > 0 && height > 0) {
+                float shape = (width / height) / ((float)iw / (float)ih);
+                if (shape > 1.015f || shape < 0.985f) {   /* the cards and backgrounds match within 1% */
+                    width = (float)iw;
+                    height = (float)ih;
+                }
             }
             /* Left- or right-anchored images: pos is that edge, so move the centre half a width. */
             float shift = r->r.objects[i].anchor == 1 ? width / 2 : r->r.objects[i].anchor == 2 ? -width / 2 : 0;
@@ -1810,4 +1814,95 @@ void menu_draw(menu *m, canvas *c)
     cur ^= 1;
     valid = 1;
     m->dirty = 0;
+}
+
+/* ---- touch ---- */
+
+#define SWIPE_MIN 60          /* screen pixels a finger moves for a swipe */
+#define TAP_MAX   24          /* and at most, for a tap */
+#define TAP_NEAR  100         /* a tap this close to a button, and on no other, chooses it */
+
+/* The button on the active page under (x, y) on the 960x544 screen, or -1: the topmost visible
+   button image there, else the nearest within TAP_NEAR. Bourne's scene buttons are the numbers
+   under the thumbnails, so a tap on a thumbnail picks the number below it. */
+static int button_at(menu *m, int x, int y)
+{
+    static sprite list[MAX_SPRITES];
+    res *r = m->res;
+    canvas c = {NULL, 960, 544, 960 * 4};
+    xform root;
+    int n = 0;
+
+    memset(&root, 0, sizeof(root));
+    for (int k = 0; k < 3; k++)
+        root.l[k][k] = 1;
+    for (int k = 0; k < 4; k++)
+        root.color[k] = 1;
+    collect(r, &c, r->active, &root, list, &n);
+    for (int k = n - 1; k >= 0; k--) {
+        const sprite *s = &list[k];
+        if (r->r.objects[s->widget].kind == RCO_BUTTON && s->color[3] > 0.05f &&
+            x >= s->box[0] && x < s->box[2] && y >= s->box[1] && y < s->box[3])
+            return s->widget;
+    }
+    {
+        int best = -1, best_d = TAP_NEAR * TAP_NEAR + 1;
+        for (int k = 0; k < n; k++) {
+            const sprite *s = &list[k];
+            int ddx = x < s->box[0] ? s->box[0] - x : x >= s->box[2] ? x - s->box[2] + 1 : 0;
+            int ddy = y < s->box[1] ? s->box[1] - y : y >= s->box[3] ? y - s->box[3] + 1 : 0;
+            if (r->r.objects[s->widget].kind == RCO_BUTTON && s->color[3] > 0.05f && ddx * ddx + ddy * ddy < best_d) {
+                best = s->widget;
+                best_d = ddx * ddx + ddy * ddy;
+            }
+        }
+        return best;
+    }
+}
+
+void menu_touch(menu *m, int down, int x, int y)
+{
+    res *r = m->res;
+    int dx, dy, b;
+
+    if (down) {
+        if (!m->touch_down) {
+            m->touch_down = 1;
+            m->touch_x0 = x;
+            m->touch_y0 = y;
+        }
+        m->touch_x = x;
+        m->touch_y = y;
+        return;
+    }
+    if (!m->touch_down)
+        return;
+    m->touch_down = 0;
+    if (r->active < 0 || m->lock)
+        return;
+    dx = m->touch_x - m->touch_x0;
+    dy = m->touch_y - m->touch_y0;
+    /* A swipe is a direction button, so menus that move their highlight in script follow it. */
+    if (abs(dx) >= SWIPE_MIN || abs(dy) >= SWIPE_MIN) {
+        if (abs(dx) > abs(dy))
+            do_input(m, dx > 0 ? PLAT_BTN_RIGHT : PLAT_BTN_LEFT);
+        else
+            do_input(m, dy > 0 ? PLAT_BTN_DOWN : PLAT_BTN_UP);
+        return;
+    }
+    if (abs(dx) > TAP_MAX || abs(dy) > TAP_MAX)
+        return;
+    if ((b = button_at(m, m->touch_x0, m->touch_y0)) < 0) {
+        /* Nothing to tap: menus that move a highlight in script (Summer Days' choices, a Nav
+           button) get Cross, so a swipe picks and a tap chooses. */
+        do_input(m, PLAT_BTN_CROSS);
+        return;
+    }
+    /* A tap on a button: focus it, as the D-pad would, then choose it. */
+    if (r->focus[r->active] != b) {
+        set_focus(m, b);
+        if (m->res != r || m->lock)
+            return;
+    }
+    do_action_named(m, &r->r.objects[b].action[RCO_BTN_PUSH], b, "onPush");
 }

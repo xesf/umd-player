@@ -59,6 +59,8 @@ void player_set_subtitle(player *p, int subtitle);   /* -1 turns them off */
 void player_set_window(player *p, const float *dst);
 /* Draws this RGBA layer (screen size) instead of the player's own on-screen display, or the
    display again when rgba is NULL. id changes when the picture changes. */
+/* 0 while something else (the disc's menus) takes the touch screen. */
+void player_set_touch(player *p, int on);
 void player_set_layer(player *p, const uint8_t *rgba, int w, int h, int stride, uint32_t id);
 void player_close(player *p);
 

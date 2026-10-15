@@ -198,7 +198,8 @@ def main():
            'screens and choices, then the movie. A disc without menus plays its intros first.')
     p.rows([('D-pad', 'Move between menu items'), ('Cross', 'Choose'),
             ('Circle', 'Back in the menus; the disc\'s menu during the movie'),
-            ('Select', 'Back to the library (or hold Circle)')], key_w=130)
+            ('Select', 'Back to the library (or hold Circle)'),
+            ('Touch', 'Tap an item to choose it; swipe to move')], key_w=130)
     p.y += 8
     p.para('A disc you leave saves its own place, as on a PSP, and continues from there next time. '
            'Square in the library starts it from the beginning.')

@@ -81,6 +81,10 @@ void menu_debug(const menu *m);
 int menu_dirty(const menu *m);
 /* Draws the open pages into c (UI layer, transparent where nothing is drawn). */
 void menu_draw(menu *m, canvas *c);
+/* The touch screen, once per display refresh while the menus have focus: whether a finger
+   is down and where (960x544). A tap on a button, or near one, focuses and chooses it; a
+   tap away from every button is Cross; a swipe is a direction button. */
+void menu_touch(menu *m, int down, int x, int y);
 /* 1 while the active page has a button to take the buttons; the player should not handle them. */
 int menu_has_focus(const menu *m);
 

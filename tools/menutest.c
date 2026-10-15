@@ -7,8 +7,9 @@
                                       run the disc's menus (src/app/menu.c) with a simulated
                                       player on a virtual clock: titles end after their length,
                                       buttons are pressed at the given times (up down left right
-                                      cross circle triangle start, and menu for the menu button
-                                      during playback), and with -o every new menu
+                                      cross circle triangle start, menu for the menu button
+                                      during playback, tap:x:y and swipe:x0:y0:x1:y1 on the
+                                      960x544 touch screen), and with -o every new menu
                                       picture is saved as dir/menu-<ms>.ppm, over the 960x544
                                       PNG given with -b (a frame of the menu video). With -s,
                                       the disc continues from the state in <file> if there is
@@ -359,6 +360,17 @@ static int run_disc(int argc, char **argv)
                 printf("%8.2f s  press %s\n", s.now / 1e6, b + 1);
                 if (strcmp(b + 1, "menu") == 0)      /* Circle during playback, in src/app/disc.c */
                     menu_menu_button(m);
+                {
+                    int x0, y0, x1, y1;
+                    if (sscanf(b + 1, "tap:%d:%d", &x0, &y0) == 2) {
+                        menu_touch(m, 1, x0, y0);
+                        menu_touch(m, 0, 0, 0);
+                    } else if (sscanf(b + 1, "swipe:%d:%d:%d:%d", &x0, &y0, &x1, &y1) == 4) {
+                        menu_touch(m, 1, x0, y0);
+                        menu_touch(m, 1, x1, y1);
+                        menu_touch(m, 0, 0, 0);
+                    }
+                }
             }
         }
         if (s.st.playing && !s.st.paused) {
