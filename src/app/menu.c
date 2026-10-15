@@ -38,6 +38,7 @@ typedef struct tween {
 
 typedef struct anim_run {
     int active, anim, step;
+    int locked;               /* a lock step ran: input waits until an unlock or the end */
     int target;               /* anim.play(widget): the widget for steps that name none */
     uint64_t wait_until;
 } anim_run;
@@ -84,7 +85,7 @@ struct menu {
     anim_run runs[MAX_RUNS];
     mtimer timers[MAX_TIMERS];
     int next_timer;
-    int lock;                 /* input locks from animations */
+    int lock;                 /* animations holding an input lock */
     uint64_t now;
     int dirty;
     user_value user[MAX_USERDATA];
@@ -312,13 +313,40 @@ static void settle(menu *m)
 
 static void play_anim(menu *m, int anim, int target);
 
-/* A widget action from the RCO: a script handler, or an animation played on the widget. */
-static void do_action(menu *m, const rco_action *a, int widget)
+static vs_value widget_value(menu *m, int i);
+
+/* A handler the script set on the widget (Nav.onPush = function ...). Returns 1 if it ran. */
+static int script_handler(menu *m, int widget, const char *name)
 {
+    vsmx *vm = m->res->vm;
+    vs_value w = widget_value(m, widget), fn;
+
+    if (widget < 0)
+        return 0;
+    fn = vs_get(vm, w, vs_intern(vm, name));
+    if (!vs_is_function(fn))
+        return 0;
+    if (getenv("MENU_TRACE"))
+        mlog(m, "menu: %s.%s", m->res->r.objects[widget].name ? m->res->r.objects[widget].name : "?", name);
+    call_value(m, fn, w, &w, 1);
+    return 1;
+}
+
+/* A widget action: a handler the script set on the widget wins; otherwise the RCO's script
+   handler, or an animation played on the widget. */
+static void do_action_named(menu *m, const rco_action *a, int widget, const char *name)
+{
+    if (name && script_handler(m, widget, name))
+        return;
     if (a->event)
         call_event(m, a->event, widget);
     if (a->anim >= 0)
         play_anim(m, a->anim, widget);
+}
+
+static void do_action(menu *m, const rco_action *a, int widget)
+{
+    do_action_named(m, a, widget, NULL);
 }
 
 /* ---- animations ---- */
@@ -339,6 +367,7 @@ static void play_anim(menu *m, int anim, int target)
     if (!run)
         return;
     run->active = 1;
+    run->locked = 0;
     run->anim = anim;
     run->target = target;
     run->step = 0;
@@ -355,7 +384,8 @@ static void step_anims(menu *m)
             const rco_step *s;
             int obj;
             if (run->step >= a->step_count) {
-                run->active = 0;
+                run->active = 0;      /* an animation's lock ends with it */
+                run->locked = 0;
                 break;
             }
             s = &r->r.steps[a->first_step + run->step++];
@@ -366,8 +396,8 @@ static void step_anims(menu *m)
             case RCO_STEP_SCALE: start_tween(m, obj, P_SCALE, s->value, 3, s->duration); break;
             case RCO_STEP_FADE: start_tween(m, obj, P_ALPHA, s->value, 1, s->duration); break;
             case RCO_STEP_DELAY: run->wait_until = m->now + (uint64_t)(s->duration * 1000); break;
-            case RCO_STEP_LOCK: m->lock++; break;
-            case RCO_STEP_UNLOCK: if (m->lock > 0) m->lock--; break;
+            case RCO_STEP_LOCK: run->locked = 1; break;
+            case RCO_STEP_UNLOCK: run->locked = 0; break;
             case RCO_STEP_EVENT:
                 call_event(m, s->event, -1);
                 if (m->res != r)
@@ -394,9 +424,9 @@ static void set_focus(menu *m, int widget)
     r->focus[page] = widget;
     m->dirty = 1;
     if (old >= 0)
-        do_action(m, &r->r.objects[old].action[RCO_BTN_FOCUS_OUT], old);
+        do_action_named(m, &r->r.objects[old].action[RCO_BTN_FOCUS_OUT], old, "onFocusOut");
     if (m->res == r)
-        do_action(m, &r->r.objects[widget].action[RCO_BTN_FOCUS_IN], widget);
+        do_action_named(m, &r->r.objects[widget].action[RCO_BTN_FOCUS_IN], widget, "onFocusIn");
 }
 
 static int first_button(const res *r, int i)
@@ -413,9 +443,9 @@ static int first_button(const res *r, int i)
 
 static void do_input(menu *m, uint32_t pressed)
 {
-    static const struct { uint32_t button; int action; } dirs[] = {
-        {PLAT_BTN_LEFT, RCO_BTN_LEFT}, {PLAT_BTN_RIGHT, RCO_BTN_RIGHT}, {PLAT_BTN_UP, RCO_BTN_UP},
-        {PLAT_BTN_DOWN, RCO_BTN_DOWN}};
+    static const struct { uint32_t button; int action; const char *name; } dirs[] = {
+        {PLAT_BTN_LEFT, RCO_BTN_LEFT, "onFocusLeft"}, {PLAT_BTN_RIGHT, RCO_BTN_RIGHT, "onFocusRight"},
+        {PLAT_BTN_UP, RCO_BTN_UP, "onFocusUp"}, {PLAT_BTN_DOWN, RCO_BTN_DOWN, "onFocusDown"}};
     res *r = m->res;
     int page = r->active, focus;
 
@@ -427,19 +457,23 @@ static void do_input(menu *m, uint32_t pressed)
     if (m->res != r)
         return;
     if (pressed & PLAT_BTN_CIRCLE) {
-        do_action(m, &r->r.objects[page].action[RCO_PAGE_CANCEL], page);
+        /* The focused widget's script handler, then the page's. */
+        if (!script_handler(m, focus, "onCancel"))
+            do_action_named(m, &r->r.objects[page].action[RCO_PAGE_CANCEL], page, "onCancel");
         return;
     }
     if (focus < 0)
         return;
     if (pressed & PLAT_BTN_CROSS) {
-        do_action(m, &r->r.objects[focus].action[RCO_BTN_PUSH], focus);
+        do_action_named(m, &r->r.objects[focus].action[RCO_BTN_PUSH], focus, "onPush");
         return;
     }
     for (unsigned i = 0; i < 4; i++)
         if (pressed & dirs[i].button) {
             const rco_action *a = &r->r.objects[focus].action[dirs[i].action];
-            if (a->object >= 0)
+            if (script_handler(m, focus, dirs[i].name))
+                ;
+            else if (a->object >= 0)
                 set_focus(m, a->object);
             else
                 do_action(m, a, focus);
@@ -1266,6 +1300,9 @@ int menu_update(menu *m, uint32_t pressed, uint64_t now_us)
     }
     step_anims(m);
     step_tweens(m);
+    m->lock = 0;
+    for (int i = 0; i < MAX_RUNS; i++)
+        m->lock += m->runs[i].active && m->runs[i].locked;
     do_input(m, pressed);
     return !m->ended;
 }
