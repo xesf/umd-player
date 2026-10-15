@@ -30,7 +30,7 @@ typedef struct rco_object {
     int kind;                 /* RCO_PAGE, RCO_PLANE, RCO_GROUP, RCO_BUTTON */
     const char *name;
     int parent, first_child, next_sibling;   /* widget indexes, -1 for none */
-    float pos[3];             /* PSP pixels from the parent's centre, y up */
+    float pos[3];             /* units of an 854x480 screen from the parent's centre, y up */
     float color[4];           /* multiplies the image; [3] is alpha */
     float size[3];            /* 0: the image's own size */
     float scale[3];

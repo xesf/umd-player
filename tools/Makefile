@@ -23,14 +23,16 @@ $(BIN)/at3pdec: at3pdec.c $(AT3P) $(wildcard $(CORE)/atrac3p/*.h) | $(BIN)
 $(BIN)/h264prog: h264prog.c $(CORE)/h264.c ../src/platform/macos/h264_progressive.c | $(BIN)
 	$(CC) $(CFLAGS) -o $@ $^
 
-$(BIN)/menutest: menutest.c $(CORE)/rco.c $(CORE)/rco.h | $(BIN)
-	$(CC) $(CFLAGS) -o $@ menutest.c $(CORE)/rco.c
+MENU_SRC = menutest.c host_source.c ../src/app/menu.c $(CORE)/rco.c $(CORE)/vsmx.c $(CORE)/png.c $(CORE)/canvas.c \
+           $(CORE)/font8x8.c $(CORE)/iso9660.c $(CORE)/umdv.c $(CORE)/disc_image.c $(CORE)/jpeg.c
+$(BIN)/menutest: $(MENU_SRC) ../src/app/menu.h $(CORE)/rco.h $(CORE)/vsmx.h | $(BIN)
+	$(CC) $(CFLAGS) -o $@ $(MENU_SRC) -lm
 
 $(BIN)/imgcmp: imgcmp.c host_source.c $(CORE)/disc_image.c $(CORE)/png.c | $(BIN)
 	$(CC) $(CFLAGS) -o $@ $^
 
-$(BIN)/pngdec: pngdec.c $(CORE)/png.c | $(BIN)
-	$(CC) $(CFLAGS) -o $@ $^
+$(BIN)/pngdec: pngdec.c $(CORE)/png.c $(CORE)/jpeg.c | $(BIN)
+	$(CC) $(CFLAGS) -o $@ $^ -lm
 
 PLAYER_CORE = $(CORE)/disc_image.c $(CORE)/iso9660.c $(CORE)/umdv.c $(CORE)/mpeg_ps.c $(CORE)/demux.c $(CORE)/h264.c $(CORE)/vtiming.c \
               $(CORE)/png.c $(CORE)/canvas.c $(CORE)/font8x8.c $(CORE)/cropdetect.c $(CORE)/sfo.c $(CORE)/icons.c
