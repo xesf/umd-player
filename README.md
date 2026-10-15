@@ -28,14 +28,14 @@ The player starts in the disc library: the disc images (`.iso`, `.cso` or `.zso`
 | Circle | | Back to the library | Close the panel |
 | Triangle | Open the settings panel | Open the options panel | Close it |
 | Left, Right | | Back or forward 10 s; hold to rewind or fast-forward | Change the value |
-| Square | Play the disc from the start (while Select shows its resume point) | Next screen mode | |
+| Square | Play the disc from the start | Next screen mode | |
 | Select | Show or hide the disc's title and resume point | Show the title and time | |
 
 On the touch screen, a tap shows or hides the time bar. While the bar shows, touch it and slide to pick a position; playback jumps there when you lift your finger.
 
 The options panel also shows the date, time, and battery level. While a movie plays, the Vita does not dim the screen or go to sleep, and it runs the CPU at 333 MHz instead of 444 MHz to save battery. If the audio ever runs short, the player goes back to 444 MHz for the rest of that movie.
 
-Each disc remembers where you left it and its audio, subtitle, and screen settings (`ux0:data/umdplayer/resume.txt`). Playing it again resumes from there; near the end of the movie it starts over. In the library, Select shows the selected disc's title and, if it has a saved position, how far you got; Square then plays it from the start with the same settings. To quit, use the PS button.
+Each disc remembers where you left it and its audio, subtitle, and screen settings (`ux0:data/umdplayer/resume.txt`). Playing it again resumes from there; near the end of the movie it starts over. In the library, Select shows the selected disc's title and, if it has a saved position, how far you got. Square plays a disc from the start, with the same settings, whether or not that panel shows. To quit, use the PS button.
 
 The library's settings panel (Triangle) sets the defaults for discs you have not played yet: the screen mode (Zoom at first), the audio language (English at first), and the subtitle language (at first the Vita's system language; Off turns them off). A disc without a track in that language uses its first audio track and no subtitles. The settings are kept in `ux0:data/umdplayer/settings.txt`.
 

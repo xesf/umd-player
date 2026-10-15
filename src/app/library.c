@@ -1106,7 +1106,7 @@ int library_update(library *l, uint32_t pressed)
         l->show_info = !l->show_info;
         l->ui_dirty = 1;
     }
-    if ((pressed & PLAT_BTN_SQUARE) && l->show_info && l->discs[l->sel].has_resume) {
+    if ((pressed & PLAT_BTN_SQUARE) && l->discs[l->sel].has_resume) {
         resume_forget_position(file_name(l->discs[l->sel].path));
         l->discs[l->sel].has_resume = 0;
         return l->sel;
