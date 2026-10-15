@@ -11,7 +11,8 @@ BUILD = build/macos
 CORE = src/core/disc_image.c src/core/iso9660.c src/core/umdv.c src/core/mpeg_ps.c src/core/demux.c src/core/h264.c \
        src/core/vtiming.c src/core/deint.c src/core/png.c src/core/canvas.c src/core/font8x8.c src/core/cropdetect.c src/core/sfo.c src/core/icons.c
 AT3P = $(wildcard src/core/atrac3p/*.c)
-APP = src/app/main.c src/app/player.c src/app/screen.c src/app/osd.c src/app/library.c src/app/resume.c
+APP = src/app/main.c src/app/player.c src/app/screen.c src/app/osd.c src/app/library.c src/app/resume.c \
+      src/app/backdrop.c src/app/backdrop_png.c
 MAC = src/platform/macos/mac_sys.c src/platform/macos/mac_video.c src/platform/macos/mac_audio.c \
       src/platform/macos/h264_progressive.c
 

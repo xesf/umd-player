@@ -15,6 +15,7 @@
 #include "../core/sfo.h"
 #include "../core/vtiming.h"
 #include "../platform/platform.h"
+#include "backdrop.h"
 #include "osd.h"
 #include "resume.h"
 #include "version.h"
@@ -24,14 +25,15 @@
 #define UI_H           544
 #define ICON_W         144             /* ICON0.PNG and ICON1.PMF size on every disc */
 #define ICON_H         80
-/* The selected disc's icon, drawn at twice the size, and the panel beside it: together they
-   leave the same margin on the left and the right of the screen. */
-#define BIG_X          72
-#define BIG_Y          192
+/* The selected disc's icon, drawn at twice the size where the PSP draws it, so it covers the
+   place PIC1 backgrounds leave for it (144x80 at 0,106 on the PSP's 480x272 screen); the
+   panel goes beside it. */
+#define BIG_X          0
+#define BIG_Y          212
 #define BIG_R          16              /* corner radius of the selected icon */
 #define PANEL_GAP      24
 #define PANEL_X        (BIG_X + 2 * ICON_W + PANEL_GAP)
-#define PANEL_W        (UI_W - BIG_X - PANEL_X)
+#define PANEL_W        504
 #define SMALL_X        (BIG_X + ICON_W / 2)   /* the other discs, centred under the selected one */
 #define CACHE_N        6               /* discs whose art and sound are kept in memory */
 #define FRAMES_AHEAD   3
@@ -689,30 +691,53 @@ static int load_media(library *l)
 
 /* ---- drawing ---- */
 
-static uint32_t gradient(int y)
+/* The disc's PIC1, or the app's backdrop for discs without one. */
+static void draw_background(library *l)
 {
-    return RGBA(12 + y * 20 / UI_H, 18 + y * 30 / UI_H, 40 + y * 60 / UI_H, 255);
+    const uint8_t *bg = l->bg ? l->bg : backdrop_rgba();
+
+    if (bg) {
+        memcpy(l->ui.rgba, bg, UI_W * UI_H * 4);
+        return;
+    }
+    for (int y = 0; y < UI_H; y++)
+        canvas_rect(&l->ui, 0, y, UI_W, 1, RGBA(12 + y * 20 / UI_H, 18 + y * 30 / UI_H, 40 + y * 60 / UI_H, 255));
 }
 
-/* Puts the background back over n pixels of row y from x (to cut the icon's corners). */
-static void restore_background(library *l, int x, int y, int n)
+/* Fills the area outside the selected icon's rounded corners. PIC1 backgrounds often have a
+   placeholder box exactly where the icon goes, so the corners take the background mirrored
+   from just above or below the icon rather than what is behind them. */
+static void fill_icon_corners(library *l)
 {
-    if (l->bg)
-        memcpy(l->ui.rgba + ((size_t)y * UI_W + x) * 4, l->bg + ((size_t)y * UI_W + x) * 4, (size_t)n * 4);
-    else
-        canvas_rect(&l->ui, x, y, n, 1, gradient(y));
+    const uint8_t *bg = l->bg ? l->bg : backdrop_rgba();
+    int h = 2 * ICON_H;
+
+    if (!bg)
+        return;
+    for (int yy = 0; yy < h; yy++) {
+        int in = canvas_round_inset(BIG_R, h, yy);
+        int src = yy < h / 2 ? BIG_Y - 1 - yy : BIG_Y + h + (h - 1 - yy);
+        if (!in || src < 0 || src >= UI_H)
+            continue;
+        for (int side = 0; side < 2; side++) {
+            int x = side ? BIG_X + 2 * ICON_W - in : BIG_X;
+            memcpy(l->ui.rgba + ((size_t)(BIG_Y + yy) * UI_W + x) * 4, bg + ((size_t)src * UI_W + x) * 4, (size_t)in * 4);
+        }
+    }
+}
+
+/* "UMD Player" at the top left, with "by xesf" in small text like the version. */
+static void draw_app_name(canvas *c, int y)
+{
+    int w = canvas_text(c, 20, y, 2, RGBA(255, 255, 255, 220), "UMD Player");
+    canvas_text(c, 20 + w + 8, y + 8, 1, TEXT_DIM, "by xesf");
 }
 
 static void draw_ui(library *l)
 {
     canvas *c = &l->ui;
 
-    if (l->bg) {
-        memcpy(c->rgba, l->bg, UI_W * UI_H * 4);
-    } else {
-        for (int y = 0; y < UI_H; y++)
-            canvas_rect(c, 0, y, UI_W, 1, gradient(y));
-    }
+    draw_background(l);
 
     /* Neighbours: icons only, one above and two below. */
     for (int k = -1; k <= 2; k++) {
@@ -734,19 +759,13 @@ static void draw_ui(library *l)
     } else if (l->discs[l->sel].icon0) {
         const lib_disc *d = &l->discs[l->sel];
         canvas_blit(c, d->icon0, d->icon_w, d->icon_h, d->icon_w * 4, BIG_X, BIG_Y, 2 * ICON_W, 2 * ICON_H);
-        for (int yy = 0; yy < 2 * ICON_H; yy++) {
-            int in = canvas_round_inset(BIG_R, 2 * ICON_H, yy);
-            if (in) {
-                restore_background(l, BIG_X, BIG_Y + yy, in);
-                restore_background(l, BIG_X + 2 * ICON_W - in, BIG_Y + yy, in);
-            }
-        }
     } else {
         canvas_round_rect(c, BIG_X, BIG_Y, 2 * ICON_W, 2 * ICON_H, BIG_R, RGBA(60, 70, 90, 255));
     }
+    fill_icon_corners(l);
     canvas_round_ring(c, BIG_X - 7, BIG_Y - 7, 2 * ICON_W + 14, 2 * ICON_H + 14, BIG_R + 7, 3, RGBA(255, 255, 255, 230));
     draw_resume_mark(l);
-    canvas_text(c, 20, 18, 2, RGBA(255, 255, 255, 220), "UMD Player");
+    draw_app_name(c, 18);
     canvas_text(c, UI_W - 20 - canvas_text_width("v" UMDPLAYER_VERSION, 1), UI_H - 18, 1, TEXT_DIM, "v" UMDPLAYER_VERSION);
 
     l->info.ui_rgba = c->rgba;
@@ -925,10 +944,14 @@ static void draw_empty(library *l)
 {
     canvas *c = &l->ui;
     const char *title = "No movies found";
+    const uint8_t *bg = backdrop_rgba();
     int y = 150;
 
-    for (int row = 0; row < UI_H; row++)
-        canvas_rect(c, 0, row, UI_W, 1, RGBA(12 + row * 20 / UI_H, 18 + row * 30 / UI_H, 40 + row * 60 / UI_H, 255));
+    if (bg)
+        memcpy(c->rgba, bg, UI_W * UI_H * 4);
+    else
+        canvas_rect(c, 0, 0, UI_W, UI_H, RGBA(12, 22, 52, 255));
+    draw_app_name(c, 72);   /* below the film strip */
     canvas_text(c, (UI_W - canvas_text_width(title, 3)) / 2, y, 3, RGBA(255, 255, 255, 255), title);
     y += 60;
     canvas_text(c, (UI_W - canvas_text_width("Copy .iso, .cso or .zso UMD Video images to:", 2)) / 2, y, 2, TEXT_DIM,
@@ -954,7 +977,8 @@ static void draw_empty(library *l)
         x += canvas_text(c, x, y, 2, TEXT_DIM, again) + 60;
         canvas_text(c, x, y, 2, TEXT_DIM, quit);
     }
-    canvas_text(c, UI_W - 20 - canvas_text_width("v" UMDPLAYER_VERSION, 1), UI_H - 18, 1, TEXT_DIM, "v" UMDPLAYER_VERSION);
+    canvas_text(c, UI_W - 20 - canvas_text_width("v" UMDPLAYER_VERSION, 1), UI_H - 72, 1, TEXT_DIM,
+                "v" UMDPLAYER_VERSION);   /* above the film strip */
     l->info.ui_rgba = c->rgba;
     l->info.ui_w = c->w;
     l->info.ui_h = c->h;

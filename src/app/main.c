@@ -7,6 +7,7 @@
 
 #include "../core/disc_image.h"
 #include "../platform/platform.h"
+#include "backdrop.h"
 #include "library.h"
 #include "player.h"
 
@@ -65,6 +66,7 @@ int app_frame(void)
         if (next >= 0) {
             /* L or R: another title of the same disc. */
             player_options opt = {current_path, next, -1, base_name(current_path)};
+            backdrop_present();
             if ((current = player_open(&opt)) != NULL)
                 return 1;
         }
@@ -81,6 +83,7 @@ int app_frame(void)
         opt.audio = -1;
         opt.resume_key = base_name(current_path);
         library_suspend(lib);
+        backdrop_present();          /* until the movie's first frame */
         current = player_open(&opt);
         if (!current)
             plat_log("cannot play %s\n", opt.iso_path);
