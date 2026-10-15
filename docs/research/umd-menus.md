@@ -1,8 +1,20 @@
 # Research: playing UMD Video disc menus
 
-Status: research on the `umd-menus` branch. This report decides whether the player can run a disc's own menus, as the PSP does, and what that would take. Tool: `tools/rcodump.py`.
+Status: implemented on the `umd-menus` branch. This report started as the feasibility study; the sections below now describe what the code does. Tools: `tools/rcodump.py` (format exploration) and `tools/menutest` (runs a disc's menus with a simulated player).
 
-## Summary
+## Implementation
+
+| File | What it does |
+|---|---|
+| `src/core/rco.c` | Reads an RCO: widget tree, animations and steps, images, script |
+| `src/core/vsmx.c` | Interprets the script bytecode, with a garbage collector and host objects |
+| `src/core/jpeg.c` | Baseline JPEG, for the menu images that are not PNG |
+| `src/app/menu.c` | The menu runtime: `movieplayer`, `controller`, `resource` and `timer`, widgets, animations, timers, input, drawing |
+| `src/app/disc.c` | Joins the menu runtime and the player in the app |
+
+All five test discs run from start-up through their menus to the feature with `tools/menutest -d`, and Not Another Teen Movie does so in the full app on the headless platform.
+
+## Summary (from the study)
 
 Yes, it is feasible. The five test discs use one small, consistent set of player functions. Each disc's menus are a package of PNG images, widget and animation tables, and one compiled script, all in a format we can now read. The remaining work is a script interpreter, a widget and animation runtime, and the player integration. The estimate is three to five weeks. The main risk is discs from other studios that use functions our five discs do not.
 
@@ -76,22 +88,32 @@ The script is compiled JavaScript-like bytecode:
 | `0x1C`, `0x20`, `0x24` | Offset, length and count of the property names (UTF-16LE) |
 | `0x28`, `0x2C`, `0x30` | Offset, length and count of the variable names (8-bit) |
 
-The code is an array of 8-byte instructions: a 32-bit opcode and a 32-bit operand. The 18 scripts total 73,448 instructions and use 50 opcodes. From their operands and context:
+The code is an array of 8-byte instructions: a 32-bit opcode and a 32-bit operand. The 18 scripts total 73,448 instructions and use 50 opcodes. It is a postfix stack machine: a name pushes a reference, which is read when an instruction needs a value or written by an assignment.
 
-| Opcode | Meaning | Operand |
-|---|---|---|
-| `0x2E` | Variable | Index into the variable names |
-| `0x2F`, `0x30`, `0x31` | Read, call, and set a property | Index into the property names |
-| `0x28` | String constant | Index into the strings |
-| `0x26`, `0x27`, `0x25` | Integer, float and boolean constants | The value |
-| `0x2D` | Local variable | Slot |
-| `0x2A` | Function | Start instruction; the top byte of the opcode is the argument count |
-| `0x39`, `0x3B` | Jump if false, jump | Instruction index |
-| `0x3D` | Call | Argument count |
-| `0x22` | End of statement | None |
-| `0x01` to `0x1E` | Assignment, arithmetic, comparison and logic operators | None |
+| Opcode | Meaning |
+|---|---|
+| `0x01` | Assign: pop the value and the reference, write, push the value |
+| `0x02` to `0x06` | `+` (also joins strings), `-`, `*`, `/`, `%` |
+| `0x07`, `0x08`, `0x09` | Unary `+`, `-`, `!` |
+| `0x0A` to `0x0D` | `++x`, `--x`, `x++`, `x--` |
+| `0x0E` to `0x11` | `==`, `!=`, `===`, `!==` |
+| `0x12` to `0x15` | `<`, `<=`, `>=`, `>` |
+| `0x18` | `typeof` |
+| `0x19` to `0x1F` | `&`, `^`, `\|`, `~`, `<<`, `>>`, `>>>` |
+| `0x20`, `0x22` | Duplicate the top entry; pop it (ends a statement) |
+| `0x23`, `0x24` | Push undefined; push null |
+| `0x25`, `0x26`, `0x27`, `0x28` | Boolean, integer, float, string constant (operand: value or string index) |
+| `0x2A` | Function: operand is its first instruction; bits 8-15 of the opcode are the parameter count and bits 24-31 the local slots (parameters are slots 1 to N) |
+| `0x2B`, `0x38` | New array literal; append a value to it |
+| `0x2C`, `0x2D`, `0x2E` | `this`; local slot; variable name |
+| `0x2F`, `0x30`, `0x31` | Property reference; property as a method (keeps the object for `this`); set a property |
+| `0x34`, `0x35`, `0x36` | Item reference `a[i]`; item as a method; set an item |
+| `0x39`, `0x3A`, `0x3B` | Jump; jump if true; jump if false (operand: instruction index) |
+| `0x3C`, `0x3D`, `0x3E` | Call a function, call a method, `new` (operand: argument count) |
+| `0x3F` | Return |
+| `0x45` | End of the script |
 
-About 15 opcodes are still guesses (marked with `?` in `rcodump.py -d`). The next step settles them by checking the disassembly against what the scripts must be doing.
+Objects made with `new F()` inherit from `F.prototype`. The scripts also use `Int`, `Float`, `parseInt`, `isNaN`, `Math`, `Array`, `NULL`, `writeln` and `write`.
 
 ## What the scripts need from the player
 

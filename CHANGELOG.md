@@ -3,7 +3,7 @@
 ## Unreleased
 
 - Adds the LICENSE (MIT), NOTICE and COPYING.LGPLv2.1 files, and ships them in the VPK.
-- Settings: "Start with: Disc" plays a disc's intro titles (warnings, logos, trailers) before the movie; × skips one.
+- Settings: "Start with: Disc" plays a disc through its own menus, as a PSP does (a script interpreter, the menu widgets and animations, and JPEG menu images); discs without menus play their intro titles first.
 - Names the package after the version (umdplayer-v0.3.0.vpk); the Vita app version also comes from version.h.
 
 ## v0.3.0 (2026-10-15)
