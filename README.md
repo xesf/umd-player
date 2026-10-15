@@ -25,9 +25,9 @@ The player starts in the disc library: the disc images (`.iso`, `.cso` or `.zso`
 | L, R | | Previous or next title on the disc (episodes, extras) | |
 | Cross | Play the disc | Pause or play | Go to the chosen chapter |
 | Circle | | Back to the library | Close the panel |
-| Triangle | | Open the options panel | Close it |
+| Triangle | Show or hide the disc's title and resume point | Open the options panel | Close it |
 | Left, Right | | Back or forward 10 s; hold to rewind or fast-forward | Change the value |
-| Square | Play the disc from the start | Next screen mode | |
+| Square | Play the disc from the start (while Triangle shows its resume point) | Next screen mode | |
 | Select | | Show the title and time | |
 | Start | Quit | Back to the library | |
 
@@ -35,7 +35,7 @@ On the touch screen, a tap shows or hides the time bar. While the bar shows, tou
 
 The options panel also shows the date, time, and battery level. While a movie plays, the Vita does not dim the screen or go to sleep, and it runs the CPU at 333 MHz instead of 444 MHz to save battery. If the audio ever runs short, the player goes back to 444 MHz for the rest of that movie.
 
-Each disc remembers where you left it and its audio, subtitle, and screen settings (`ux0:data/umdplayer/resume.txt`). Playing it again resumes from there; near the end of the movie it starts over. In the library, a disc with a saved position shows how far you got, and Square plays it from the start with the same settings.
+Each disc remembers where you left it and its audio, subtitle, and screen settings (`ux0:data/umdplayer/resume.txt`). Playing it again resumes from there; near the end of the movie it starts over. In the library, Triangle shows the selected disc's title and, if it has a saved position, how far you got; Square then plays it from the start with the same settings.
 
 Screen modes:
 

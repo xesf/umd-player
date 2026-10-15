@@ -126,6 +126,7 @@ struct library {
     canvas ui;
     plat_present_info info;
     int ui_dirty;
+    int show_info;                   /* △ toggles the title and resume panel */
     int marks_stale;                 /* reread the resume points: a movie was played */
 };
 
@@ -554,9 +555,9 @@ static void format_time(char *out, size_t size, uint64_t ticks)
     snprintf(out, size, "%u:%02u:%02u", s / 3600, s / 60 % 60, s % 60);
 }
 
-/* Right of the selected icon: the disc's title, how far it was played with × to resume, and
-   □ to start over. */
-static void draw_resume_mark(library *l)
+/* Right of the selected icon, while △ has it on: the disc's title and, for a disc with a saved
+   position, how far it was played with × to resume and □ to start over. */
+static void draw_info(library *l)
 {
     const lib_disc *d = &l->discs[l->sel];
     canvas *c = &l->ui;
@@ -564,13 +565,17 @@ static void draw_resume_mark(library *l)
     int max_chars = (PANEL_W - 32) / 16;
     char title[96], at[16], total[16], line[48];
 
-    if (!d->has_resume)
+    if (!l->show_info)
         return;
     snprintf(title, sizeof(title), "%s", d->title);
     if ((int)strlen(title) > max_chars)
         title[max_chars] = 0;
-    format_time(at, sizeof(at), d->resume_pos - d->resume_start);
     canvas_round_darken(c, PANEL_X, BIG_Y, PANEL_W, 2 * ICON_H, BIG_R, 90);   /* as tall as the icon */
+    if (!d->has_resume) {
+        canvas_text(c, x, y + ICON_H - 8, 2, RGBA(255, 255, 255, 255), title);   /* centred */
+        return;
+    }
+    format_time(at, sizeof(at), d->resume_pos - d->resume_start);
     canvas_text(c, x, y + 18, 2, RGBA(255, 255, 255, 255), title);
     canvas_icon(c, ICON_BUTTON_CROSS, x, y + 46, 2, COLOR_CROSS);
     if (d->resume_end > d->resume_start) {
@@ -726,11 +731,11 @@ static void fill_icon_corners(library *l)
     }
 }
 
-/* "UMD Player" at the top left, with "by xesf" in small text like the version. */
+/* "UMD Player" at the top left, with "by xesf" below it in small text like the version. */
 static void draw_app_name(canvas *c, int y)
 {
-    int w = canvas_text(c, 20, y, 2, RGBA(255, 255, 255, 220), "UMD Player");
-    canvas_text(c, 20 + w + 8, y + 8, 1, TEXT_DIM, "by xesf");
+    canvas_text(c, 20, y, 2, RGBA(255, 255, 255, 220), "UMD Player");
+    canvas_text(c, 20, y + 22, 1, TEXT_DIM, "by xesf");
 }
 
 static void draw_ui(library *l)
@@ -752,8 +757,8 @@ static void draw_ui(library *l)
             canvas_rect(c, SMALL_X, y, ICON_W, ICON_H, RGBA(60, 70, 90, 255));
     }
 
-    /* The selected disc: its ICON1 animation shows through a transparent hole, else ICON0. The
-       corners are rounded, and an outline goes round it. */
+    /* The selected disc: its ICON1 animation shows through a transparent hole, else ICON0, with
+       rounded corners. */
     if (l->icon) {
         canvas_round_rect(c, BIG_X, BIG_Y, 2 * ICON_W, 2 * ICON_H, BIG_R, RGBA(0, 0, 0, 0));
     } else if (l->discs[l->sel].icon0) {
@@ -763,8 +768,7 @@ static void draw_ui(library *l)
         canvas_round_rect(c, BIG_X, BIG_Y, 2 * ICON_W, 2 * ICON_H, BIG_R, RGBA(60, 70, 90, 255));
     }
     fill_icon_corners(l);
-    canvas_round_ring(c, BIG_X - 7, BIG_Y - 7, 2 * ICON_W + 14, 2 * ICON_H + 14, BIG_R + 7, 3, RGBA(255, 255, 255, 230));
-    draw_resume_mark(l);
+    draw_info(l);
     draw_app_name(c, 18);
     canvas_text(c, UI_W - 20 - canvas_text_width("v" UMDPLAYER_VERSION, 1), UI_H - 18, 1, TEXT_DIM, "v" UMDPLAYER_VERSION);
 
@@ -1015,7 +1019,11 @@ int library_update(library *l, uint32_t pressed)
     }
     if (pressed & PLAT_BTN_CROSS)
         return l->sel;
-    if ((pressed & PLAT_BTN_SQUARE) && l->discs[l->sel].has_resume) {
+    if (pressed & PLAT_BTN_TRIANGLE) {
+        l->show_info = !l->show_info;
+        l->ui_dirty = 1;
+    }
+    if ((pressed & PLAT_BTN_SQUARE) && l->show_info && l->discs[l->sel].has_resume) {
         resume_forget_position(file_name(l->discs[l->sel].path));
         l->discs[l->sel].has_resume = 0;
         return l->sel;
