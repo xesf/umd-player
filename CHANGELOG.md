@@ -1,16 +1,14 @@
 # Changelog
 
-## Unreleased
+## v0.5.1 (2026-10-15)
 
-- Disc menus take the touch screen: tap an item to choose it (a tap near a button counts, so Bourne's scene thumbnails work), swipe to move as with the D-pad, and on menus that move their own highlight, tap anywhere to choose.
-- Disc menus: the Cross that chooses a scene no longer also pauses the movie it starts, so one press plays it.
-- Disc menus: an image stretches to its widget only when both have the same shape, or the image is a tiny colour fill; otherwise it keeps its own size, as on a PSP. The Bourne Supremacy's main menu items no longer overlap.
-- Disc menus: getPlayerStatus reports playStatus as the PSP does (0 stopped, 1 playing, 2 paused). Speed no longer stays black after Play Movie.
-- Disc menus: a page without buttons no longer holds the buttons. After choosing a scene in Saw, the movie takes Cross, Triangle and Circle again.
-- Disc menus: Circle on a page that has no Back handler sends the disc's menu event. Saw's Great Titles descriptions go back to the list.
-- Discs with more than about 40 files in a folder play all their titles: a folder whose listing spans several sectors was searched from the wrong place after its first sector (Summer Days clips 35 to 46).
-- Disc menus: movieplayer.play(0, 0), with no title, no longer starts title 1. Speed now shows its warnings and menu instead of starting the movie.
-- Disc menus: 2Fast2Furious's main menu and The Bourne Supremacy's language list are no longer squashed or overlapping.
+- Disc menus take the touch screen: tap an item to choose it (a tap near a button counts, so The Bourne Supremacy's scene thumbnails work), swipe to move as with the D-pad, and on menus that move their own highlight, tap anywhere to choose.
+- One Cross plays a chosen scene: the press no longer also pauses the movie it starts.
+- Speed: shows its warnings and menu (play(0, 0) no longer starts title 1), and the movie no longer stays black after Play Movie (playStatus is 0 stopped, 1 playing, 2 paused, as on a PSP).
+- Saw: after choosing a scene, the movie takes Cross, Triangle and Circle again (a page without buttons no longer holds them), and Circle goes back from a Great Titles description (Circle on a page with no Back handler sends the disc's menu event).
+- Summer Days: every story title plays. A folder whose listing spans several sectors was searched from the wrong place after its first sector, so clips 35 to 46 could not be opened.
+- Menu images stretch to their widget only when both have the same shape, or the image is a tiny colour fill; otherwise they keep their own size, as on a PSP. The menus of The Bourne Supremacy and 2Fast2Furious no longer overlap or look squashed.
+- Tested with Speed, The Dark Knight, 2Fast2Furious and Valiant.
 
 ## v0.5.0 (2026-10-15)
 
