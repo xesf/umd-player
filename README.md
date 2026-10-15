@@ -14,6 +14,7 @@ The screenshots use placeholder discs. With your discs, the library shows each d
 - **Hardware video**: H.264 on the Vita's decoder, including the field-coded discs, with ATRAC3plus audio decoded in software.
 - **A PSP-style library**: each disc's background, animated icon and music; the resume point of every disc.
 - **The disc's own menus** ("Start with: Disc"): logos, warnings, menu screens with their animations, and the disc's audio, subtitle, chapter and extras choices.
+- **Interactive movies (UMD-PG)** such as Summer Days: choices, and passwords to carry the story from disc to disc. Discs played through their menus continue where you left them.
 - **Audio and subtitles**: switch tracks while the movie plays; default languages for new discs, subtitles in the Vita's language.
 - **Screen modes**: Fit, Zoom (finds black bars inside the picture), Fill and Stretch.
 - **Fast seeking**: hold left or right to rewind or fast-forward, jump by chapter, or drag along the time bar on the touch screen.

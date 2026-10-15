@@ -7,7 +7,8 @@
                                       run the disc's menus (src/app/menu.c) with a simulated
                                       player on a virtual clock: titles end after their length,
                                       buttons are pressed at the given times (up down left right
-                                      cross circle triangle start), and with -o every new menu
+                                      cross circle triangle start, and menu for the menu button
+                                      during playback), and with -o every new menu
                                       picture is saved as dir/menu-<ms>.ppm, over the 960x544
                                       PNG given with -b (a frame of the menu video). With -s,
                                       the disc continues from the state in <file> if there is
@@ -356,6 +357,8 @@ static int run_disc(int argc, char **argv)
             if (b && s.now >= at && s.now < at + 16667) {
                 pressed |= button(b + 1);
                 printf("%8.2f s  press %s\n", s.now / 1e6, b + 1);
+                if (strcmp(b + 1, "menu") == 0)      /* Circle during playback, in src/app/disc.c */
+                    menu_menu_button(m);
             }
         }
         if (s.st.playing && !s.st.paused) {

@@ -120,7 +120,7 @@ class Page:
         A.save(self.c, os.path.join(out, '%03d.png' % number))
 
 
-PAGES = 8
+PAGES = 10
 
 
 def main():
@@ -199,17 +199,40 @@ def main():
     p.rows([('D-pad', 'Move between menu items'), ('Cross', 'Choose'),
             ('Circle', 'Back in the menus; the disc\'s menu during the movie'),
             ('Select', 'Back to the library (or hold Circle)')], key_w=130)
+    p.y += 8
+    p.para('A disc you leave saves its own place, as on a PSP, and continues from there next time. '
+           'Square in the library starts it from the beginning.')
     p.save(out, 7)
 
-    p = Page(base, 8, 'Saved data and help')
+    p = Page(base, 8, 'Interactive movies (UMD-PG)')
+    p.para('UMD-PG discs, such as Summer Days, are interactive movies: the story stops at choices, '
+           'and what you choose decides what plays next. They always play through their own menus.')
+    p.rows([('D-pad', 'Move between choices, or password digits'),
+            ('Cross', 'Choose; during the story, pause or play'),
+            ('Circle', 'During the story: show the password for this point'),
+            ('Select', 'Back to the library; the disc continues from here next time')], key_w=130)
+    p.save(out, 8)
+
+    p = Page(base, 9, 'Passwords')
+    p.para('A game on several discs carries your progress to the next disc with a 4-digit password. '
+           'A password also takes you back to a point you reached before.')
+    p.rows([('1', 'During the story, press Circle. Write down the password and the disc it is for.'),
+            ('2', 'Pause with Cross to hide it, and Cross again to play.'),
+            ('3', 'On that disc, choose the title menu option that loads a game (on discs 2 and 3 '
+                  'of Summer Days, the start option).'),
+            ('4', 'Up/Down change a digit, Left/Right move. Choose OK with Cross.')], key_w=40, chars=48)
+    p.save(out, 9)
+
+    p = Page(base, 10, 'Saved data and help')
     p.para('UMD Player remembers where you stopped each disc and its audio, subtitle and screen '
-           'settings, and your settings, in ux0:data/umdplayer/. Deleting a file resets it.')
+           'settings, where you left each disc played through its menus, and your settings, in '
+           'ux0:data/umdplayer/. Deleting a file resets it.')
     p.rows([('Empty', 'Check the folders and the .iso, .cso or .zso names'),
             ('pspemu', 'Missing movies there: enable unsafe homebrew'),
             ('Old icon', 'After an update: delete and install again'),
             ('Freezes', 'Send ux0:data/umdplayer/log.txt'),
             ('Menus', 'If a disc\'s menus misbehave, use Start with: Movie')], key_w=150)
-    p.save(out, 8)
+    p.save(out, 10)
 
 
 if __name__ == '__main__':

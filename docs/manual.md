@@ -37,7 +37,7 @@ The selected disc is the large icon on the left. On a PSP-authored disc, the bac
 |---|---|
 | Up, Down | Choose a disc |
 | ✕ | Play the disc (from where you left it, if you watched it before) |
-| □ | Play the disc from the start, keeping its settings |
+| □ | Play the disc from the start, keeping its settings. With disc menus, the disc starts as if inserted for the first time. |
 | Select | Show or hide the disc's name and resume point |
 | △ | Open the settings |
 | PS button | Leave the app |
@@ -104,9 +104,34 @@ With "Start with: Disc", UMD Player runs the disc's own menus: the menu screens,
 
 Holding ○ for 1.5 seconds also goes back to the library.
 
+When you leave a disc, it saves its own place, as on a PSP. The next time, the disc continues from there. Some discs ask first. In the library, the Select panel says "Continue where you left off", and □ starts the disc from the beginning instead.
+
+## Interactive movies (UMD-PG)
+
+UMD-PG discs are interactive movies. The story stops at choices, and what you choose decides what plays next. Summer Days is one. In the library, the Select panel marks these discs "Interactive movie (UMD-PG)". UMD Player always plays them through their own menus, whatever "Start with" says.
+
+| Button | What it does |
+|---|---|
+| D-pad | Move between the choices in a choice window, or between the digits of a password |
+| ✕ | Choose. During the story: pause or play. |
+| ○ | During the story: show the password for this point of the story |
+| Select | Back to the library. The disc continues from here next time. |
+
+### Passwords
+
+A game on several discs, such as Summer Days, carries your progress from one disc to the next with a 4-digit password. A password also takes you back to a point you reached before.
+
+1. During the story, press ○. The game shows the password for the point you have reached, and the disc that it is for. Write both down.
+2. To hide the password, pause the story with ✕, then press ✕ again to play.
+3. Start the disc that the password is for. In its title menu, choose the option that loads a game. On discs 2 and 3 of Summer Days, the start option itself asks for the password.
+4. Enter the password: Up and Down change a digit, Left and Right move to another digit. Then choose OK (決定) with ✕. Back (戻る) returns to the title menu.
+
+The story continues from the point that the password stands for. You do not need a password to continue the same disc: leaving the disc keeps your place.
+
 ## What UMD Player remembers
 
 - Where you stopped each disc, and its audio, subtitle and screen settings: `ux0:data/umdplayer/resume.txt`.
+- Where you left each disc played through its menus, with the disc's own saved data: `ux0:data/umdplayer/discs.txt`.
 - Your settings: `ux0:data/umdplayer/settings.txt`.
 
 Deleting a file resets what it holds.

@@ -905,6 +905,9 @@ NATIVE(mp_status)
     vs_set(vm, *ret, vs_intern(vm, "playStatus"), vs_int(!st.playing ? 0 : st.paused ? 1 : 2));
     vs_set(vm, *ret, vs_intern(vm, "playListNumber"), vs_int(st.playlist));
     vs_set(vm, *ret, vs_intern(vm, "chapterNumber"), vs_int(st.chapter));
+    /* 0 is normal speed, anything else paused or fast play; the scripts only test for 0.
+       Summer Days shows its password at normal speed and hides it when that changes. */
+    vs_set(vm, *ret, vs_intern(vm, "playSpeed"), vs_int(st.playing && st.paused ? -1 : 0));
     vs_set(vm, *ret, vs_intern(vm, "audioNumber"), vs_int(0xBD00 + st.audio));
     vs_set(vm, *ret, vs_intern(vm, "subtitleNumber"), vs_int(st.subtitle >= 0 ? 0xBD80 + st.subtitle : -1));
     vs_set(vm, *ret, vs_intern(vm, "subtitleFlag"), vs_int(st.subtitle >= 0));

@@ -121,4 +121,6 @@ vita_create_vpk(${VPK_NAME} ${VITA_TITLEID} umdplayer.self
   FILE assets/vita/manual/006.png sce_sys/manual/006.png
   FILE assets/vita/manual/007.png sce_sys/manual/007.png
   FILE assets/vita/manual/008.png sce_sys/manual/008.png
+  FILE assets/vita/manual/009.png sce_sys/manual/009.png
+  FILE assets/vita/manual/010.png sce_sys/manual/010.png
 )

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Manual: interactive movies (UMD-PG) and their passwords, in docs/manual.md and two new pages of the Vita manual.
+- Disc menus: getPlayerStatus has playSpeed (0 at normal speed), so Summer Days shows its password with Circle during the story, and hides it when paused.
 - Discs played through their menus continue where you left them, UMD-PG games included. Leaving a disc runs its controller.onExit, which saves the disc's own state; the next time, controller.onContinuePlay picks up from it, as on a PSP. The state is kept in ux0:data/umdplayer/discs.txt. In the library, the disc shows "Continue where you left off", and □ starts it from the beginning.
 - Disc menus: movieplayer.resume returns 0 when it continues (Harry Potter tests it), and resource.soundtable sound effects are accepted silently (UMD9660).
 - UMD-PG interactive movies (such as Summer Days): detected in the library, always played through their own menus, with their Japanese start menus (JA100000), chapter marks (mark_name, mark_data) and more than 64 titles.
