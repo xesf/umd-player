@@ -16,8 +16,9 @@ atrac3plus.h, atrac3plusdsp.c, atrac3plus_data.h, atrac3plusdec.c):
 Changes for UMD Player, Copyright (c) 2026 xesf, are dated in each file.
 
 The decoder is linked into the app. Its complete source, and the source and
-build files of the whole app, are in this repository, so you can change the
-decoder and rebuild the app with it (cmake -S . -B build/vita).
+build files of the whole app, are at https://github.com/xesf/umd-player, so
+you can change the decoder and rebuild the app with it
+(cmake -S . -B build/vita).
 FFmpeg: https://ffmpeg.org
 
 ------------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.4.0 (2026-10-15)
 
 - Adds the LICENSE (MIT), NOTICE and COPYING.LGPLv2.1 files, and ships them in the VPK.
 - Settings: "Start with: Disc" plays a disc through its own menus, as a PSP does: logos, warnings, menu screens with their animations, and the audio, subtitle, chapter and extras choices they offer. Discs without menus play their intro titles first.
@@ -10,6 +10,7 @@
 - The time bar shows the disc's name; the options panel no longer lists the playlist entry.
 - A disc without PIC1 art keeps the app name and version clear of the backdrop's film strip, and shows its file name without the extension.
 - Adds a user manual with screenshots (docs/manual.md), and an 8-page version in the VPK for the LiveArea's Manual button.
+- The README has screenshots, a feature list and install steps.
 - Names the package after the version (umdplayer-v0.3.0.vpk); the Vita app version also comes from version.h.
 
 ## v0.3.0 (2026-10-15)
