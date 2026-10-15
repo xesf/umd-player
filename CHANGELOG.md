@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The library takes the touch screen: drag up or down to move through the discs, tap a disc above or below to select it, and tap the selected disc to play it.
+
 ## v0.5.1 (2026-10-15)
 
 - Disc menus take the touch screen: tap an item to choose it (a tap near a button counts, so The Bourne Supremacy's scene thumbnails work), swipe to move as with the D-pad, and on menus that move their own highlight, tap anywhere to choose.

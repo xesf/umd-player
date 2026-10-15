@@ -156,7 +156,8 @@ def main():
     put_half(p.c, os.path.join(shots, 'library.png'), W - LEFT - 480, p.y)
     p.rows([('Up/Down', 'Choose a disc'), ('Cross', 'Play, from where you stopped'),
             ('Square', 'Play from the start'), ('Select', 'Disc name and resume point'),
-            ('Triangle', 'Settings'), ('PS', 'Leave the app')], key_w=150, chars=13)
+            ('Triangle', 'Settings'), ('Touch', 'Drag; tap to play'), ('PS', 'Leave the app')],
+           key_w=150, chars=13)
     p.y = max(p.y, BAND + 74 + 272 + 16)
     p.para('Discs show their own background, animated icon and music, as on a PSP.')
     p.save(out, 3)

@@ -46,6 +46,8 @@
 #define PIC_MAX_W      960
 #define PIC_MAX_H      544
 
+#define DRAG_STEP      90              /* finger travel per disc when dragging the list: its spacing */
+#define TAP_MOVE       24              /* at most this much movement for a tap */
 #define TEXT_DIM  RGBA(180, 190, 210, 255)
 
 typedef struct lib_disc {
@@ -132,6 +134,7 @@ struct library {
     plat_present_info info;
     int ui_dirty;
     int show_info;                   /* SELECT toggles the title and resume panel */
+    int touch_down, touch_x0, touch_y0, touch_step_y, touch_moved;   /* a finger on the screen */
     int settings_open, settings_row; /* △: the defaults for new discs */
     int marks_stale;                 /* reread the resume points: a movie was played */
 };
@@ -1121,6 +1124,54 @@ static void draw_empty(library *l)
     l->ui_dirty = 0;
 }
 
+/* The touch screen, as buttons. Dragging up or down moves through the list, a disc per
+   DRAG_STEP; a tap on the selected disc plays it, and a tap on one above or below selects it. */
+static uint32_t touch_buttons(library *l)
+{
+    int x, y, down = plat_touch(&x, &y);
+    uint32_t b = 0;
+
+    if (down && !l->touch_down) {
+        l->touch_down = 1;
+        l->touch_x0 = x;
+        l->touch_y0 = l->touch_step_y = y;
+        l->touch_moved = 0;
+    }
+    if (down) {
+        if (abs(x - l->touch_x0) > TAP_MOVE || abs(y - l->touch_y0) > TAP_MOVE)
+            l->touch_moved = 1;
+        if (y - l->touch_step_y <= -DRAG_STEP) {     /* the list follows the finger up: next disc */
+            l->touch_step_y -= DRAG_STEP;
+            b |= PLAT_BTN_DOWN;
+        } else if (y - l->touch_step_y >= DRAG_STEP) {
+            l->touch_step_y += DRAG_STEP;
+            b |= PLAT_BTN_UP;
+        }
+        return b;
+    }
+    if (!l->touch_down)
+        return 0;
+    l->touch_down = 0;
+    if (l->touch_moved || l->settings_open)
+        return 0;
+    x = l->touch_x0;
+    y = l->touch_y0;
+    if (x >= BIG_X && x < BIG_X + 2 * ICON_W && y >= BIG_Y && y < BIG_Y + 2 * ICON_H)
+        return PLAT_BTN_CROSS;
+    if (x < SMALL_X - 16 || x >= SMALL_X + ICON_W + 16)
+        return 0;
+    if (y >= BIG_Y - 100 && y < BIG_Y - 100 + ICON_H)
+        return PLAT_BTN_UP;
+    for (int k = 1; k <= 2; k++) {               /* the discs below, as draw_ui places them */
+        int top = BIG_Y + 2 * ICON_H + 20 + (k - 1) * 90;
+        if (y >= top && y < top + ICON_H && l->sel + k < l->count) {
+            l->sel += k - 1;                     /* the Down below makes it k */
+            return PLAT_BTN_DOWN;
+        }
+    }
+    return 0;
+}
+
 int library_update(library *l, uint32_t pressed)
 {
     int present = 0;
@@ -1145,6 +1196,7 @@ int library_update(library *l, uint32_t pressed)
         load_resume_marks(l);
         l->ui_dirty = 1;
     }
+    pressed |= touch_buttons(l);
     if (l->settings_open) {
         settings_input(l, pressed);
         pressed = 0;
