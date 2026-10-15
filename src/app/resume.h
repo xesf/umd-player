@@ -21,4 +21,10 @@ void resume_save(const resume_entry *e);
 /* Keeps the settings for key but forgets the position, so the disc plays from the start. */
 void resume_forget_position(const char *key);
 
+/* A disc played through its menus keeps the menus' own state instead: their user data and
+   resume point, and the title and position playing when the disc was left (src/app/disc.c).
+   The text is one line, kept in discs.txt by the same key. */
+int disc_state_load(const char *key, char *out, int size);   /* 0 when the disc has one */
+void disc_state_save(const char *key, const char *text);     /* NULL forgets it */
+
 #endif

@@ -771,7 +771,25 @@ static int anim_get(vsmx *vm, void *host, const char *key, vs_value *out)
     return 0;
 }
 
-/* resource.pagetable, resource.animtable, resource.texturetable: the host is a table kind. */
+/* resource.soundtable.<name>: menu sound effects. They are not played; play and stop do
+   nothing, so the scripts that call them carry on. */
+NATIVE(sound_nothing)
+{
+    (void)vm; (void)user; (void)self; (void)args; (void)argc; (void)ret;
+}
+
+static int sound_get(vsmx *vm, void *host, const char *key, vs_value *out)
+{
+    if (strcmp(key, "play") != 0 && strcmp(key, "stop") != 0)
+        return 0;
+    *out = vs_new_native(vm, sound_nothing, host);
+    return 1;
+}
+
+static const vs_class sound_class = {"sound", sound_get, NULL, NULL, NULL};
+
+/* resource.pagetable, resource.animtable, resource.texturetable, resource.soundtable: the host
+   is a table kind. */
 static int table_get(vsmx *vm, void *host, const char *key, vs_value *out)
 {
     ref *rf = host;
@@ -780,6 +798,10 @@ static int table_get(vsmx *vm, void *host, const char *key, vs_value *out)
 
     (void)vm;
     *out = vs_undef();
+    if (rf->index == 3) {
+        *out = vs_new_host(vm, &sound_class, rf->m);
+        return 1;
+    }
     if (rf->index == 0) {
         if ((i = rco_find_object(&r->r, key)) >= 0 && r->r.objects[i].kind == RCO_PAGE)
             *out = widget_value(rf->m, i);
@@ -868,8 +890,8 @@ NATIVE(mp_stop)
 NATIVE(mp_resume)
 {
     menu *m = user;
-    (void)vm; (void)self; (void)args; (void)argc; (void)ret;
-    m->p.resume(m->p.user);
+    (void)vm; (void)self; (void)args; (void)argc;
+    *ret = vs_int(m->p.resume(m->p.user));     /* scripts test for 0 before playing from the start */
 }
 
 NATIVE(mp_status)
@@ -1123,13 +1145,13 @@ static int timer_get(vsmx *vm, void *host, const char *key, vs_value *out)
     return 0;
 }
 
-static ref table_refs[3];
+static ref table_refs[4];
 
 static int resource_get(vsmx *vm, void *host, const char *key, vs_value *out)
 {
     menu *m = host;
     int kind = strcmp(key, "pagetable") == 0 ? 0 : strcmp(key, "animtable") == 0 ? 1
-             : strcmp(key, "texturetable") == 0 ? 2 : -1;
+             : strcmp(key, "texturetable") == 0 ? 2 : strcmp(key, "soundtable") == 0 ? 3 : -1;
 
     if (kind < 0)
         return 0;
@@ -1333,6 +1355,87 @@ static void call_handler(menu *m, const char *object, const char *handler, const
 void menu_start(menu *m)
 {
     call_handler(m, "controller", "onAutoPlay", NULL, 0);
+}
+
+int menu_continue(menu *m)
+{
+    vsmx *vm = m->res->vm;
+    vs_value obj = vs_global(vm, "controller");
+    vs_value fn = vs_get(vm, obj, vs_intern(vm, "onContinuePlay"));
+
+    if (!vs_is_function(fn))
+        return 0;
+    call_value(m, fn, obj, NULL, 0);
+    return 1;
+}
+
+void menu_exit(menu *m)
+{
+    menu_status st;
+
+    m->p.status(m->p.user, &st);
+    if (st.playing) {
+        m->resume_playlist = st.playlist;
+        m->resume_chapter = st.chapter;
+    }
+    call_handler(m, "controller", "onExit", NULL, 0);
+}
+
+/* "v1 playlist chapter audio subtitle subtitle_on count" and the user data, each value a
+   letter and its text: i42, f0.5, b1, s with the string in hex, u for undefined. */
+int menu_get_state(const menu *m, char *out, int size)
+{
+    int len = snprintf(out, (size_t)size, "v1 %d %d %d %d %d %d", m->resume_playlist, m->resume_chapter, m->audio_id,
+                       m->sub_id, m->sub_on, m->user_count);
+
+    for (int i = 0; i < m->user_count && len < size; i++) {
+        const user_value *u = &m->user[i];
+        if (u->type == VS_NUM && u->is_int)
+            len += snprintf(out + len, (size_t)(size - len), " i%.0f", u->n);
+        else if (u->type == VS_NUM)
+            len += snprintf(out + len, (size_t)(size - len), " f%.17g", u->n);
+        else if (u->type == VS_BOOL)
+            len += snprintf(out + len, (size_t)(size - len), " b%d", u->n != 0);
+        else if (u->type == VS_STR) {
+            len += snprintf(out + len, (size_t)(size - len), " s");
+            for (const char *c = u->s; *c && len < size; c++)
+                len += snprintf(out + len, (size_t)(size - len), "%02x", (unsigned char)*c);
+        } else
+            len += snprintf(out + len, (size_t)(size - len), " u");
+    }
+    return len < size ? len : 0;
+}
+
+void menu_set_state(menu *m, const char *text)
+{
+    int count, n = 0;
+    const char *p;
+
+    if (sscanf(text, "v1 %d %d %d %d %d %d%n", &m->resume_playlist, &m->resume_chapter, &m->audio_id, &m->sub_id,
+               &m->sub_on, &count, &n) < 6 || count < 0)
+        return;
+    p = text + n;
+    m->user_count = 0;
+    while (m->user_count < count && m->user_count < MAX_USERDATA) {
+        user_value *u = &m->user[m->user_count++];
+        int len = 0;
+        while (*p == ' ')
+            p++;
+        memset(u, 0, sizeof(*u));
+        u->type = VS_UNDEF;
+        if (*p == 'i' || *p == 'f' || *p == 'b') {
+            u->type = *p == 'b' ? VS_BOOL : VS_NUM;
+            u->is_int = *p == 'i';
+            u->n = strtod(p + 1, NULL);
+        } else if (*p == 's') {
+            unsigned c;
+            u->type = VS_STR;
+            for (p++; len < (int)sizeof(u->s) - 1 && sscanf(p, "%2x", &c) == 1 && p[0] != ' '; p += 2)
+                u->s[len++] = (char)c;
+        }
+        while (*p && *p != ' ')
+            p++;
+    }
 }
 
 void menu_playlist_ended(menu *m, int playlist)

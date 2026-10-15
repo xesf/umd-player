@@ -9,7 +9,11 @@
                                       buttons are pressed at the given times (up down left right
                                       cross circle triangle start), and with -o every new menu
                                       picture is saved as dir/menu-<ms>.ppm, over the 960x544
-                                      PNG given with -b (a frame of the menu video) */
+                                      PNG given with -b (a frame of the menu video). With -s,
+                                      the disc continues from the state in <file> if there is
+                                      one (controller.onContinuePlay), and leaves at the end
+                                      (controller.onExit) saving its state there, as
+                                      src/app/disc.c does */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -197,18 +201,22 @@ static void sim_stop(void *user)
 {
     sim *s = user;
     printf("%8.2f s  STOP\n", s->now / 1e6);
-    s->saved_playlist = s->st.playlist;
-    s->saved_chapter = s->st.chapter;
+    if (s->st.playing) {      /* as src/app/disc.c: a stop with nothing playing keeps the last */
+        s->saved_playlist = s->st.playlist;
+        s->saved_chapter = s->st.chapter;
+    }
     s->st.playing = 0;
     s->st.playlist = 0;
 }
 
-static void sim_resume(void *user)
+static int sim_resume(void *user)
 {
     sim *s = user;
     printf("%8.2f s  RESUME\n", s->now / 1e6);
-    if (s->saved_playlist)
-        sim_play(user, s->saved_playlist, s->saved_chapter, s->st.audio, s->st.subtitle);
+    if (!s->saved_playlist)
+        return -1;
+    sim_play(user, s->saved_playlist, s->saved_chapter, s->st.audio, s->st.subtitle);
+    return 0;
 }
 
 static void sim_status(void *user, menu_status *st)
@@ -302,7 +310,9 @@ static int run_disc(int argc, char **argv)
                       sim_log};
     menu *m;
     double seconds = argc > 3 ? atof(argv[3]) : 30;
-    const char *outdir = NULL;
+    const char *outdir = NULL, *state = NULL;
+    char text[4096];
+    FILE *sf;
     canvas c = {NULL, 960, 544, 960 * 4};
     int unsaved = 0;
     uint64_t last_save = 0;
@@ -310,6 +320,8 @@ static int run_disc(int argc, char **argv)
     for (int i = 4; i < argc; i++) {
         if (strcmp(argv[i], "-o") == 0 && i + 1 < argc)
             outdir = argv[i + 1];
+        if (strcmp(argv[i], "-s") == 0 && i + 1 < argc)
+            state = argv[i + 1];
         if (strcmp(argv[i], "-b") == 0 && i + 1 < argc)
             load_background(argv[i + 1]);
     }
@@ -324,7 +336,18 @@ static int run_disc(int argc, char **argv)
         printf("no menus\n");
         return 1;
     }
-    menu_start(m);
+    if (state && (sf = fopen(state, "r")) != NULL) {
+        int n = 0;
+        if (fgets(text, sizeof(text), sf) && sscanf(text, "%d %d %n", &s.saved_playlist, &s.saved_chapter, &n) >= 2) {
+            menu_set_state(m, text + n);
+            printf("    0.00 s  CONTINUE title %d chapter %d\n", s.saved_playlist, s.saved_chapter);
+        }
+        fclose(sf);
+        if (!s.saved_playlist || !menu_continue(m))
+            menu_start(m);
+    } else {
+        menu_start(m);
+    }
     for (s.now = 0; s.now < (uint64_t)(seconds * 1e6); s.now += 16667) {
         uint32_t pressed = 0;
         for (int i = 4; i < argc; i++) {
@@ -380,6 +403,19 @@ static int run_disc(int argc, char **argv)
             last_save = s.now;
             unsaved = 0;
         }
+    }
+    if (state && (sf = fopen(state, "w")) != NULL) {
+        int n;
+        if (s.st.playing) {
+            s.saved_playlist = s.st.playlist;
+            s.saved_chapter = s.st.chapter;
+        }
+        printf("%8.2f s  EXIT\n", s.now / 1e6);
+        menu_exit(m);
+        n = snprintf(text, sizeof(text), "%d %d ", s.saved_playlist, s.saved_chapter);
+        menu_get_state(m, text + n, (int)sizeof(text) - n);
+        fprintf(sf, "%s\n", text);
+        fclose(sf);
     }
     menu_close(m);
     free(c.rgba);

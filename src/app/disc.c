@@ -9,12 +9,14 @@
 #include "../platform/platform.h"
 #include "menu.h"
 #include "player.h"
+#include "resume.h"
 
 #define LAYER_W     960
 #define LAYER_H     544
 #define UNITS_W     854.0f
 #define UNITS_H     480.0f
 #define QUIT_HOLD   1500000          /* us Circle is held to leave the disc */
+#define STATE_MAX   4096
 
 struct disc {
     char path[512];
@@ -36,8 +38,17 @@ struct disc {
     int layer_shown;          /* the menus have something on screen */
     uint32_t presented;       /* layer_id last presented without a player */
     uint64_t circle_since;
-    int done;
+    int menus_ended;          /* controller.end: the disc finished, nothing to continue */
 };
+
+/* The key of the disc's saved state: its file name, as for resume.txt. */
+static const char *state_key(const disc *d)
+{
+    const char *s = strrchr(d->path, '/'), *c = strrchr(d->path, ':');
+    if (c && (!s || c > s))
+        s = c;
+    return s ? s + 1 : d->path;
+}
 
 /* ---- the player the menus drive ---- */
 
@@ -113,15 +124,16 @@ static void d_stop(void *user)
     d->layer_id++;
 }
 
-static void d_resume(void *user)
+static int d_resume(void *user)
 {
     disc *d = user;
 
     if (!d->stopped_title)
-        return;
+        return -1;
     d->audio = d->stopped_audio;
     d->subtitle = d->stopped_sub;
     start(d, d->stopped_title, 0, d->stopped_pos);
+    return d->pl ? 0 : -1;
 }
 
 static void d_status(void *user, menu_status *st)
@@ -179,6 +191,43 @@ static void d_log(void *user, const char *msg)
 
 /* ---- public ---- */
 
+/* "title pos audio subtitle" of the title the disc was left in, then the menus' state. */
+static int load_state(disc *d)
+{
+    static char text[STATE_MAX];
+    unsigned long long pos;
+    int n = 0;
+
+    if (disc_state_load(state_key(d), text, sizeof(text)) < 0 ||
+        sscanf(text, "%d %llu %d %d %n", &d->stopped_title, &pos, &d->stopped_audio, &d->stopped_sub, &n) < 4 || !n)
+        return 0;
+    d->stopped_pos = pos;
+    menu_set_state(d->m, text + n);
+    return 1;
+}
+
+static void save_state(disc *d)
+{
+    static char text[STATE_MAX];
+    int n;
+
+    if (d->menus_ended) {
+        disc_state_save(state_key(d), NULL);
+        return;
+    }
+    if (d->pl) {              /* the disc was left during a title: the PSP keeps its place */
+        d->stopped_title = d->title;
+        d->stopped_pos = player_position(d->pl);
+        d->stopped_audio = player_audio(d->pl);
+        d->stopped_sub = from_substream(player_subtitle(d->pl));
+    }
+    menu_exit(d->m);
+    n = snprintf(text, sizeof(text), "%d %llu %d %d ", d->stopped_title, (unsigned long long)d->stopped_pos,
+                 d->stopped_audio, d->stopped_sub);
+    if (menu_get_state(d->m, text + n, (int)sizeof(text) - n) > 0)
+        disc_state_save(state_key(d), text);
+}
+
 disc *disc_open(const char *iso_path)
 {
     disc *d = calloc(1, sizeof(disc));
@@ -214,6 +263,10 @@ disc *disc_open(const char *iso_path)
         return NULL;
     }
     plat_log("disc: running the menus of %s\n", iso_path);
+    if (load_state(d) && menu_continue(d->m)) {
+        plat_log("disc: continuing where it was left\n");
+        return d;
+    }
     menu_start(d->m);
     return d;
 }
@@ -259,8 +312,10 @@ int disc_update(disc *d, uint32_t pressed)
     if (d->pl && player_menu_requested(d->pl))
         menu_menu_button(d->m);
 
-    if (!menu_update(d->m, menu_focus ? pressed : 0, plat_time_us()))
+    if (!menu_update(d->m, menu_focus ? pressed : 0, plat_time_us())) {
+        d->menus_ended = 1;
         return 0;
+    }
     /* The menu layer before the player draws, so a frame never shows with the last frame's
        layer (it decides between Fit and the user's screen mode). */
     if (menu_dirty(d->m)) {
@@ -298,6 +353,8 @@ void disc_close(disc *d)
 {
     if (!d)
         return;
+    if (d->m)
+        save_state(d);
     player_close(d->pl);
     menu_close(d->m);
     free(d->layer.rgba);

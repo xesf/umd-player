@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Discs played through their menus continue where you left them, UMD-PG games included. Leaving a disc runs its controller.onExit, which saves the disc's own state; the next time, controller.onContinuePlay picks up from it, as on a PSP. The state is kept in ux0:data/umdplayer/discs.txt. In the library, the disc shows "Continue where you left off", and □ starts it from the beginning.
+- Disc menus: movieplayer.resume returns 0 when it continues (Harry Potter tests it), and resource.soundtable sound effects are accepted silently (UMD9660).
 - UMD-PG interactive movies (such as Summer Days): detected in the library, always played through their own menus, with their Japanese start menus (JA100000), chapter marks (mark_name, mark_data) and more than 64 titles.
 - Disc menus: integer arithmetic as on the PSP, string methods, top-level script calls, movieplayer.getPos and getSize, and pages drawn in their RCO order (Up in Smoke's song list works).
 - UMD-PG: the game starts where the title menu sends it (getUserData returns an empty array to fill, not undefined), choice windows open between clips (getPlayerStatus still names the title that just ended), and play(-1) holds the picture under a choice.

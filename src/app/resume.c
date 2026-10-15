@@ -81,3 +81,49 @@ void resume_forget_position(const char *key)
     e.pos = 0;
     resume_save(&e);
 }
+
+/* ---- disc state: "key<TAB>text" lines, the newest first ---- */
+
+#define DISC_FILE "discs.txt"
+
+int disc_state_load(const char *key, char *out, int size)
+{
+    static char buf[MAX_BYTES + 1];
+    int n = plat_data_load(DISC_FILE, buf, MAX_BYTES);
+    size_t klen = strlen(key);
+    char *line, *save = NULL;
+
+    if (n <= 0)
+        return -1;
+    buf[n] = 0;
+    for (line = strtok_r(buf, "\n", &save); line; line = strtok_r(NULL, "\n", &save))
+        if (strncmp(line, key, klen) == 0 && line[klen] == '\t') {
+            snprintf(out, (size_t)size, "%s", line + klen + 1);
+            return 0;
+        }
+    return -1;
+}
+
+void disc_state_save(const char *key, const char *text)
+{
+    static char in[MAX_BYTES + 1], out[MAX_BYTES + 4096];
+    int size = plat_data_load(DISC_FILE, in, MAX_BYTES), len = 0, kept = 0;
+    size_t klen = strlen(key);
+    char *line, *save = NULL;
+
+    if (text)
+        len = snprintf(out, sizeof(out), "%s\t%s\n", key, text);
+    if (size > 0) {
+        in[size] = 0;
+        for (line = strtok_r(in, "\n", &save); line && kept < MAX_KEEP; line = strtok_r(NULL, "\n", &save)) {
+            if (!strchr(line, '\t') || (strncmp(line, key, klen) == 0 && line[klen] == '\t'))
+                continue;
+            if (len + (int)strlen(line) + 2 >= (int)sizeof(out))
+                break;
+            len += snprintf(out + len, sizeof(out) - (size_t)len, "%s\n", line);
+            kept++;
+        }
+    }
+    if (plat_data_save(DISC_FILE, out, len) < 0)
+        plat_log("cannot save the disc state\n");
+}

@@ -53,7 +53,8 @@ typedef struct lib_disc {
     char title[96];
     uint8_t *icon0;                  /* RGBA, or NULL */
     int icon_w, icon_h;
-    int has_resume;                  /* a saved position past the start */
+    int has_resume;                  /* a saved position past the start, or a saved disc state */
+    int resume_disc;                 /* played through its menus: has_resume is the disc state */
     int interactive;                 /* UMD-PG: an interactive movie, played through its menus */
     uint64_t resume_pos, resume_start, resume_end;   /* 90 kHz; start and end are 0 for 0.1.0 entries */
 } lib_disc;
@@ -580,6 +581,12 @@ static void load_resume_marks(library *l)
     for (int i = 0; i < l->count; i++) {
         lib_disc *d = &l->discs[i];
         resume_entry e;
+        static char state[4096];
+        d->resume_disc = settings_get()->start_disc || d->interactive;
+        if (d->resume_disc) {
+            d->has_resume = disc_state_load(file_name(d->path), state, sizeof(state)) == 0;
+            continue;
+        }
         d->has_resume = resume_load(file_name(d->path), &e) == 0 && e.pos > e.start && e.pos > 0;
         d->resume_pos = e.pos;
         d->resume_start = e.start;
@@ -619,7 +626,9 @@ static void draw_info(library *l)
     format_time(at, sizeof(at), d->resume_pos - d->resume_start);
     canvas_text(c, x, y + 18, 2, RGBA(255, 255, 255, 255), title);
     canvas_icon(c, ICON_BUTTON_CROSS, x, y + 46, 2, COLOR_CROSS);
-    if (d->resume_end > d->resume_start) {
+    if (d->resume_disc) {
+        snprintf(line, sizeof(line), "Continue where you left off");
+    } else if (d->resume_end > d->resume_start) {
         uint64_t len = d->resume_end - d->resume_start, done = d->resume_pos - d->resume_start;
         int fill = done >= len ? w : (int)(done * (uint64_t)w / len);
         format_time(total, sizeof(total), len);
@@ -792,6 +801,7 @@ static void settings_input(library *l, uint32_t pressed)
     if (pressed & (PLAT_BTN_CIRCLE | PLAT_BTN_TRIANGLE)) {
         l->settings_open = 0;
         l->ui_dirty = 1;
+        l->marks_stale = 1;           /* "Start with" decides which resume point a disc shows */
         settings_save();
         return;
     }
@@ -1153,6 +1163,7 @@ int library_update(library *l, uint32_t pressed)
     }
     if ((pressed & PLAT_BTN_SQUARE) && l->discs[l->sel].has_resume) {
         resume_forget_position(file_name(l->discs[l->sel].path));
+        disc_state_save(file_name(l->discs[l->sel].path), NULL);
         l->discs[l->sel].has_resume = 0;
         return l->sel;
     }

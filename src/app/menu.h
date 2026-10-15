@@ -34,8 +34,9 @@ typedef struct menu_player {
        subtitle -1 for off. */
     void (*play)(void *user, int playlist, int chapter, int audio, int subtitle);
     void (*stop)(void *user);
-    /* Continue the title that was playing before the menu stopped it. */
-    void (*resume)(void *user);
+    /* Continue the title that was playing before the menu stopped it. Returns 0, or -1 when
+       there is nothing to continue. */
+    int (*resume)(void *user);
     void (*status)(void *user, menu_status *st);
     void (*set_audio)(void *user, int audio);
     void (*set_subtitle)(void *user, int subtitle);   /* -1 turns subtitles off */
@@ -51,6 +52,17 @@ void menu_close(menu *m);
 
 /* Starts the disc as when it is inserted (controller.onAutoPlay). */
 void menu_start(menu *m);
+
+/* Starts the disc where it was left (controller.onContinuePlay), after menu_set_state.
+   Returns 0, having done nothing, if the disc has no such handler. */
+int menu_continue(menu *m);
+/* The user leaves the disc: records what is playing for getResumeInfo, then runs
+   controller.onExit, where discs save their state with setUserData. */
+void menu_exit(menu *m);
+/* The state that outlives the disc: user data, resume point and stream choices, as one line
+   of text. menu_get_state returns its length (0 if it did not fit). */
+int menu_get_state(const menu *m, char *out, int size);
+void menu_set_state(menu *m, const char *text);
 
 /* Call once per display refresh with the buttons pressed since the last call (PLAT_BTN_*)
    and the time. Returns 0 when the menus ended (controller.end). */
