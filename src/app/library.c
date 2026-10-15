@@ -30,7 +30,7 @@
 /* The selected disc's icon, drawn at twice the size where the PSP draws it, so it covers the
    place PIC1 backgrounds leave for it (144x80 at 0,106 on the PSP's 480x272 screen); the
    panel goes beside it. */
-#define BIG_X          1
+#define BIG_X          2
 #define BIG_Y          212
 #define BIG_R          16              /* corner radius of the selected icon */
 #define PANEL_GAP      24
