@@ -352,8 +352,7 @@ static int run_disc(int argc, char **argv)
             if (s.now >= s.title_end) {
                 int pl = s.st.playlist;
                 printf("%8.2f s  END title %d\n", s.now / 1e6, pl);
-                s.st.playing = 0;
-                s.st.playlist = 0;
+                s.st.playing = 0;            /* playlist stays: the scripts ask which one ended */
                 last_chapter = 0;
                 menu_playlist_ended(m, pl);
             }

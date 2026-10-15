@@ -129,7 +129,7 @@ static void d_status(void *user, menu_status *st)
         return;
     st->playing = !player_title_ended(d->pl);
     st->paused = player_paused(d->pl);
-    st->playlist = st->playing ? d->title : 0;
+    st->playlist = d->title;  /* still the title that ended, while onPlayListEnd runs */
     st->chapter = player_chapter(d->pl);
     st->audio = player_audio(d->pl);
     st->subtitle = player_subtitle(d->pl);

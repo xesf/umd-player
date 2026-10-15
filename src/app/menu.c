@@ -17,6 +17,7 @@
 #define MAX_TIMERS   32
 #define MAX_PAGES    16
 #define MAX_USERDATA 64
+#define USERDATA_EMPTY 32           /* getUserData before anything was saved */
 #define UNITS_W      854.0f           /* menu coordinates: a 16:9 screen 480 units high */
 #define UNITS_H      480.0f
 
@@ -403,7 +404,8 @@ static void step_anims(menu *m)
             case RCO_STEP_LOCK: run->locked = 1; break;
             case RCO_STEP_UNLOCK: run->locked = 0; break;
             case RCO_STEP_EVENT:
-                call_event(m, s->event, -1);
+                /* "this" is the widget the animation runs on (postBlink switches on this.name) */
+                call_event(m, s->event, run->target);
                 if (m->res != r)
                     return;   /* the event changed the resource */
                 break;
@@ -838,6 +840,11 @@ NATIVE(mp_play)
     }
     if (chapter < 1)
         chapter = 1;
+    if (playlist < 1) {
+        /* play(-1): UMD-PG games ask for this under a choice window; the picture holds. */
+        mlog(m, "menu: play title %d: holding the picture", playlist);
+        return;
+    }
     mlog(m, "menu: play title %d chapter %d audio %d subtitle %d", playlist, chapter, m->audio_id,
          m->sub_on ? m->sub_id : -1);
     m->p.play(m->p.user, playlist, chapter, m->audio_id, m->sub_on ? m->sub_id : -1);
@@ -1022,8 +1029,14 @@ NATIVE(c_get_user)
 {
     menu *m = user;
     (void)self; (void)args; (void)argc;
-    if (!m->user_count)
+    if (!m->user_count) {
+        /* Nothing saved yet: an array of zeros, which the scripts fill in and save
+           (Summer Days writes its start position into it before changing resource). */
+        *ret = vs_new_array(vm, USERDATA_EMPTY);
+        for (int i = 0; i < USERDATA_EMPTY; i++)
+            vs_set_index(vm, *ret, i, vs_int(0));
         return;
+    }
     *ret = vs_new_array(vm, m->user_count);
     for (int i = 0; i < m->user_count; i++) {
         const user_value *u = &m->user[i];

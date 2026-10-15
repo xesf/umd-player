@@ -19,7 +19,7 @@ typedef struct menu menu;
 typedef struct menu_status {
     int playing;              /* a title is playing (or paused) */
     int paused;
-    int playlist;             /* 1-based title number, 0 when stopped */
+    int playlist;             /* 1-based title number (the one that ended, after its end); 0 when stopped */
     int chapter;              /* 1-based */
     int audio, subtitle;      /* substreams; subtitle -1 for off */
     char mark_name[25];       /* the chapter's mark (UMD-PG): name and data */
