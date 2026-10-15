@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- macOS: the desktop app plays every disc with video, field-coded ones included (Saw, Rhyme and Reason, Prison Break, The Dark Knight, Valiant, Up in Smoke). It decodes H.264 with its own decoder (src/core/h264dec.c, see docs/h264-decoder.md), which matches FFmpeg bit for bit on the test discs. CI builds the Mac app.
+
 ## v0.5.2 (2026-10-15)
 
 - The library takes the touch screen: drag up or down to move through the discs, tap a disc above or below to select it, and tap the selected disc to play it.
