@@ -746,6 +746,7 @@ static void draw_ui(library *l)
     }
     canvas_round_ring(c, BIG_X - 7, BIG_Y - 7, 2 * ICON_W + 14, 2 * ICON_H + 14, BIG_R + 7, 3, RGBA(255, 255, 255, 230));
     draw_resume_mark(l);
+    canvas_text(c, 20, 18, 2, RGBA(255, 255, 255, 220), "UMD Player");
     canvas_text(c, UI_W - 20 - canvas_text_width("v" UMDPLAYER_VERSION, 1), UI_H - 18, 1, TEXT_DIM, "v" UMDPLAYER_VERSION);
 
     l->info.ui_rgba = c->rgba;
