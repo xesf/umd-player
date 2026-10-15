@@ -121,7 +121,9 @@ static void print_titles(iso_volume *v, const umdv_playlist *pl)
             printf("    clip: cannot read\n");
             continue;
         }
-        printf("    clip: %u streams, %u seek points:", clip.stream_count, clip.ep_count);
+        printf("    clip: ");
+        print_time(clip.end_pts, clip.start_pts);
+        printf(", %u streams, %u seek points:", clip.stream_count, clip.ep_count);
         for (i = 0; i < clip.stream_count; i++) {
             const umdv_stream *s = &clip.streams[i];
             printf(" %s", kind_name(s->kind));

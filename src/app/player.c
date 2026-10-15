@@ -50,6 +50,7 @@
 #define SAVE_US       10000000           /* save the resume point every 10 s while playing */
 #define MIN_TITLE     (60 * 90000)       /* L and R skip shorter titles: menus, logos, warnings */
 #define RESUME_TAIL   (30 * 90000)       /* within 30 s of the end, start over next time */
+#define PTS_REORDER   90000              /* the reader stops this far past a title's end */
 enum { ROW_AUDIO, ROW_SUBTITLES, ROW_SCREEN, ROW_CHAPTER };
 
 enum { AU_PENDING, AU_READY, AU_DROP };
@@ -279,6 +280,13 @@ static int stopping(const player *p)
     return p->quit || p->stop;
 }
 
+/* A title can use part of a clip: Harry Potter's "5Blank" is the first second of a 20 s clip,
+   and its chapter titles are slices of the movie. Nothing at or after the title's end plays. */
+static int past_title(const player *p, uint64_t pts)
+{
+    return pts >= p->title->end_pts;
+}
+
 static void push_video(player *p, const demux_unit *u)
 {
     uint64_t pts = u->pts;
@@ -339,7 +347,7 @@ static void push_audio(player *p, const demux_unit *u)
     audio_queue *q = &p->aq[u->sub_id % DEMUX_AUDIO_TRACKS];
     aq_frame *f;
 
-    if (u->size > AQ_SLOT || u->pts == PS_NO_TS)
+    if (u->size > AQ_SLOT || u->pts == PS_NO_TS || past_title(p, u->pts))
         return;
     plat_mutex_lock(p->lock);
     if (q->frames) {
@@ -526,6 +534,8 @@ static void reader_main(void *user)
         plat_mutex_unlock(p->lock);
         if (demux_next(p->dmx, &u) <= 0) {
             more = 0;
+        } else if (u.type != DEMUX_SUBTITLE && u.pts != PS_NO_TS && u.pts > (uint64_t)p->title->end_pts + PTS_REORDER) {
+            more = 0;         /* well past the title's end, beyond any reordered picture before it */
         } else if (u.type == DEMUX_VIDEO) {
             push_video(p, &u);
         } else if (u.type == DEMUX_AUDIO) {
@@ -611,7 +621,7 @@ static void keep_frame(player *p, plat_frame *f, uint64_t pts)
 {
     int i;
 
-    if (pts == PLAT_PTS_HIDDEN || pts < p->min_pts) {
+    if (pts == PLAT_PTS_HIDDEN || pts < p->min_pts || past_title(p, pts)) {
         plat_frame_release(f);
         return;
     }

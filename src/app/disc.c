@@ -57,10 +57,15 @@ static uint8_t *d_read(void *user, const char *path, uint32_t *size)
     return buf;
 }
 
+/* The menus number subtitle tracks from 0 (0xBD80 is track 0); the player takes the substream,
+   0x80 and up. Audio needs no change: audio substreams start at 0. */
+static int to_substream(int subtitle) { return subtitle >= 0 ? 0x80 + subtitle : -1; }
+static int from_substream(int sub) { return sub >= 0x80 ? sub - 0x80 : -1; }
+
 static void start(disc *d, int title, int chapter, uint64_t pos)
 {
     player_options opt = {.iso_path = d->path, .title = title - 1, .audio = d->audio, .menu = 1, .chapter = chapter,
-                          .start_pts = pos, .subtitle = d->subtitle};
+                          .start_pts = pos, .subtitle = to_substream(d->subtitle)};
 
     player_close(d->pl);
     d->pl = player_open(&opt);
@@ -101,7 +106,7 @@ static void d_stop(void *user)
     d->stopped_title = d->title;
     d->stopped_pos = player_position(d->pl);
     d->stopped_audio = player_audio(d->pl);
-    d->stopped_sub = player_subtitle(d->pl);
+    d->stopped_sub = from_substream(player_subtitle(d->pl));
     player_close(d->pl);
     d->pl = NULL;
     d->title = 0;
@@ -132,7 +137,7 @@ static void d_status(void *user, menu_status *st)
     st->playlist = d->title;  /* still the title that ended, while onPlayListEnd runs */
     st->chapter = player_chapter(d->pl);
     st->audio = player_audio(d->pl);
-    st->subtitle = player_subtitle(d->pl);
+    st->subtitle = from_substream(player_subtitle(d->pl));
     snprintf(st->mark_name, sizeof(st->mark_name), "%s", player_chapter_mark(d->pl, &st->mark_data));
 }
 
@@ -149,7 +154,7 @@ static void d_subtitle(void *user, int subtitle)
     disc *d = user;
     d->subtitle = subtitle;
     if (d->pl)
-        player_set_subtitle(d->pl, subtitle);
+        player_set_subtitle(d->pl, to_substream(subtitle));
 }
 
 static void d_window(void *user, float x, float y, float w, float h)
