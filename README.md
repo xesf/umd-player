@@ -55,6 +55,7 @@ Requirements: a C99 compiler for the host tools and the desktop players, and [Vi
 cmake -S . -B build/vita && cmake --build build/vita   # build/vita/umdplayer-v<version>.vpk
 make                                                   # the desktop player for this machine: build/macos or build/linux
 make PLATFORM=windows                                  # Windows, with mingw-w64: build/windows/umdplayer.exe
+make app ARCHS="arm64 x86_64"                          # the Mac app, universal: build/macos-universal/UMDPlayer.app
 make run ARGS=umd                                      # run the player for this machine on a folder or disc
 make run-windows ARGS=umd/movie.iso                    # run the Windows player under Wine
 make run-linux ARGS=umd/movie.iso                      # Linux: native, or in Docker on macOS (see the Makefile)

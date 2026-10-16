@@ -224,6 +224,12 @@ int main(int argc, char **argv)
             uint32_t size = sizeof(exe);
             if (_NSGetExecutablePath(exe, &size) == 0 && realpath(exe, dir) && (slash = strrchr(dir, '/')))
                 *slash = 0;
+            /* in UMDPlayer.app/Contents/MacOS: the folder that holds the .app */
+            if ((slash = strstr(dir, ".app/Contents/MacOS")) && slash[19] == 0) {
+                while (slash > dir && *slash != '/')
+                    slash--;
+                *slash = 0;
+            }
             snprintf(lib, sizeof(lib), "%s/UMD", dir);
             if (dir[0] && library_has_discs(dir)) {
                 snprintf(lib, sizeof(lib), "%s", dir);

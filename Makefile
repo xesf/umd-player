@@ -9,6 +9,8 @@
 #                            screen for RUN_SECONDS, saving build/linux-docker/snapshot.ppm (with XQuartz,
 #                            LINUX_DISPLAY=host.docker.internal:0 opens a window instead)
 #   ARGS=umd/movie.iso       what to open (a folder or a disc image); none: the default folder
+# Mac app: make app builds build/macos/UMDPlayer.app; ARCHS="arm64 x86_64" makes it universal
+# (in build/macos-universal) and needs macOS 11 or later.
 # Host tools: make -C tools. The Vita build uses CMake: see the README.
 UNAME := $(shell uname -s 2>/dev/null)
 ifeq ($(PLATFORM),)
@@ -36,6 +38,10 @@ SOFT = src/platform/soft/soft_video.c src/platform/soft/soft_compose.c
 
 ifeq ($(PLATFORM),macos)
   CC ?= cc
+  ifneq ($(ARCHS),)
+    CC := $(CC) $(foreach a,$(ARCHS),-arch $(a)) -mmacosx-version-min=11.0
+    BUILD = build/macos-universal
+  endif
   PLAT = src/platform/posix/posix_sys.c src/platform/macos/mac_video.c src/platform/macos/mac_audio.c
   EXTRA_OBJS = $(BUILD)/src/platform/macos/mac_main.o
   LIBS = -framework Cocoa -framework QuartzCore -framework CoreVideo -framework AudioToolbox
@@ -89,6 +95,22 @@ $(BUILD)/umdplayer_res.o: src/platform/windows/umdplayer.rc assets/app/umdplayer
 	@mkdir -p $(dir $@)
 	$(WINDRES) -o $@ $<
 
+VERSION := $(shell sed -n 's/.*UMDPLAYER_VERSION "\(.*\)".*/\1/p' src/app/version.h)
+APP_BUNDLE = $(BUILD)/UMDPlayer.app
+
+# The Mac app bundle, signed ad hoc (Apple silicon runs only signed code).
+app: $(TARGET)
+	rm -rf $(APP_BUNDLE) $(BUILD)/umdplayer.iconset
+	mkdir -p $(APP_BUNDLE)/Contents/MacOS $(APP_BUNDLE)/Contents/Resources $(BUILD)/umdplayer.iconset
+	cp $(TARGET) $(APP_BUNDLE)/Contents/MacOS/umdplayer
+	sed 's/@VERSION@/$(VERSION)/' src/platform/macos/Info.plist > $(APP_BUNDLE)/Contents/Info.plist
+	for s in 16 32 128; do \
+	    sips -z $$s $$s assets/vita/icon0.png --out $(BUILD)/umdplayer.iconset/icon_$${s}x$${s}.png >/dev/null; done
+	sips -z 64 64 assets/vita/icon0.png --out $(BUILD)/umdplayer.iconset/icon_32x32@2x.png >/dev/null
+	cp $(BUILD)/umdplayer.iconset/icon_32x32.png $(BUILD)/umdplayer.iconset/icon_16x16@2x.png
+	iconutil -c icns -o $(APP_BUNDLE)/Contents/Resources/umdplayer.icns $(BUILD)/umdplayer.iconset
+	codesign --force --sign - $(APP_BUNDLE)
+
 ARGS ?=
 RUN_SECONDS ?= 15
 LINUX_DISPLAY ?=
@@ -124,4 +146,4 @@ endif
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all clean run run-windows run-linux
+.PHONY: all app clean run run-windows run-linux

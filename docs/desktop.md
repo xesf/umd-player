@@ -34,13 +34,20 @@ In Gaming Mode UMD Player runs in full screen. The Deck's controls work with Ste
 
 ## macOS
 
-Build it from source (see the README): `make`, then `./build/macos/umdplayer`. Without a folder, the library is `~/UMD`. The keyboard and the mouse work; gamepads are not supported on macOS yet.
+1. Download `umdplayer-v<version>-macos.zip` and open it. The app runs on Apple silicon and Intel Macs, macOS 11 or later.
+2. Move `UMDPlayer.app` to your Applications folder.
+3. Copy your disc images to the `UMD` folder in your home folder (`~/UMD`). UMD Player creates the folder the first time it runs.
+4. Open UMD Player. The app is not notarized, so the first time macOS refuses to open it. Open System Settings > Privacy & Security and choose "Open Anyway" next to the message about UMD Player.
+
+You can also put `UMDPlayer.app` in the folder with your disc images, or next to a `UMD` folder: see [Which folder the library shows](#which-folder-the-library-shows). macOS runs a downloaded app from a temporary location until you move it in the Finder, so move the app there first.
+
+The keyboard and the mouse work; gamepads are not supported on macOS yet. To build the app from source, see the README.
 
 ## Which folder the library shows
 
 Started without a folder, UMD Player picks the first of these that applies:
 
-1. The folder the app is in, when it holds disc images. Copy `umdplayer.exe` (or `umdplayer` on Linux) into your movie folder and run it from there.
+1. The folder the app is in, when it holds disc images. Copy `umdplayer.exe` (`umdplayer` on Linux, `UMDPlayer.app` on macOS) into your movie folder and run it from there.
 2. A `UMD` folder next to the app, when it holds disc images.
 3. The `UMD` folder in your home folder, created when it does not exist yet.
 
