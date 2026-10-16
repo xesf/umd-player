@@ -9,12 +9,14 @@
 #include "../core/disc_image.h"
 #include "../core/demux.h"
 #include "../core/h264.h"
+#include "../core/h264dec.h"
 #include "../core/icons.h"
 #include "../core/iso9660.h"
 #include "../core/png.h"
 #include "../core/sfo.h"
 #include "../core/umdv.h"
 #include "../core/vtiming.h"
+#include "../core/yuv.h"
 #include "../platform/platform.h"
 #include "backdrop.h"
 #include "osd.h"
@@ -67,7 +69,8 @@ typedef struct icon_au {
 } icon_au;
 
 /* ICON1.PMF, demuxed and timed by the worker so a switch only starts the decoder. */
-typedef struct icon_video {
+typedef struct icon_video icon_video;
+struct icon_video {
     uint8_t *es;
     icon_au *aus;
     int au_count;
@@ -75,7 +78,7 @@ typedef struct icon_video {
     h264_sps sps;
     uint8_t sps_nal[H264_MAX_PARAM_SET], pps_nal[H264_MAX_PARAM_SET];
     uint32_t sps_size, pps_size;
-} icon_video;
+};
 
 typedef struct decoded {
     plat_frame *frame;
@@ -259,6 +262,10 @@ static int is_interactive(disc_file *d)
     return result;
 }
 
+static icon_video *parse_icon(const uint8_t *pmf, uint32_t size);
+static void free_icon(icon_video *v);
+static uint8_t *first_icon_frame(const uint8_t *pmf, uint32_t size, int *w, int *h);
+
 static void read_disc_info(lib_disc *disc)
 {
     disc_file d;
@@ -277,6 +284,11 @@ static void read_disc_info(lib_disc *disc)
     }
     if ((buf = disc_read(&d, "UMD_VIDEO/ICON0.PNG", &size, 256 * 1024)) != NULL) {
         disc->icon0 = decode_png(buf, size, &disc->icon_w, &disc->icon_h, 512, 512);
+        free(buf);
+    }
+    /* Some discs have only the animated icon: its first frame stands in for the still one. */
+    if (!disc->icon0 && (buf = disc_read(&d, "UMD_VIDEO/ICON1.PMF", &size, PMF_MAX)) != NULL) {
+        disc->icon0 = first_icon_frame(buf, size, &disc->icon_w, &disc->icon_h);
         free(buf);
     }
     disc->interactive = is_interactive(&d);
@@ -382,6 +394,71 @@ static icon_video *parse_icon(const uint8_t *pmf, uint32_t size)
     v->sps_size = parser.sps_size;
     v->pps_size = parser.pps_size;
     return v;
+}
+
+#define ICON_FRAMES_MAX 60           /* frames looked at for a still icon: 2 s */
+#define ICON_LUMA_MIN   48           /* mean Y of a frame that is not a fade from black */
+
+static int mean_luma(const h264dec_frame *f)
+{
+    uint64_t sum = 0;
+    for (int y = 0; y < f->height; y++)
+        for (int x = 0; x < f->width; x++)
+            sum += f->plane[0][(size_t)y * (size_t)f->stride[0] + (size_t)x];
+    return (int)(sum / ((uint64_t)f->width * (uint64_t)f->height));
+}
+
+/* Keeps the frame as RGBA if it is brighter than the one kept so far. */
+static void keep_brighter(const h264dec_frame *f, uint8_t **rgba, int *best, int *w, int *h)
+{
+    int luma = mean_luma(f);
+    uint8_t *out;
+
+    if (luma <= *best || f->width <= 0 || f->height <= 0 ||
+        (out = malloc((size_t)f->width * (size_t)f->height * 4)) == NULL)
+        return;
+    yuv420_to_bgra(f->plane, f->stride, f->width, f->height, out, f->width * 4);
+    for (size_t k = 0; k < (size_t)f->width * (size_t)f->height * 4; k += 4) {   /* BGRA to RGBA */
+        uint8_t b = out[k];
+        out[k] = out[k + 2];
+        out[k + 2] = b;
+    }
+    free(*rgba);
+    *rgba = out;
+    *best = luma;
+    *w = f->width;
+    *h = f->height;
+}
+
+/* A still picture from ICON1.PMF, decoded in software (the platform's decoder may be busy with
+   the selected disc's icon): the first frame that is not dark, as many icons fade in from
+   black, or the brightest of the first two seconds. */
+static uint8_t *first_icon_frame(const uint8_t *pmf, uint32_t size, int *w, int *h)
+{
+    icon_video *v = parse_icon(pmf, size);
+    h264dec *dec = v ? h264dec_open() : NULL;
+    h264dec_frame f;
+    uint8_t *rgba = NULL;
+    int best = -1, seen = 0;
+
+    for (int i = 0; dec && i < v->au_count && seen < ICON_FRAMES_MAX && best < ICON_LUMA_MIN; i++) {
+        if (h264dec_decode(dec, v->es + v->aus[i].off, v->aus[i].size, (uint64_t)i) < 0)
+            break;
+        while (best < ICON_LUMA_MIN && h264dec_output(dec, &f)) {
+            keep_brighter(&f, &rgba, &best, w, h);
+            seen++;
+        }
+    }
+    if (dec && best < ICON_LUMA_MIN) {
+        h264dec_flush(dec);
+        while (seen++ < ICON_FRAMES_MAX && h264dec_output(dec, &f))
+            keep_brighter(&f, &rgba, &best, w, h);
+    }
+    if (dec)
+        h264dec_close(dec);
+    if (v)
+        free_icon(v);
+    return rgba;
 }
 
 /* PIC1.PNG scaled to the screen, darkened a little, opaque. */

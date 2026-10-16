@@ -74,6 +74,12 @@ add_executable(umdplayer
   src/core/cropdetect.c
   src/core/sfo.c
   src/core/icons.c
+  src/core/yuv.c
+  src/core/h264dec.c
+  src/core/h264dec_slice.c
+  src/core/h264dec_recon.c
+  src/core/h264dec_deblock.c
+  src/core/h264_cabac_tables.c
   ${AT3P_SOURCES}
   src/platform/vita/vita_main.c
   src/platform/vita/vita_sys.c
