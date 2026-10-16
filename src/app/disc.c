@@ -128,7 +128,9 @@ static void d_stop(void *user)
 
     if (!d->pl)
         return;
-    if (!d->menu_video) {     /* resume() continues the last title that was not a menu video */
+    /* resume() continues the last title that was not a menu video and did not play to its end
+       (2 Fast 2 Furious plays a one-second blank between the movie and its menu) */
+    if (!d->menu_video && !player_title_ended(d->pl)) {
         d->stopped_title = d->title;
         d->stopped_pos = player_position(d->pl);
         d->stopped_audio = player_audio(d->pl);
@@ -150,6 +152,15 @@ static int d_resume(void *user)
     d->audio = d->stopped_audio;
     d->subtitle = d->stopped_sub;
     start(d, d->stopped_title, 0, d->stopped_pos);
+    /* A place saved at the very end (by earlier versions) is nothing to continue: the script
+       then plays from the beginning, as it does without a resume point. */
+    if (d->pl && d->stopped_pos + 90000 >= player_title_end(d->pl)) {
+        player_close(d->pl);
+        d->pl = NULL;
+        d->title = 0;
+        d->stopped_title = 0;
+        return -1;
+    }
     return d->pl ? 0 : -1;
 }
 
@@ -232,7 +243,7 @@ static void save_state(disc *d)
         disc_state_save(state_key(d), NULL);
         return;
     }
-    if (d->pl && !d->menu_video) {   /* the disc was left during a title: the PSP keeps its place */
+    if (d->pl && !d->menu_video && !player_title_ended(d->pl)) {   /* left during a title: the PSP keeps its place */
         d->stopped_title = d->title;
         d->stopped_pos = player_position(d->pl);
         d->stopped_audio = player_audio(d->pl);

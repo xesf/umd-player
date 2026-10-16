@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Disc menus: Play in 2 Fast 2 Furious's menu did nothing after the movie had been left once. Leaving the movie plays a one-second blank clip, and the app kept that clip as the place to continue, so Play replayed the blank and returned to the menu. A title that played to its end is no longer a place to continue, and a place saved at a title's end by earlier versions is ignored.
 - Vita: Cabin Fever and Doom show a clean picture. Their movies code most pictures as frames and some as field pairs; the Vita split every picture into two fields, which showed two half-height pictures over each other. Frame pictures are now shown whole.
 - Disc menus: a list shown over the movie (Saw's scene list) shows "△ Disc menu" in the corner. On such lists ○ only hides the list, and △, the PSP's menu button, is the way back to the main menu.
 - Disc menus receive the discs' event marks (movieplayer.onMark). Doom's menus waited for one after a blank opening clip and never appeared; they now show the warnings, then the main menu. Event marks no longer count as chapters, so movies such as Cabin Fever, Doom and 2 Fast 2 Furious lose a duplicate last chapter.
