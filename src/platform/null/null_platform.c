@@ -266,6 +266,9 @@ void plat_audio_close(void)
 uint32_t null_buttons;
 uint32_t plat_buttons(void) { return null_buttons; }
 
+/* Tests see the key hints with UMD_KEY_HINTS set. */
+int plat_keyboard_ui(void) { return getenv("UMD_KEY_HINTS") != NULL; }
+
 int null_touch_down, null_touch_x, null_touch_y;
 int plat_touch(int *x, int *y)
 {

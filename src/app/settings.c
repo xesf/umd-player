@@ -53,6 +53,7 @@ app_settings *settings_get(void)
         return &s;
     loaded = 1;
     s.screen = SCREEN_ZOOM;
+    s.start_disc = 1;                 /* a disc plays as on a PSP: logos, warnings, menus */
     snprintf(s.audio, sizeof(s.audio), "en");
     snprintf(s.subs, sizeof(s.subs), SUBS_SYSTEM);
     if ((n = plat_data_load(FILE_NAME, buf, (int)sizeof(buf) - 1)) <= 0)

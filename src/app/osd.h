@@ -50,5 +50,9 @@ void osd_bar_area(int w, int h, int *top, int *x0, int *x1);
 
 /* A key hint: a button icon followed by text. Returns the width drawn. */
 int osd_draw_hint(canvas *c, int x, int y, icon_id button, const char *text);
+/* A button (ICON_BUTTON_*) ICON_SIZE * scale high: its icon on the Vita and with a gamepad,
+   the key that does the same on a keyboard ("Space"). Returns the width drawn. */
+int osd_button(canvas *c, int x, int y, int scale, icon_id button);
+int osd_button_width(icon_id button, int scale);
 
 #endif

@@ -367,12 +367,14 @@ int disc_update(disc *d, uint32_t pressed)
     {
         /* A page that takes the buttons over the movie (Saw's scene list): its Back may only
            hide it, and the way on is the PSP's menu button, so say which button that is. */
-        int hint = d->pl && !d->menu_video && !player_title_ended(d->pl) && menu_has_focus(d->m);
+        int hint = d->pl && !d->menu_video && !player_title_ended(d->pl) && menu_has_focus(d->m)
+                       ? 1 + plat_keyboard_ui() : 0;
         if (menu_dirty(d->m) || hint != d->hint_shown) {
             menu_draw(d->m, &d->layer);
             d->layer_shown = layer_has_pixels(&d->layer);
             if (hint) {
-                canvas_rect(&d->layer, 16, LAYER_H - 48, 150, 32, RGBA(10, 14, 28, 190));
+                canvas_rect(&d->layer, 16, LAYER_H - 48, 110 + osd_button_width(ICON_BUTTON_TRIANGLE, 1), 32,
+                            RGBA(10, 14, 28, 190));
                 osd_draw_hint(&d->layer, 24, LAYER_H - 40, ICON_BUTTON_TRIANGLE, "Disc menu");
                 d->layer_shown = 1;
             }

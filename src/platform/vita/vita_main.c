@@ -27,6 +27,11 @@ uint32_t plat_buttons(void)
     return held;
 }
 
+int plat_keyboard_ui(void)
+{
+    return 0;
+}
+
 int plat_touch(int *x, int *y)
 {
     SceTouchData t;

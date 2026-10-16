@@ -79,9 +79,21 @@ static uint32_t pad_buttons(void)
     return b;
 }
 
+static int keys_last = 1;         /* the last input came from the keyboard */
+
 uint32_t plat_buttons(void)
 {
-    return key_buttons | pad_buttons();
+    uint32_t keys = key_buttons, pad = pad_buttons();
+    if (pad)
+        keys_last = 0;
+    else if (keys)
+        keys_last = 1;
+    return keys | pad;
+}
+
+int plat_keyboard_ui(void)
+{
+    return keys_last;
 }
 
 int plat_touch(int *x, int *y)

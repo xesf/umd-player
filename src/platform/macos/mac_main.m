@@ -120,6 +120,11 @@ uint32_t plat_buttons(void)
     return held_buttons;
 }
 
+int plat_keyboard_ui(void)
+{
+    return 1;                 /* no gamepads on macOS yet */
+}
+
 int plat_touch(int *x, int *y)
 {
     if (!touch_down)

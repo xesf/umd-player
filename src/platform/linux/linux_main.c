@@ -182,12 +182,27 @@ static void poll_pads(void)
     }
 }
 
+/* The last input came from the keyboard; -1 before any. Steam sets SteamDeck on the Deck
+   and SteamGamepadUI in Gaming Mode, where the controls are a gamepad. */
+static int keys_last = -1;
+
 uint32_t plat_buttons(void)
 {
-    uint32_t b = key_buttons;
+    uint32_t pad = 0;
     for (int i = 0; i < pad_count; i++)
-        b |= pads[i].buttons | pads[i].hat | pads[i].stick;
-    return b;
+        pad |= pads[i].buttons | pads[i].hat | pads[i].stick;
+    if (pad)
+        keys_last = 0;
+    else if (key_buttons)
+        keys_last = 1;
+    return key_buttons | pad;
+}
+
+int plat_keyboard_ui(void)
+{
+    if (keys_last < 0)
+        return !getenv("SteamDeck") && !getenv("SteamGamepadUI");
+    return keys_last;
 }
 
 int plat_touch(int *x, int *y)

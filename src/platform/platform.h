@@ -135,6 +135,9 @@ void plat_language(char out[3]);
 /* One character the 8x8 font lacks, drawn with the system's fonts: see canvas_glyph_fn in
    core/canvas.h. Returns 0 when no font has it. */
 int plat_glyph(uint32_t cp, int px, uint8_t *alpha);
+/* 1 when the hints on screen should name keyboard keys (Space, Esc, W, A) instead of the
+   Vita's buttons: on computers, until a gamepad is used. */
+int plat_keyboard_ui(void);
 
 typedef struct plat_status {
     int year, month, day, hour, minute;   /* local time */

@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.6.4 (2026-10-16)
+
+- "Start with: Disc" is the default: a disc plays as on a PSP, with its logos, warnings and menus. A saved "Movie" setting is kept.
+- Desktop: hints name the keys (Space, Esc, W, A) instead of the Vita's buttons while you use the keyboard, and show the buttons once you use a gamepad. The Steam Deck shows its buttons.
+- Library: "△ Settings" (or "W Settings") next to the version shows how to open the settings.
+
 ## v0.6.3 (2026-10-16)
 
 - Titles in Japanese, with accents, or in other scripts show their real characters instead of "?". The 8x8 font still draws ASCII; other characters come from the system's fonts: the Vita's built-in fonts, Core Text on macOS, GDI on Windows, and the X server's Unicode fonts on Linux. Without a font for a character, accented letters show their base letter.

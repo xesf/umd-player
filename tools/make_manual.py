@@ -166,7 +166,7 @@ def main():
     put_half(p.c, os.path.join(shots, 'settings.png'), W - LEFT - 480, p.y)
     p.para('Triangle in the library. Up/Down chooses a row, Left/Right changes it, Circle closes.',
            chars=25)
-    p.rows([('Start', 'Movie: play at once. Disc: logos, warnings and the disc\'s menus first.'),
+    p.rows([('Start', 'Disc (default): logos, warnings, menus. Movie: at once.'),
             ('Screen', 'Picture size'), ('Audio', 'Language'), ('Subs', 'Off, System or a language')],
            key_w=116, chars=15)
     p.y = max(p.y, BAND + 74 + 272 + 16)

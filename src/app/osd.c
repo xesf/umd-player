@@ -1,5 +1,7 @@
 #include "osd.h"
 
+#include "../platform/platform.h"
+
 #include <stdio.h>
 #include <string.h>
 
@@ -28,10 +30,44 @@ static uint32_t button_color(icon_id b)
     }
 }
 
+/* The keys of docs/desktop.md's table, for the buttons that hints name. */
+static const char *key_name(icon_id b)
+{
+    switch (b) {
+    case ICON_BUTTON_CROSS: return "Space";
+    case ICON_BUTTON_CIRCLE: return "Esc";
+    case ICON_BUTTON_TRIANGLE: return "W";
+    case ICON_BUTTON_SQUARE: return "A";
+    default: return NULL;
+    }
+}
+
+int osd_button_width(icon_id button, int scale)
+{
+    const char *key = plat_keyboard_ui() ? key_name(button) : NULL;
+    return key ? canvas_text_width(key, scale) + 8 * scale : ICON_SIZE * scale;
+}
+
+int osd_button(canvas *c, int x, int y, int scale, icon_id button)
+{
+    const char *key = plat_keyboard_ui() ? key_name(button) : NULL;
+    int w = osd_button_width(button, scale), h = ICON_SIZE * scale;
+
+    if (!key) {
+        canvas_icon(c, button, x, y, scale, button_color(button));
+        return w;
+    }
+    /* a key cap: the key's name in a rounded outline, in the button's colour */
+    canvas_round_rect(c, x, y, w, h, 3 * scale, RGBA(20, 24, 36, 200));
+    canvas_round_ring(c, x, y, w, h, 3 * scale, scale, button_color(button));
+    canvas_text(c, x + 4 * scale, y + (h - 8 * scale) / 2, scale, TEXT, key);
+    return w;
+}
+
 int osd_draw_hint(canvas *c, int x, int y, icon_id button, const char *text)
 {
-    canvas_icon(c, button, x, y, 1, button_color(button));
-    return ICON_SIZE + 6 + canvas_text(c, x + ICON_SIZE + 6, y + 4, 1, TEXT_DIM, text) + 18;
+    int bw = osd_button(c, x, y, 1, button);
+    return bw + 6 + canvas_text(c, x + bw + 6, y + 4, 1, TEXT_DIM, text) + 18;
 }
 
 int osd_draw_status(canvas *c, int right, int top, const char *clock, int battery, int charging)

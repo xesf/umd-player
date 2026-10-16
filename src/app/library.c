@@ -139,6 +139,7 @@ struct library {
     int show_info;                   /* SELECT toggles the title and resume panel */
     int touch_down, touch_x0, touch_y0, touch_step_y, touch_moved;   /* a finger on the screen */
     int settings_open, settings_row; /* △: the defaults for new discs */
+    int keys_shown;                  /* the hints name keyboard keys (plat_keyboard_ui) */
     int marks_stale;                 /* reread the resume points: a movie was played */
 };
 
@@ -690,9 +691,13 @@ static void draw_info(library *l)
     canvas *c = &l->ui;
     int x = PANEL_X + 16, y = BIG_Y, tx = x + 2 * ICON_SIZE + 8, w = 300;
     char title[96], at[16], total[16], line[48];
+    int bw = osd_button_width(ICON_BUTTON_CROSS, 2);
 
     if (!l->show_info)
         return;
+    if (osd_button_width(ICON_BUTTON_SQUARE, 2) > bw)
+        bw = osd_button_width(ICON_BUTTON_SQUARE, 2);
+    tx = x + bw + 8;
     canvas_text_fit(title, sizeof(title), d->title, 2, PANEL_W - 32);
     canvas_round_darken(c, PANEL_X, BIG_Y, PANEL_W, 2 * ICON_H, BIG_R, 90);   /* as tall as the icon */
     if (!d->has_resume) {
@@ -703,7 +708,7 @@ static void draw_info(library *l)
     }
     format_time(at, sizeof(at), d->resume_pos - d->resume_start);
     canvas_text(c, x, y + 18, 2, RGBA(255, 255, 255, 255), title);
-    canvas_icon(c, ICON_BUTTON_CROSS, x, y + 46, 2, COLOR_CROSS);
+    osd_button(c, x, y + 46, 2, ICON_BUTTON_CROSS);
     if (d->resume_disc) {
         snprintf(line, sizeof(line), "Continue where you left off");
     } else if (d->resume_end > d->resume_start) {
@@ -717,7 +722,7 @@ static void draw_info(library *l)
         snprintf(line, sizeof(line), "Resume at %s", at);
     }
     canvas_text(c, tx, y + 54, 2, RGBA(255, 255, 255, 255), line);
-    canvas_icon(c, ICON_BUTTON_SQUARE, x, y + 106, 2, COLOR_SQUARE);
+    osd_button(c, x, y + 106, 2, ICON_BUTTON_SQUARE);
     canvas_text(c, tx, y + 114, 2, TEXT_DIM, "Play from the start");
 }
 
@@ -946,6 +951,18 @@ static void draw_app_name(canvas *c, int y)
     canvas_text(c, 20, y + 22, 1, TEXT_DIM, "by xesf");
 }
 
+/* The version at the bottom right; with settings, the button that opens them to its left. */
+static void draw_version(canvas *c, int y, int settings)
+{
+    int vx = UI_W - 20 - canvas_text_width("v" UMDPLAYER_VERSION, 1);
+
+    canvas_text(c, vx, y, 1, TEXT_DIM, "v" UMDPLAYER_VERSION);
+    if (settings) {
+        int w = osd_button_width(ICON_BUTTON_TRIANGLE, 1) + 6 + canvas_text_width("Settings", 1);
+        osd_draw_hint(c, vx - 24 - w, y - 4, ICON_BUTTON_TRIANGLE, "Settings");
+    }
+}
+
 static void draw_ui(library *l)
 {
     canvas *c = &l->ui;
@@ -980,8 +997,7 @@ static void draw_ui(library *l)
     draw_settings(l);
     /* On the backdrop (a disc without PIC1), keep clear of its film strips. */
     draw_app_name(c, l->bg ? 18 : 72);
-    canvas_text(c, UI_W - 20 - canvas_text_width("v" UMDPLAYER_VERSION, 1), l->bg ? UI_H - 18 : UI_H - 72, 1, TEXT_DIM,
-                "v" UMDPLAYER_VERSION);
+    draw_version(c, l->bg ? UI_H - 18 : UI_H - 72, !l->settings_open);
 
     l->info.ui_rgba = c->rgba;
     l->info.ui_w = c->w;
@@ -1185,12 +1201,12 @@ static void draw_empty(library *l)
     y += 40;
     {
         const char *again = "Look again";
-        int x = (UI_W - (ICON_SIZE * 2 + 10 + canvas_text_width(again, 2))) / 2;
-        canvas_icon(c, ICON_BUTTON_CROSS, x, y - 8, 2, COLOR_CROSS);
-        canvas_text(c, x + ICON_SIZE * 2 + 10, y, 2, TEXT_DIM, again);
+        int bw = osd_button_width(ICON_BUTTON_CROSS, 2);
+        int x = (UI_W - (bw + 10 + canvas_text_width(again, 2))) / 2;
+        osd_button(c, x, y - 8, 2, ICON_BUTTON_CROSS);
+        canvas_text(c, x + bw + 10, y, 2, TEXT_DIM, again);
     }
-    canvas_text(c, UI_W - 20 - canvas_text_width("v" UMDPLAYER_VERSION, 1), UI_H - 72, 1, TEXT_DIM,
-                "v" UMDPLAYER_VERSION);   /* above the film strip */
+    draw_version(c, UI_H - 72, 0);   /* above the film strip */
     l->info.ui_rgba = c->rgba;
     l->info.ui_w = c->w;
     l->info.ui_h = c->h;
@@ -1250,6 +1266,11 @@ static uint32_t touch_buttons(library *l)
 int library_update(library *l, uint32_t pressed)
 {
     int present = 0;
+
+    if (plat_keyboard_ui() != l->keys_shown) {   /* keys or a gamepad: redraw the hints */
+        l->keys_shown = plat_keyboard_ui();
+        l->ui_dirty = 1;
+    }
 
     if (l->count == 0) {
         if (pressed & PLAT_BTN_CROSS) {

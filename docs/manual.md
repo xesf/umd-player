@@ -55,7 +55,7 @@ Press △ in the library. Use Up and Down to choose a row, Left and Right to cha
 
 | Setting | Values | What it does |
 |---|---|---|
-| Start with | Movie, Disc | Movie plays the movie at once. Disc plays the disc as a PSP would: logos, warnings, the disc's menus, then the movie. |
+| Start with | Disc, Movie | Disc (the default) plays the disc as a PSP would: logos, warnings, the disc's menus, then the movie. Movie plays the movie at once. |
 | Screen | Fit, Zoom, Fill, Stretch | The picture size for discs you have not played yet. |
 | Audio | 16 languages | The audio language for new discs. A disc without it plays its first track. |
 | Subtitles | Off, System, 16 languages | The subtitle language for new discs. System uses the Vita's language. |
