@@ -24,7 +24,10 @@ static int intros[INTRO_MAX], intro_count, intro_next;   /* "Start with: Disc" *
 
 static const char *base_name(const char *path)
 {
-    const char *slash = strrchr(path, '/');
+    /* after the last '/', or '\\' on Windows */
+    const char *slash = strrchr(path, '/'), *back = strrchr(path, '\\');
+    if (back > slash)
+        slash = back;
     return slash ? slash + 1 : path;
 }
 static uint32_t prev_buttons;

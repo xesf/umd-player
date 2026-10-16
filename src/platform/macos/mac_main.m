@@ -6,10 +6,13 @@
 #include "../../core/deint.h"
 #include "mac_frame.h"
 
+#include <sys/stat.h>
+
 #define WINDOW_W 960
 #define WINDOW_H 544
 
 static uint32_t held_buttons;
+static int touch_down, touch_x, touch_y;   /* the mouse stands in for the touch screen */
 static CALayer *video_layer, *overlay_layer, *ui_layer;
 static uint32_t overlay_id, ui_id;
 static NSView *content_view;
@@ -48,6 +51,16 @@ static uint32_t button_for_key(unsigned short code)
     held_buttons |= button_for_key(e.keyCode);
 }
 - (void)keyUp:(NSEvent *)e { held_buttons &= ~button_for_key(e.keyCode); }
+- (void)track:(NSEvent *)e
+{
+    NSPoint p = [self convertPoint:e.locationInWindow fromView:nil];
+    NSSize s = self.bounds.size;
+    touch_x = s.width > 0 ? (int)(p.x * 960 / s.width) : 0;
+    touch_y = s.height > 0 ? (int)((s.height - p.y) * 544 / s.height) : 0;   /* view y goes up */
+}
+- (void)mouseDown:(NSEvent *)e { [self track:e]; touch_down = 1; }
+- (void)mouseDragged:(NSEvent *)e { [self track:e]; }
+- (void)mouseUp:(NSEvent *)e { (void)e; touch_down = 0; }
 @end
 
 @interface UMDAppDelegate : NSObject <NSApplicationDelegate>
@@ -109,9 +122,11 @@ uint32_t plat_buttons(void)
 
 int plat_touch(int *x, int *y)
 {
-    (void)x;
-    (void)y;
-    return 0;
+    if (!touch_down)
+        return 0;
+    *x = touch_x;
+    *y = touch_y;
+    return 1;
 }
 
 static CGRect screen_rect(plat_rect r)
@@ -195,7 +210,23 @@ int main(int argc, char **argv)
         NSApplication *app;
         UMDAppDelegate *delegate;
 
-        if (app_init(argc, argv) != 0)
+        /* without a folder, the library is ~/UMD */
+        char lib[1024], *args[64];
+        int n = 0, have_path = 0;
+        for (int i = 0; i < argc && n < 62; i++) {
+            if (i > 0 && argv[i][0] != '-' && argv[i - 1][0] != '-')
+                have_path = 1;
+            args[n++] = argv[i];
+        }
+        if (!have_path) {
+            snprintf(lib, sizeof(lib), "%s/UMD", getenv("HOME") ? getenv("HOME") : ".");
+            mkdir(lib, 0755);
+            memmove(&args[2], &args[1], (size_t)(n - 1) * sizeof(args[0]));
+            args[1] = lib;
+            n++;
+        }
+        args[n] = NULL;
+        if (app_init(n, args) != 0)
             return 1;
         app = [NSApplication sharedApplication];
         [app setActivationPolicy:NSApplicationActivationPolicyRegular];

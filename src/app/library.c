@@ -200,7 +200,10 @@ typedef struct list_ctx {
 
 static const char *file_name(const char *path)
 {
-    const char *slash = strrchr(path, '/');
+    /* after the last '/', or '\\' on Windows */
+    const char *slash = strrchr(path, '/'), *back = strrchr(path, '\\');
+    if (back > slash)
+        slash = back;
     return slash ? slash + 1 : path;
 }
 
@@ -261,9 +264,7 @@ static void read_disc_info(lib_disc *disc)
     disc_file d;
     uint8_t *buf;
     uint32_t size;
-    const char *name = strrchr(disc->path, '/');
-
-    snprintf(disc->title, sizeof(disc->title), "%.95s", name ? name + 1 : disc->path);
+    snprintf(disc->title, sizeof(disc->title), "%.95s", file_name(disc->path));
     if (strlen(disc->title) > 4 && disc->title[strlen(disc->title) - 4] == '.')
         disc->title[strlen(disc->title) - 4] = 0;   /* the file name, without .iso */
     if (disc_open(&d, disc->path) < 0)

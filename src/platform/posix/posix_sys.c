@@ -1,5 +1,9 @@
-/* macOS: files, threads, and time. */
+/* macOS and Linux: files, threads, time, and the app's data folder. */
+#ifdef __APPLE__
 #define _DARWIN_C_SOURCE
+#else
+#define _GNU_SOURCE
+#endif
 #include "../platform.h"
 #include "../../core/disc_image.h"
 
@@ -8,6 +12,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <time.h>
@@ -137,9 +142,11 @@ void plat_log(const char *fmt, ...)
     fflush(stdout);
 }
 
+#ifdef __APPLE__
 void plat_keep_awake(void)
 {
 }
+#endif
 
 void plat_set_power(int mode)
 {
@@ -163,6 +170,30 @@ void plat_language(char out[3])
     out[2] = 0;
 }
 
+#ifdef __linux__
+/* The first battery in /sys/class/power_supply (BAT0, BAT1 on the Steam Deck). */
+static void linux_battery(plat_status *s)
+{
+    char path[128], buf[32];
+    for (int i = 0; i < 4; i++) {
+        FILE *f;
+        snprintf(path, sizeof(path), "/sys/class/power_supply/BAT%d/capacity", i);
+        if (!(f = fopen(path, "r")))
+            continue;
+        if (fgets(buf, sizeof(buf), f))
+            s->battery = atoi(buf);
+        fclose(f);
+        snprintf(path, sizeof(path), "/sys/class/power_supply/BAT%d/status", i);
+        if ((f = fopen(path, "r"))) {
+            if (fgets(buf, sizeof(buf), f))
+                s->charging = buf[0] == 'C' || buf[0] == 'F';   /* Charging, Full */
+            fclose(f);
+        }
+        return;
+    }
+}
+#endif
+
 void plat_get_status(plat_status *s)
 {
     time_t now = time(NULL);
@@ -176,6 +207,9 @@ void plat_get_status(plat_status *s)
     s->minute = tm.tm_min;
     s->battery = -1;
     s->charging = 0;
+#ifdef __linux__
+    linux_battery(s);
+#endif
 }
 
 int plat_list_dir(const char *dir, plat_dir_fn fn, void *user)
@@ -192,23 +226,35 @@ int plat_list_dir(const char *dir, plat_dir_fn fn, void *user)
     return 0;
 }
 
-#define DATA_DIR_ENV NULL
-#define DATA_IN_HOME 1
-
+/* macOS: ~/.umdplayer. Linux: $XDG_DATA_HOME/umdplayer, by default ~/.local/share/umdplayer. */
 static int data_path(char *path, size_t size, const char *name)
 {
-    const char *dir = DATA_DIR_ENV ? getenv(DATA_DIR_ENV) : NULL;
     const char *home = getenv("HOME");
-
-    if (dir) {
-        snprintf(path, size, "%s/%s", dir, name);
-        return 0;
+#ifdef __linux__
+    const char *xdg = getenv("XDG_DATA_HOME");
+    if (xdg && *xdg) {
+        snprintf(path, size, "%s/umdplayer", xdg);
+    } else if (home) {
+        snprintf(path, size, "%s/.local", home);
+        mkdir(path, 0755);
+        snprintf(path, size, "%s/.local/share", home);
+        mkdir(path, 0755);
+        snprintf(path, size, "%s/.local/share/umdplayer", home);
+    } else {
+        return -1;
     }
-    if (!DATA_IN_HOME || !home)
+    mkdir(path, 0755);
+    {
+        size_t n = strlen(path);
+        snprintf(path + n, size - n, "/%s", name);
+    }
+#else
+    if (!home)
         return -1;
     snprintf(path, size, "%s/.umdplayer", home);
     mkdir(path, 0755);
     snprintf(path, size, "%s/.umdplayer/%s", home, name);
+#endif
     return 0;
 }
 

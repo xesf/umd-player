@@ -1,5 +1,6 @@
-# Builds the host tools, the Mac app and the Vita VPK on every push and pull request. A tag named v*
-# also publishes a GitHub release with the VPK, and sends it to VitaDB.
+# Builds the host tools, the desktop players (macOS, Linux, Windows) and the Vita VPK on every
+# push and pull request. A tag named v* also publishes a GitHub release with the VPK and the
+# Linux and Windows packages, and sends the VPK to VitaDB.
 name: build
 
 on:
@@ -31,6 +32,48 @@ jobs:
       - name: Build the Mac app
         run: make
 
+  # Built on the oldest supported Ubuntu, so the binary runs on any glibc from 2.35 on,
+  # SteamOS included.
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install X11 and ALSA headers
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev libasound2-dev
+      - name: Build the Linux player
+        run: make PLATFORM=linux
+      - name: Package
+        run: |
+          v=$(sed -n 's/.*UMDPLAYER_VERSION "\(.*\)".*/\1/p' src/app/version.h)
+          mkdir -p pkg/umdplayer
+          cp build/linux/umdplayer LICENSE NOTICE src/core/atrac3p/COPYING.LGPLv2.1 pkg/umdplayer/
+          cp docs/desktop.md pkg/umdplayer/README.md
+          tar -C pkg -czf umdplayer-v$v-linux-x86_64.tar.gz umdplayer
+      - uses: actions/upload-artifact@v4
+        with:
+          name: umdplayer-linux
+          path: umdplayer-v*-linux-x86_64.tar.gz
+
+  windows:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install mingw-w64
+        run: sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-x86-64 binutils-mingw-w64-x86-64 zip
+      - name: Build the Windows player
+        run: make PLATFORM=windows
+      - name: Package
+        run: |
+          v=$(sed -n 's/.*UMDPLAYER_VERSION "\(.*\)".*/\1/p' src/app/version.h)
+          mkdir -p pkg/umdplayer
+          cp build/windows/umdplayer.exe LICENSE NOTICE src/core/atrac3p/COPYING.LGPLv2.1 pkg/umdplayer/
+          cp docs/desktop.md pkg/umdplayer/README.md
+          (cd pkg && zip -r ../umdplayer-v$v-windows-x86_64.zip umdplayer)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: umdplayer-windows
+          path: umdplayer-v*-windows-x86_64.zip
+
   vita:
     runs-on: ubuntu-24.04
     container: vitasdk/vitasdk:latest
@@ -47,18 +90,21 @@ jobs:
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [host, vita]
+    needs: [host, linux, windows, vita]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: umdplayer-vpk
+          pattern: umdplayer-*
+          merge-multiple: true
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" umdplayer-v*.vpk --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
+        run: |
+          gh release create "$GITHUB_REF_NAME" umdplayer-v*.vpk umdplayer-v*-linux-x86_64.tar.gz umdplayer-v*-windows-x86_64.zip \
+            --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
       # VitaDB copies the VPK from the release just published. The secret comes from the
       # app's VitaDB page; without it (forks) the step does nothing.
       - name: Publish to VitaDB

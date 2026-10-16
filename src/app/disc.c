@@ -45,9 +45,11 @@ struct disc {
 /* The key of the disc's saved state: its file name, as for resume.txt. */
 static const char *state_key(const disc *d)
 {
-    const char *s = strrchr(d->path, '/'), *c = strrchr(d->path, ':');
+    const char *s = strrchr(d->path, '/'), *c = strrchr(d->path, ':'), *b = strrchr(d->path, '\\');
     if (c && (!s || c > s))
         s = c;
+    if (b && (!s || b > s))
+        s = b;
     return s ? s + 1 : d->path;
 }
 

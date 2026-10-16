@@ -1,6 +1,6 @@
 # UMD Player
 
-A UMD Video player for the PS Vita. It plays the movies, TV episodes and concerts that Sony sold on UMD for the PSP, from `.iso`, `.cso` or `.zso` disc images, natively: no Adrenaline, no PSP firmware. It can also play a disc through its own menus, as a PSP does.
+A UMD Video player for the PS Vita, Windows, Linux (Steam Deck and Steam Machine included) and macOS. It plays the movies, TV episodes and concerts that Sony sold on UMD for the PSP, from `.iso`, `.cso` or `.zso` disc images. On the Vita it runs natively: no Adrenaline, no PSP firmware. It can also play a disc through its own menus, as a PSP does.
 
 | | |
 |---|---|
@@ -11,7 +11,7 @@ The screenshots use placeholder discs. With your discs, the library shows each d
 
 ## Features
 
-- **Hardware video**: H.264 on the Vita's decoder, including the field-coded discs, with ATRAC3plus audio decoded in software.
+- **Every disc plays**: H.264 on the Vita's hardware decoder, and on computers with the app's own decoder, field-coded discs included; ATRAC3plus audio decoded in software.
 - **A PSP-style library**: each disc's background, animated icon and music; the resume point of every disc.
 - **The disc's own menus** ("Start with: Disc"): logos, warnings, menu screens with their animations, and the disc's audio, subtitle, chapter and extras choices.
 - **Interactive movies (UMD-PG)** such as Summer Days: choices, and passwords to carry the story from disc to disc. Discs played through their menus continue where you left them.
@@ -28,6 +28,8 @@ The screenshots use placeholder discs. With your discs, the library shows each d
 3. Copy UMD Video disc images to `ux0:umd/` or `ux0:pspemu/ISO/VIDEO/`.
 
 The [manual](docs/manual.md) covers every screen and control; the app's LiveArea has a Manual button with a short version.
+
+On Windows, Linux and the Steam Deck, see [UMD Player on computers](docs/desktop.md): download the package for your system, copy disc images to the `UMD` folder in your home folder, and run it. Keyboard, gamepad, mouse and touch screen all work. On macOS, build it from source.
 
 ## Controls
 
@@ -47,11 +49,12 @@ On the touch screen, a tap shows or hides the time bar; slide along it and lift 
 
 ## Build
 
-Requirements: a C99 compiler for the host tools and the Mac app, and [VitaSDK](https://vitasdk.org) for the Vita. The player uses no other libraries.
+Requirements: a C99 compiler for the host tools and the desktop players, and [VitaSDK](https://vitasdk.org) for the Vita. The player uses only what each system provides: Cocoa and Core Audio on macOS, the Win32 API on Windows, X11 and ALSA on Linux (Debian and Ubuntu: `libx11-dev libasound2-dev`).
 
 ```
 cmake -S . -B build/vita && cmake --build build/vita   # build/vita/umdplayer-v<version>.vpk
-make                                                   # the Mac app: build/macos/umdplayer
+make                                                   # the desktop player for this machine: build/macos or build/linux
+make PLATFORM=windows                                  # Windows, with mingw-w64: build/windows/umdplayer.exe
 make -C tools                                          # host tools in build/host/
 ./build/host/umdinfo umd/movie.iso                     # titles, chapters, streams of a disc
 ./build/host/menutest -d umd/movie.iso 60              # run a disc's menus with a simulated player
@@ -60,17 +63,24 @@ make -C tools                                          # host tools in build/hos
 ./build/host/h264dectest video.264 -c ref.yuv          # check the H.264 decoder against a reference
 ```
 
-GitHub Actions builds the host tools and the VPK on every push and runs the checks that need no disc. A `v*` tag publishes a release with the VPK and sends it to [VitaDB](https://vitadb.rinnegatamante.eu), using the `VITA_SECRET` repository secret. It also builds the Mac app.
+GitHub Actions builds the host tools and the VPK on every push and runs the checks that need no disc. A `v*` tag publishes a release with the VPK and sends it to [VitaDB](https://vitadb.rinnegatamante.eu), using the `VITA_SECRET` repository secret. It also builds the desktop players, and a tag attaches the Linux and Windows packages to the release.
 
-## macOS
+## Desktop platforms
 
-`./build/macos/umdplayer umd` opens the library of a folder; `./build/macos/umdplayer movie.iso` plays one disc. The keyboard stands in for the Vita's buttons: arrow keys for the D-pad, Space for Cross, Backspace for Circle, A for Square, W for Triangle, Q and E for L and R, Return for Start, Tab for Select. Escape quits.
+| Platform | Code | Video | Audio | Input |
+|---|---|---|---|---|
+| Windows | `src/platform/windows/` | software decoder, GDI | waveOut | keyboard, XInput gamepads, mouse and touch |
+| Linux | `src/platform/linux/` | software decoder, X11 | ALSA | keyboard, evdev gamepads, mouse and touch |
+| macOS | `src/platform/macos/` | software decoder, Core Animation | Audio Queue | keyboard, mouse |
 
-VideoToolbox cannot decode the field pictures that half of the discs use, so the Mac app decodes H.264 itself, with the decoder in `src/core/h264dec.c`. See [the decoder notes](docs/h264-decoder.md).
+Windows and Linux share `src/platform/soft/` (decoded frames and the compositor that draws video, subtitles and UI into the window), and Linux and macOS share `src/platform/posix/`. VideoToolbox cannot decode the field pictures that half of the discs use, so every desktop platform decodes H.264 with `src/core/h264dec.c`. See [the decoder notes](docs/h264-decoder.md).
+
+`UMD_SNAPSHOT=frame.ppm` makes the Windows and Linux players save the picture they show 10 seconds in, for testing without a screen.
 
 ## Documentation
 
 - [Manual](docs/manual.md): installing, adding movies, all controls, with screenshots
+- [UMD Player on computers](docs/desktop.md): Windows, Linux, Steam Deck and macOS
 - [Changelog](CHANGELOG.md)
 - [UMD Video format reference](docs/formats/umd-video.md) and [compressed images](docs/formats/compressed-iso.md)
 - [UMD Video menus](docs/research/umd-menus.md): the RCO format, the script bytecode and the player interface

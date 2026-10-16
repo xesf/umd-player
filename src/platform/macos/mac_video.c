@@ -4,6 +4,7 @@
 #include "../platform.h"
 #include "mac_frame.h"
 #include "../../core/h264dec.h"
+#include "../../core/yuv.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,27 +18,6 @@ struct plat_video {
     int out_count;
 };
 
-/* BT.601 limited range to BGRA, 16.16 fixed point */
-static void yuv_to_bgra(const h264dec_frame *f, uint8_t *dst, size_t dst_stride)
-{
-    for (int y = 0; y < f->height; y++) {
-        const uint8_t *py = f->plane[0] + y * f->stride[0];
-        const uint8_t *pu = f->plane[1] + (y >> 1) * f->stride[1];
-        const uint8_t *pv = f->plane[2] + (y >> 1) * f->stride[2];
-        uint8_t *o = dst + y * dst_stride;
-        for (int x = 0; x < f->width; x++) {
-            int c = (py[x] - 16) * 76309, d = pu[x >> 1] - 128, e = pv[x >> 1] - 128;
-            int r = (c + 104597 * e + 32768) >> 16;
-            int g = (c - 25675 * d - 53279 * e + 32768) >> 16;
-            int b = (c + 132201 * d + 32768) >> 16;
-            o[x * 4 + 0] = (uint8_t)(b < 0 ? 0 : b > 255 ? 255 : b);
-            o[x * 4 + 1] = (uint8_t)(g < 0 ? 0 : g > 255 ? 255 : g);
-            o[x * 4 + 2] = (uint8_t)(r < 0 ? 0 : r > 255 ? 255 : r);
-            o[x * 4 + 3] = 255;
-        }
-    }
-}
-
 static CVPixelBufferRef make_image(const h264dec_frame *f)
 {
     CVPixelBufferRef image = NULL;
@@ -47,7 +27,8 @@ static CVPixelBufferRef make_image(const h264dec_frame *f)
     CFDictionarySetValue(attrs, kCVPixelBufferIOSurfacePropertiesKey, surface);
     if (CVPixelBufferCreate(NULL, (size_t)f->width, (size_t)f->height, kCVPixelFormatType_32BGRA, attrs, &image) == kCVReturnSuccess) {
         CVPixelBufferLockBaseAddress(image, 0);
-        yuv_to_bgra(f, CVPixelBufferGetBaseAddress(image), CVPixelBufferGetBytesPerRow(image));
+        yuv420_to_bgra(f->plane, f->stride, f->width, f->height, CVPixelBufferGetBaseAddress(image),
+                       (int)CVPixelBufferGetBytesPerRow(image));
         CVPixelBufferUnlockBaseAddress(image, 0);
     }
     CFRelease(surface);

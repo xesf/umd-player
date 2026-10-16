@@ -865,7 +865,7 @@ static int start_picture(h264dec *d, int nal_ref_idc)
     compute_poc(d);
     (void)nal_ref_idc;
     if (getenv("H264DEC_TRACE"))
-        fprintf(stderr, "picture %s%s frame_num %d poc %d ref %d structure %d\n", &"PBI"[s->type] ? (s->type == 0 ? "P" : s->type == 1 ? "B" : "I") : "", s->idr ? " IDR" : "",
+        fprintf(stderr, "picture %s%s frame_num %d poc %d ref %d structure %d\n", s->type == 0 ? "P" : s->type == 1 ? "B" : "I", s->idr ? " IDR" : "",
                 s->frame_num, d->poc, s->nal_ref_idc, d->structure);
 
     /* where this picture's samples and macroblocks go */
