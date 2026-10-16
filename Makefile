@@ -2,6 +2,13 @@
 #   macOS and Linux build for the machine they run on.
 #   Windows, from macOS or Linux with mingw-w64: make PLATFORM=windows
 #   Linux needs the X11 and ALSA headers (Debian and Ubuntu: libx11-dev libasound2-dev).
+# Run it:
+#   make run                 the player for this machine
+#   make run-windows         the Windows player under Wine
+#   make run-linux           the Linux player: natively on Linux; on macOS in Docker, on a virtual
+#                            screen for RUN_SECONDS, saving build/linux-docker/snapshot.ppm (with XQuartz,
+#                            LINUX_DISPLAY=host.docker.internal:0 opens a window instead)
+#   ARGS=umd/movie.iso       what to open (a folder or a disc image); none: the default folder
 # Host tools: make -C tools. The Vita build uses CMake: see the README.
 UNAME := $(shell uname -s 2>/dev/null)
 ifeq ($(PLATFORM),)
@@ -82,7 +89,39 @@ $(BUILD)/umdplayer_res.o: src/platform/windows/umdplayer.rc assets/app/umdplayer
 	@mkdir -p $(dir $@)
 	$(WINDRES) -o $@ $<
 
+ARGS ?=
+RUN_SECONDS ?= 15
+LINUX_DISPLAY ?=
+LINUX_IMAGE = ubuntu:22.04
+LINUX_SETUP = apt-get update -qq >/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq gcc make libx11-dev libasound2-dev xvfb >/dev/null
+
+run: $(TARGET)
+ifeq ($(PLATFORM),windows)
+	wine $(TARGET) $(ARGS)
+else
+	./$(TARGET) $(ARGS)
+endif
+
+run-windows:
+	$(MAKE) PLATFORM=windows
+	wine build/windows/umdplayer.exe $(ARGS)
+
+run-linux:
+ifeq ($(UNAME),Linux)
+	$(MAKE) PLATFORM=linux
+	./build/linux/umdplayer $(ARGS)
+else ifneq ($(LINUX_DISPLAY),)
+	docker run --rm -it -e DISPLAY=$(LINUX_DISPLAY) -e HOME=/tmp -v "$(CURDIR)":/src -w /src $(LINUX_IMAGE) \
+	    sh -c '$(LINUX_SETUP) && make PLATFORM=linux BUILD=build/linux-docker && ./build/linux-docker/umdplayer $(ARGS)'
+else
+	docker run --rm -v "$(CURDIR)":/src -w /src $(LINUX_IMAGE) sh -c '$(LINUX_SETUP) && make PLATFORM=linux BUILD=build/linux-docker && \
+	    (Xvfb :1 -screen 0 1280x800x24 >/dev/null 2>&1 &) && sleep 2 && \
+	    DISPLAY=:1 HOME=/tmp UMD_SNAPSHOT=build/linux-docker/snapshot.ppm UMD_SNAPSHOT_AFTER=$$(( $(RUN_SECONDS) * 700000 )) \
+	    timeout $(RUN_SECONDS) ./build/linux-docker/umdplayer --window $(ARGS); true'
+	@echo "picture: build/linux-docker/snapshot.ppm"
+endif
+
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all clean
+.PHONY: all clean run run-windows run-linux

@@ -281,6 +281,50 @@ static int open_window(HINSTANCE inst)
     return 0;
 }
 
+/* Testing aid: UMD_TEST_KEYS="2000:space,9000:escape" presses keys at those times (ms after
+   start) through the window's own messages. Keys: space, escape, backspace, up, down, left,
+   right, return, tab. */
+static void test_keys(void)
+{
+    static uint64_t started;
+    static int next;
+    static WPARAM held;            /* released on the next frame, so the app sees it held */
+    const char *spec = getenv("UMD_TEST_KEYS");
+    if (!spec)
+        return;
+    if (held) {
+        PostMessageW(hwnd, WM_KEYUP, held, 0);
+        held = 0;
+        return;
+    }
+    if (!started)
+        started = plat_time_us();
+    for (;;) {
+        const char *p = spec;
+        int k = 0;
+        unsigned long long at;
+        char name[16] = "";
+        while (k < next && (p = strchr(p, ',')) != NULL) {
+            p++;
+            k++;
+        }
+        if (!p || sscanf(p, "%llu:%15[a-z]", &at, name) != 2 || plat_time_us() - started < at * 1000u)
+            return;
+        {
+            static const struct { const char *n; WPARAM vk; } keys[] = {
+                {"space", VK_SPACE}, {"escape", VK_ESCAPE}, {"backspace", VK_BACK}, {"up", VK_UP}, {"down", VK_DOWN},
+                {"left", VK_LEFT}, {"right", VK_RIGHT}, {"return", VK_RETURN}, {"tab", VK_TAB}};
+            for (unsigned i = 0; i < sizeof(keys) / sizeof(keys[0]); i++)
+                if (strcmp(name, keys[i].n) == 0) {
+                    PostMessageW(hwnd, WM_KEYDOWN, keys[i].vk, 0);
+                    held = keys[i].vk;
+                }
+        }
+        next++;
+        return;
+    }
+}
+
 int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmd, int show)
 {
     int wargc = 0, n = 0;
@@ -298,7 +342,8 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmd, int show)
             fullscreen = 1;
             continue;
         }
-        if (i > 0 && storage[n][0] != '-' && !path && (n == 1 || storage[n - 1][0] != '-'))
+        /* -t and -a take a value; anything else not starting with '-' is the folder or disc */
+        if (i > 0 && storage[n][0] != '-' && !path && strcmp(storage[n - 1], "-t") != 0 && strcmp(storage[n - 1], "-a") != 0)
             path = storage[n];
         args[n] = storage[n];
         n++;
@@ -346,6 +391,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmd, int show)
             TranslateMessage(&m);
             DispatchMessageW(&m);
         }
+        test_keys();
         if (quit || !app_frame())
             break;
         took = plat_time_us() - start;

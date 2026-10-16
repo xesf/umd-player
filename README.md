@@ -55,6 +55,9 @@ Requirements: a C99 compiler for the host tools and the desktop players, and [Vi
 cmake -S . -B build/vita && cmake --build build/vita   # build/vita/umdplayer-v<version>.vpk
 make                                                   # the desktop player for this machine: build/macos or build/linux
 make PLATFORM=windows                                  # Windows, with mingw-w64: build/windows/umdplayer.exe
+make run ARGS=umd                                      # run the player for this machine on a folder or disc
+make run-windows ARGS=umd/movie.iso                    # run the Windows player under Wine
+make run-linux ARGS=umd/movie.iso                      # Linux: native, or in Docker on macOS (see the Makefile)
 make -C tools                                          # host tools in build/host/
 ./build/host/umdinfo umd/movie.iso                     # titles, chapters, streams of a disc
 ./build/host/menutest -d umd/movie.iso 60              # run a disc's menus with a simulated player
@@ -75,7 +78,7 @@ GitHub Actions builds the host tools and the VPK on every push and runs the chec
 
 Windows and Linux share `src/platform/soft/` (decoded frames and the compositor that draws video, subtitles and UI into the window), and Linux and macOS share `src/platform/posix/`. VideoToolbox cannot decode the field pictures that half of the discs use, so every desktop platform decodes H.264 with `src/core/h264dec.c`. See [the decoder notes](docs/h264-decoder.md).
 
-`UMD_SNAPSHOT=frame.ppm` makes the Windows and Linux players save the picture they show 10 seconds in, for testing without a screen.
+For testing without a screen or a keyboard: `UMD_SNAPSHOT=frame.ppm` makes the Windows and Linux players save the picture they show 10 seconds in, and on Windows `UMD_TEST_KEYS="4000:space,12000:escape"` presses keys at those times (milliseconds).
 
 ## Documentation
 

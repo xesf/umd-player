@@ -4,6 +4,11 @@
 
 - Desktop: started without a folder, the library shows the app's own folder when it holds disc images, then a UMD folder next to the app, then UMD in the home folder. Dropping umdplayer.exe into a movie folder is enough.
 
+- Fixed a crash when quitting during a movie (Escape on Windows): the player freed its demuxer, then used it. The other platforms wrote to freed memory without crashing.
+- Windows and Linux: drawing the picture is about three times faster. Video scaling interpolates each source row once and keeps the scaled picture between presents of the same frame, and transparent rows of the UI are skipped, so the time bar no longer slows the movie.
+- Desktop: a folder or disc after --window or --fullscreen is no longer taken for an option's value.
+- Makefile: make run, make run-windows (Wine) and make run-linux (native, or Docker on macOS).
+
 ## v0.6.0 (2026-10-16)
 
 - New platforms: Windows and Linux, the Steam Deck and Steam Machine included, alongside the Vita and macOS. Releases attach umdplayer-v0.6.0-windows-x86_64.zip and umdplayer-v0.6.0-linux-x86_64.tar.gz; docs/desktop.md explains installing, and adding the app to Steam on the Deck.

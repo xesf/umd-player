@@ -1883,6 +1883,11 @@ void player_close(player *p)
     plat_frame_release(p->shown);
     if (p->video)
         plat_video_close(p->video);
+    /* what the demuxer and the subtitle queue own, before their memory goes */
+    while (p->sub_count > 0)
+        drop_sub(p);
+    if (p->dmx)
+        demux_free(p->dmx);
     plat_cond_destroy(p->cond);
     plat_mutex_destroy(p->lock);
     plat_mutex_destroy(p->io_lock);
@@ -1893,13 +1898,8 @@ void player_close(player *p)
     free(p->sub_rgba);
     free(p->sub_work);
     free(p->ui.rgba);
-    if (p->lock)
-        while (p->sub_count > 0)
-            drop_sub(p);
     for (int i = 0; i < DEMUX_AUDIO_TRACKS; i++)
         free(p->aq[i].frames);
-    if (p->dmx)
-        demux_free(p->dmx);
     free(p->clp_buf);
     plat_iso_close(&p->src);
     free(p);

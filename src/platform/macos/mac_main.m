@@ -217,7 +217,8 @@ int main(int argc, char **argv)
         char lib[1024], *args[64];
         int n = 0, have_path = 0;
         for (int i = 0; i < argc && n < 62; i++) {
-            if (i > 0 && argv[i][0] != '-' && argv[i - 1][0] != '-')
+            /* -t and -a take a value; anything else not starting with '-' is the folder or disc */
+            if (i > 0 && argv[i][0] != '-' && strcmp(argv[i - 1], "-t") != 0 && strcmp(argv[i - 1], "-a") != 0)
                 have_path = 1;
             args[n++] = argv[i];
         }

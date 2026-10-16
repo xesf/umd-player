@@ -389,7 +389,8 @@ int main(int argc, char **argv)
         else if (strcmp(argv[i], "--window") == 0)
             fullscreen = 0;
         else {
-            if (argv[i][0] != '-' && !path && (i == 1 || argv[i - 1][0] != '-'))
+            /* -t and -a take a value; anything else not starting with '-' is the folder or disc */
+            if (argv[i][0] != '-' && !path && strcmp(argv[i - 1], "-t") != 0 && strcmp(argv[i - 1], "-a") != 0)
                 path = argv[i];
             args[n++] = argv[i];
         }
