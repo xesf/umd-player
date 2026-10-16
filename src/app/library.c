@@ -1292,3 +1292,15 @@ void library_close(library *l)
     free(l->ui.rgba);
     free(l);
 }
+
+static void count_disc(void *user, const char *name)
+{
+    if (image_name_supported(name))
+        (*(int *)user)++;
+}
+
+int library_has_discs(const char *dir)
+{
+    int n = 0;
+    return plat_list_dir(dir, count_disc, &n) == 0 && n > 0;
+}

@@ -9,6 +9,7 @@
 #define _GNU_SOURCE
 #include "../platform.h"
 #include "../soft/soft.h"
+#include "../../app/library.h"
 
 #include <X11/XKBlib.h>
 #include <X11/Xlib.h>
@@ -394,9 +395,20 @@ int main(int argc, char **argv)
         }
     }
     if (!path) {
-        const char *home = getenv("HOME");
-        snprintf(home_lib, sizeof(home_lib), "%s/UMD", home ? home : ".");
-        mkdir(home_lib, 0755);
+        /* the app's folder if it holds disc images, else a UMD folder next to it, else ~/UMD */
+        char exe_dir[1024] = "", *slash;
+        ssize_t len = readlink("/proc/self/exe", exe_dir, sizeof(exe_dir) - 1);
+        exe_dir[len > 0 ? len : 0] = 0;
+        if ((slash = strrchr(exe_dir, '/')) != NULL)
+            *slash = 0;
+        snprintf(home_lib, sizeof(home_lib), "%s/UMD", exe_dir);
+        if (exe_dir[0] && library_has_discs(exe_dir)) {
+            snprintf(home_lib, sizeof(home_lib), "%s", exe_dir);
+        } else if (!exe_dir[0] || !library_has_discs(home_lib)) {
+            const char *home = getenv("HOME");
+            snprintf(home_lib, sizeof(home_lib), "%s/UMD", home ? home : ".");
+            mkdir(home_lib, 0755);
+        }
         /* the folder goes first, as app_init expects */
         memmove(&args[2], &args[1], (size_t)(n - 1) * sizeof(args[0]));
         args[1] = home_lib;

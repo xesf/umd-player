@@ -8,7 +8,7 @@ UMD Player also runs on computers. It plays the same `.iso`, `.cso` and `.zso` d
 2. Copy your disc images to the `UMD` folder in your user folder (`C:\Users\<you>\UMD`). UMD Player creates the folder the first time it runs.
 3. Run `umdplayer.exe`.
 
-To use another folder, give it on the command line: `umdplayer.exe D:\Movies\UMD`. A disc image as the argument plays that disc and quits at the end.
+You can also put `umdplayer.exe` in the folder with your disc images, or next to a `UMD` folder, and run it there: see [Which folder the library shows](#which-folder-the-library-shows). To use any other folder, give it on the command line: `umdplayer.exe D:\Movies\UMD`. A disc image as the argument plays that disc and quits at the end.
 
 Windows 10 or 11, 64-bit; older versions are not tested. Windows may warn that the app is unrecognised, because it is not signed: choose "More info", then "Run anyway".
 
@@ -35,6 +35,14 @@ In Gaming Mode UMD Player runs in full screen. The Deck's controls work with Ste
 ## macOS
 
 Build it from source (see the README): `make`, then `./build/macos/umdplayer`. Without a folder, the library is `~/UMD`. The keyboard and the mouse work; gamepads are not supported on macOS yet.
+
+## Which folder the library shows
+
+Started without a folder, UMD Player picks the first of these that applies:
+
+1. The folder the app is in, when it holds disc images. Copy `umdplayer.exe` (or `umdplayer` on Linux) into your movie folder and run it from there.
+2. A `UMD` folder next to the app, when it holds disc images.
+3. The `UMD` folder in your home folder, created when it does not exist yet.
 
 ## Controls
 

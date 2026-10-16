@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Desktop: started without a folder, the library shows the app's own folder when it holds disc images, then a UMD folder next to the app, then UMD in the home folder. Dropping umdplayer.exe into a movie folder is enough.
+
 ## v0.6.0 (2026-10-16)
 
 - New platforms: Windows and Linux, the Steam Deck and Steam Machine included, alongside the Vita and macOS. Releases attach umdplayer-v0.6.0-windows-x86_64.zip and umdplayer-v0.6.0-linux-x86_64.tar.gz; docs/desktop.md explains installing, and adding the app to Steam on the Deck.

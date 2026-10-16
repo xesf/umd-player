@@ -14,6 +14,7 @@
 
 #include "../platform.h"
 #include "../soft/soft.h"
+#include "../../app/library.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -304,14 +305,27 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmd, int show)
     }
     LocalFree(wargv);
     if (!path) {
+        /* the folder of umdplayer.exe if it holds disc images, else a UMD folder next to
+           it, else UMD in the user's folder */
         const wchar_t *profile = _wgetenv(L"USERPROFILE");
-        char base[MAX_PATH * 3] = ".";
-        wchar_t wdir[MAX_PATH * 2];
-        if (profile)
-            WideCharToMultiByte(CP_UTF8, 0, profile, -1, base, (int)sizeof(base), NULL, NULL);
-        snprintf(home_lib, sizeof(home_lib), "%s\\UMD", base);
-        if (MultiByteToWideChar(CP_UTF8, 0, home_lib, -1, wdir, MAX_PATH * 2) > 0)
-            CreateDirectoryW(wdir, NULL);
+        char base[MAX_PATH * 3] = ".", exe_dir[MAX_PATH * 3] = "", *slash;
+        wchar_t wdir[MAX_PATH * 2], wexe[MAX_PATH * 2];
+        DWORD len = GetModuleFileNameW(NULL, wexe, MAX_PATH * 2);
+        if (len > 0 && len < MAX_PATH * 2) {
+            WideCharToMultiByte(CP_UTF8, 0, wexe, -1, exe_dir, (int)sizeof(exe_dir), NULL, NULL);
+            if ((slash = strrchr(exe_dir, '\\')) != NULL)
+                *slash = 0;
+        }
+        snprintf(home_lib, sizeof(home_lib), "%s\\UMD", exe_dir);
+        if (exe_dir[0] && library_has_discs(exe_dir)) {
+            snprintf(home_lib, sizeof(home_lib), "%s", exe_dir);
+        } else if (!exe_dir[0] || !library_has_discs(home_lib)) {
+            if (profile)
+                WideCharToMultiByte(CP_UTF8, 0, profile, -1, base, (int)sizeof(base), NULL, NULL);
+            snprintf(home_lib, sizeof(home_lib), "%s\\UMD", base);
+            if (MultiByteToWideChar(CP_UTF8, 0, home_lib, -1, wdir, MAX_PATH * 2) > 0)
+                CreateDirectoryW(wdir, NULL);
+        }
         memmove(&args[2], &args[1], (size_t)(n - 1) * sizeof(args[0]));
         args[1] = home_lib;
         n++;

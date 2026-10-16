@@ -5,6 +5,9 @@
 #include "../platform.h"
 #include "../../core/deint.h"
 #include "mac_frame.h"
+#include "../../app/library.h"
+
+#include <mach-o/dyld.h>
 
 #include <sys/stat.h>
 
@@ -219,8 +222,18 @@ int main(int argc, char **argv)
             args[n++] = argv[i];
         }
         if (!have_path) {
-            snprintf(lib, sizeof(lib), "%s/UMD", getenv("HOME") ? getenv("HOME") : ".");
-            mkdir(lib, 0755);
+            /* the app's folder if it holds disc images, else a UMD folder next to it, else ~/UMD */
+            char exe[1024], dir[1024] = "", *slash;
+            uint32_t size = sizeof(exe);
+            if (_NSGetExecutablePath(exe, &size) == 0 && realpath(exe, dir) && (slash = strrchr(dir, '/')))
+                *slash = 0;
+            snprintf(lib, sizeof(lib), "%s/UMD", dir);
+            if (dir[0] && library_has_discs(dir)) {
+                snprintf(lib, sizeof(lib), "%s", dir);
+            } else if (!dir[0] || !library_has_discs(lib)) {
+                snprintf(lib, sizeof(lib), "%s/UMD", getenv("HOME") ? getenv("HOME") : ".");
+                mkdir(lib, 0755);
+            }
             memmove(&args[2], &args[1], (size_t)(n - 1) * sizeof(args[0]));
             args[1] = lib;
             n++;

@@ -14,6 +14,11 @@ typedef struct library library;
    only when out of memory. */
 library *library_open(const char *dir);
 
+/* 1 if dir holds at least one disc image (.iso, .cso, .zso). The desktop platforms use it to
+   pick the library folder when none is given: the app's own folder, then a UMD folder next
+   to it, then UMD in the home folder. */
+int library_has_discs(const char *dir);
+
 /* Call once per display refresh. Returns the index of the disc to play when the user picks
    one, or -1 to keep browsing. (Quitting is the PS button.) */
 int library_update(library *l, uint32_t pressed);
