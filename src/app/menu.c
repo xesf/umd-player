@@ -1489,6 +1489,20 @@ void menu_chapter_changed(menu *m, int chapter)
     call_handler(m, "movieplayer", "onChapter", &info, 1);
 }
 
+void menu_mark_reached(menu *m, const char *name, uint32_t data)
+{
+    vsmx *vm = m->res->vm;
+    vs_value info = vs_new_object(vm);
+    menu_status st;
+
+    m->p.status(m->p.user, &st);
+    mlog(m, "menu: mark %s", name);
+    vs_set(vm, info, vs_intern(vm, "playListNumber"), vs_int(st.playlist));
+    vs_set(vm, info, vs_intern(vm, "mark_name"), vs_string(vm, name));
+    vs_set(vm, info, vs_intern(vm, "mark_data"), vs_int(data));
+    call_handler(m, "movieplayer", "onMark", &info, 1);
+}
+
 void menu_menu_button(menu *m)
 {
     call_handler(m, "controller", "onMenu", NULL, 0);

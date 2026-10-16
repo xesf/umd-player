@@ -10,6 +10,7 @@
 #define PL_ENTRY_MARK_COUNT 0x336
 #define PL_ENTRY_MARKS      0x338
 #define PL_MARK_SIZE        0x28
+#define PL_MARK_EVENT       0x10     /* mark type; chapters are 0x05 */
 
 #define CLP_STREAM_SIZE 14
 #define CLP_EPMAP_SIZE  10
@@ -65,10 +66,19 @@ int umdv_playlist_parse(const uint8_t *buf, uint32_t size, umdv_playlist *out)
         ti->start_pts = be48(&buf[o + PL_ENTRY_START]);
         ti->end_pts = be48(&buf[o + PL_ENTRY_END]);
         ti->first_chapter = out->chapter_count;
-        ti->chapter_count = marks;
+        ti->first_event = out->event_count;
         for (m = 0; m < marks; m++) {
             const uint8_t *mk = &buf[o + PL_ENTRY_MARKS + (uint32_t)m * PL_MARK_SIZE];
-            umdv_chapter *ch = &out->chapters[out->chapter_count++];
+            umdv_chapter *ch;
+            if (mk[0] == PL_MARK_EVENT) {
+                if (out->event_count >= UMDV_MAX_EVENTS)
+                    continue;
+                ch = &out->events[out->event_count++];
+                ti->event_count++;
+            } else {
+                ch = &out->chapters[out->chapter_count++];
+                ti->chapter_count++;
+            }
             ch->pts = be48(&mk[4]);
             copy_name(ch->name, sizeof(ch->name), &mk[0x10], mk[1]);
             ch->data = (uint32_t)mk[0x0C] << 24 | (uint32_t)mk[0x0D] << 16 | (uint32_t)mk[0x0E] << 8 | mk[0x0F];

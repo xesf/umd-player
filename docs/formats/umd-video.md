@@ -64,20 +64,21 @@ Offsets count from the start of the entry. The next entry starts at `entry + 4 +
 | `0x31E` | 8 | Clip name, for example `00006`. Selects `CLIPINF/00006.CLP` and `STREAM/00006.MPS`. |
 | `0x326` | 6 | Start time |
 | `0x32C` | 6 | End time |
-| `0x332` | 4 | Chapter table length: 2 + 40 x chapter count |
-| `0x336` | 2 | Chapter count, at least 1 |
-| `0x338` | 40 each | Chapters |
+| `0x332` | 4 | Mark table length: 2 + 40 x mark count |
+| `0x336` | 2 | Mark count, at least 1 |
+| `0x338` | 40 each | Marks |
 
-### Chapter entry
+### Mark entry
 
 | Offset | Size | Field |
 |---|---|---|
-| `0x00` | 1 | Always `0x05` |
+| `0x00` | 1 | Type: `0x05` chapter, `0x10` event |
 | `0x01` | 1 | Name length |
 | `0x04` | 6 | Time |
+| `0x0C` | 4 | Data, the script's `mark_data` (0 on the test discs) |
 | `0x10` | 24 | Name, often `Mark<frame>` |
 
-The first chapter of every title is at time 90000.
+The first chapter of every title is at time 90000. Event marks are not chapters: the disc's menu script receives each one as `movieplayer.onMark` with its `mark_name` when playback reaches it. *Doom* waits for `BlankMark` in a blank title before it shows its warnings and its menu, and *Speed* for `APMark`. Many discs end the movie with an event mark (`Endmark1`) at the same time as the last chapter.
 
 ### Which title is the movie
 

@@ -10,12 +10,15 @@
 
 #define UMDV_MAX_TITLES   256
 #define UMDV_MAX_CHAPTERS 2048
+#define UMDV_MAX_EVENTS   256
 #define UMDV_MAX_NAME     128
 #define UMDV_MAX_STREAMS  48
 
+/* A mark in a title: a chapter (type 0x05), or an event (type 0x10) that the disc's menu
+   script receives as movieplayer.onMark when playback reaches it ("BlankMark", "Endmark1"). */
 typedef struct umdv_chapter {
     uint32_t pts;
-    char name[25];            /* "Mark1783": UMD-PG scripts read it as mark_name */
+    char name[25];            /* "Mark1783": scripts read it as mark_name */
     uint32_t data;            /* bytes 0x0C-0x0F of the entry, mark_data (0 on the test discs) */
 } umdv_chapter;
 
@@ -26,14 +29,18 @@ typedef struct umdv_title {
     uint32_t end_pts;
     uint16_t first_chapter;  /* index into umdv_playlist.chapters */
     uint16_t chapter_count;
+    uint16_t first_event;    /* index into umdv_playlist.events */
+    uint16_t event_count;
 } umdv_title;
 
 typedef struct umdv_playlist {
     char name[256];          /* authoring name, not the movie title; use PARAM.SFO TITLE for that */
     uint16_t title_count;
     uint16_t chapter_count;
+    uint16_t event_count;
     umdv_title titles[UMDV_MAX_TITLES];
     umdv_chapter chapters[UMDV_MAX_CHAPTERS];
+    umdv_chapter events[UMDV_MAX_EVENTS];
 } umdv_playlist;
 
 /* Returns 0 on success, negative on a malformed file. */

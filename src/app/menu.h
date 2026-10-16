@@ -72,6 +72,8 @@ int menu_update(menu *m, uint32_t pressed, uint64_t now_us);
 /* Playback events from the player. */
 void menu_playlist_ended(menu *m, int playlist);
 void menu_chapter_changed(menu *m, int chapter);
+/* Playback reached an event mark of the title (movieplayer.onMark). */
+void menu_mark_reached(menu *m, const char *name, uint32_t data);
 /* The user asked for the menu during playback (the PSP's "menu" button). */
 void menu_menu_button(menu *m);
 

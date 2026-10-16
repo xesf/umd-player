@@ -107,6 +107,7 @@ struct player {
     int stop;                        /* the reader should stop for a seek */
     uint64_t min_pts;                /* frames and audio before this time are dropped (after a seek) */
     int seeking;                     /* no frame shown since the last seek: the position is min_pts */
+    int64_t events_done;             /* event marks up to this time have been reported */
     uint64_t entry_pts;              /* the seek table's time for the picture reading starts at, or 0 */
     uint8_t *vq_data;
     uint32_t vq_write;               /* next free byte when the ring is not empty */
@@ -758,6 +759,8 @@ static void restart_reader(player *p, uint64_t target, int audio, int sub)
     umdv_ep ep;
     uint32_t index;
 
+    p->events_done = (int64_t)target - 1;    /* a mark right at the target still counts */
+
     if (p->reader) {
         plat_mutex_lock(p->lock);
         p->stop = 1;
@@ -1351,6 +1354,23 @@ const char *player_chapter_mark(const player *p, uint32_t *data)
     const umdv_chapter *c = &p->playlist.chapters[p->title->first_chapter + current_chapter((player *)p)];
     *data = c->data;
     return c->name;
+}
+
+const char *player_next_event(player *p, uint32_t *data)
+{
+    const umdv_chapter *ev = &p->playlist.events[p->title->first_event];
+    int64_t now;
+
+    if (p->seeking)
+        return NULL;
+    now = (int64_t)now_or_shown(p);
+    for (int i = 0; i < p->title->event_count; i++)
+        if ((int64_t)ev[i].pts > p->events_done && (int64_t)ev[i].pts <= now) {
+            p->events_done = ev[i].pts;
+            *data = ev[i].data;
+            return ev[i].name;
+        }
+    return NULL;
 }
 
 void player_restart(player *p, int chapter)

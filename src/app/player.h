@@ -46,6 +46,9 @@ int player_menu_requested(player *p);             /* Circle was pressed; clears 
 int player_chapter(const player *p);              /* 1-based */
 /* The current chapter's mark: its name ("Mark1783") and data, for UMD-PG scripts. */
 const char *player_chapter_mark(const player *p, uint32_t *data);
+/* The next event mark that playback has reached since the last call, a seek or a restart
+   ("BlankMark"), or NULL. Marks are reported in time order, one per call. */
+const char *player_next_event(player *p, uint32_t *data);
 int player_paused(const player *p);
 int player_audio(const player *p);                /* substream */
 int player_subtitle(const player *p);             /* substream, or -1 for off */

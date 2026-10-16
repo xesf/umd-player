@@ -320,6 +320,15 @@ int disc_update(disc *d, uint32_t pressed)
             menu_chapter_changed(d->m, ch);
         }
     }
+    if (d->pl && !player_title_ended(d->pl)) {
+        uint32_t data;
+        const char *mark = player_next_event(d->pl, &data);
+        if (mark) {
+            char name[25];
+            snprintf(name, sizeof(name), "%s", mark);   /* the handler may stop the player */
+            menu_mark_reached(d->m, name, data);
+        }
+    }
     if (d->pl && player_title_ended(d->pl) && !d->end_sent) {
         d->end_sent = 1;
         menu_playlist_ended(d->m, d->title);

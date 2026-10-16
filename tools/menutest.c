@@ -155,6 +155,7 @@ typedef struct sim {
     int ended_pending;
     int saved_playlist, saved_chapter;
     int last_chapter;         /* the chapter last reported; 0 after a play, as in src/app/disc.c */
+    uint64_t events_done;     /* event marks before this position (us) have been reported */
     int menu_mode;            /* the title playing is a menu video */
 } sim;
 
@@ -202,6 +203,7 @@ static void sim_play(void *user, int playlist, int chapter, int audio, int subti
     s->st.subtitle = subtitle;
     s->title_end = s->now + (len > from ? len - from : 0);
     s->last_chapter = 0;
+    s->events_done = from;
     s->menu_mode = menu_mode;
 }
 
@@ -383,11 +385,23 @@ static int run_disc(int argc, char **argv)
             const umdv_title *t = &s.pl.titles[s.st.playlist - 1];
             uint64_t left = s.title_end > s.now ? s.title_end - s.now : 0;
             uint64_t pos = (uint64_t)(t->end_pts - t->start_pts) * 100 / 9 - left;
-            int ch = 1;
+            int ch = 1, fired = 0;
             for (int k = 1; k < t->chapter_count; k++)
                 if ((uint64_t)(s.pl.chapters[t->first_chapter + k].pts - t->start_pts) * 100 / 9 <= pos)
                     ch = k + 1;
-            if (ch != s.last_chapter) {
+            for (int k = 0; k < t->event_count; k++) {
+                const umdv_chapter *ev = &s.pl.events[t->first_event + k];
+                uint64_t at = (uint64_t)(ev->pts - t->start_pts) * 100 / 9;
+                if (at >= s.events_done && at <= pos) {
+                    s.events_done = at + 1;
+                    printf("%8.2f s  MARK %s\n", s.now / 1e6, ev->name);
+                    menu_mark_reached(m, ev->name, ev->data);
+                    fired = 1;               /* the handler may have changed the title: next frame */
+                    break;
+                }
+            }
+            if (fired) {
+            } else if (ch != s.last_chapter) {
                 const umdv_chapter *mk = &s.pl.chapters[t->first_chapter + ch - 1];
                 s.last_chapter = ch;
                 s.st.chapter = ch;
@@ -395,7 +409,7 @@ static int run_disc(int argc, char **argv)
                 s.st.mark_data = mk->data;
                 menu_chapter_changed(m, ch);
             }
-            if (s.now >= s.title_end) {
+            if (!fired && s.now >= s.title_end) {
                 int pl = s.st.playlist;
                 printf("%8.2f s  END title %d\n", s.now / 1e6, pl);
                 s.st.playing = 0;            /* playlist stays: the scripts ask which one ended */

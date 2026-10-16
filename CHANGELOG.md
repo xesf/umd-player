@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Disc menus receive the discs' event marks (movieplayer.onMark). Doom's menus waited for one after a blank opening clip and never appeared; they now show the warnings, then the main menu. Event marks no longer count as chapters, so movies such as Cabin Fever, Doom and 2 Fast 2 Furious lose a duplicate last chapter.
+
 ## v0.6.1 (2026-10-16)
 
 - macOS: releases include umdplayer-v0.6.1-macos.zip, an app for Apple silicon and Intel Macs (macOS 11 or later). `make app` builds it.
