@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Disc menus: △ acts as the PSP's menu button only on a list shown over the movie. Elsewhere it does nothing; on Spider-Man 2's warning cards it went back to the main menu instead of letting the movie start.
+- Audio and subtitle names for more languages, such as Bulgarian and Slovenian on Spider-Man 2, which showed only their codes (bg, sl).
 - Titles in Japanese, with accents, or in other scripts show their real characters instead of "?". The 8x8 font still draws ASCII; other characters come from the system's fonts: the Vita's built-in fonts, Core Text on macOS, GDI on Windows, and the X server's Unicode fonts on Linux. Without a font for a character, accented letters show their base letter.
 
 ## v0.6.2 (2026-10-16)

@@ -17,9 +17,19 @@ const char *lang_name(const char *code)
         {"en", "English"}, {"fr", "French"}, {"de", "German"}, {"es", "Spanish"}, {"it", "Italian"},
         {"pt", "Portuguese"}, {"nl", "Dutch"}, {"ja", "Japanese"}, {"zh", "Chinese"}, {"ko", "Korean"},
         {"ru", "Russian"}, {"pl", "Polish"}, {"sv", "Swedish"}, {"da", "Danish"}, {"no", "Norwegian"},
-        {"fi", "Finnish"}, {"el", "Greek"}, {"tr", "Turkish"}, {"cs", "Czech"}, {"hu", "Hungarian"},
-        {"ar", "Arabic"}, {"he", "Hebrew"}, {"hi", "Hindi"}, {"th", "Thai"}, {"hr", "Croatian"},
-        {"ro", "Romanian"}, {"is", "Icelandic"}};
+        {"nb", "Norwegian"}, {"nn", "Norwegian"}, {"fi", "Finnish"}, {"el", "Greek"}, {"tr", "Turkish"},
+        {"cs", "Czech"}, {"sk", "Slovak"}, {"sl", "Slovenian"}, {"hu", "Hungarian"}, {"ro", "Romanian"},
+        {"bg", "Bulgarian"}, {"hr", "Croatian"}, {"sr", "Serbian"}, {"bs", "Bosnian"}, {"mk", "Macedonian"},
+        {"uk", "Ukrainian"}, {"be", "Belarusian"}, {"et", "Estonian"}, {"lv", "Latvian"}, {"lt", "Lithuanian"},
+        {"is", "Icelandic"}, {"ga", "Irish"}, {"cy", "Welsh"}, {"ca", "Catalan"}, {"eu", "Basque"},
+        {"gl", "Galician"}, {"sq", "Albanian"}, {"mt", "Maltese"}, {"lb", "Luxembourgish"}, {"fo", "Faroese"},
+        {"ar", "Arabic"}, {"he", "Hebrew"}, {"fa", "Persian"}, {"ur", "Urdu"}, {"hi", "Hindi"},
+        {"bn", "Bengali"}, {"pa", "Punjabi"}, {"ta", "Tamil"}, {"te", "Telugu"}, {"kn", "Kannada"},
+        {"ml", "Malayalam"}, {"mr", "Marathi"}, {"gu", "Gujarati"}, {"th", "Thai"}, {"vi", "Vietnamese"},
+        {"id", "Indonesian"}, {"ms", "Malay"}, {"tl", "Tagalog"}, {"km", "Khmer"}, {"lo", "Lao"},
+        {"my", "Burmese"}, {"mn", "Mongolian"}, {"ka", "Georgian"}, {"hy", "Armenian"}, {"az", "Azerbaijani"},
+        {"kk", "Kazakh"}, {"uz", "Uzbek"}, {"af", "Afrikaans"}, {"sw", "Swahili"}, {"zu", "Zulu"},
+        {"am", "Amharic"}, {"la", "Latin"}, {"yi", "Yiddish"}};
     static char other[3];
 
     for (unsigned i = 0; i < sizeof(names) / sizeof(names[0]); i++)

@@ -348,11 +348,13 @@ int disc_update(disc *d, uint32_t pressed)
     }
     if (d->pl && player_menu_requested(d->pl))
         menu_menu_button(d->m);
-    /* Triangle while a disc menu has focus is the PSP's menu button: Circle is the page's Back
-       there, and Saw's scene list over the movie leaves for the main menu only by the menu
-       button. During the movie Triangle stays the options panel. */
+    /* Triangle on a page over the movie is the PSP's menu button: Circle is the page's Back
+       there, and Saw's scene list leaves for the main menu only by the menu button. On other
+       pages it does nothing: Spider-Man 2's warning cards would take it as "back to the main
+       menu" and skip the movie. During the movie Triangle stays the options panel. */
     if (menu_focus && (pressed & PLAT_BTN_TRIANGLE)) {
-        menu_menu_button(d->m);
+        if (d->pl && !d->menu_video && !player_title_ended(d->pl))
+            menu_menu_button(d->m);
         pressed &= ~PLAT_BTN_TRIANGLE;
     }
 
