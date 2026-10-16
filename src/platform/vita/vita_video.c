@@ -4,10 +4,12 @@
    offset. vita_gfx.c draws it to the screen at the display aspect ratio with the GPU; without
    the GPU, the framebuffer itself is shown unscaled.
 
-   Field-coded discs: with interlaced mode on, each output holds both fields of a frame as two
-   half-height pictures, one above the other (checked with frame dumps on hardware). They are
+   Field-coded discs: with interlaced mode on, each output of a field pair holds both fields as
+   two half-height pictures, one above the other (checked with frame dumps on hardware). They are
    decoded into a scratch buffer and copied into two framebuffers, one per field, each line
-   doubled ("bob"). The second field is shown one field period (1/59.94 s) after the first.
+   doubled ("bob"). Many such discs (Cabin Fever, Doom) code most pictures as frames and only
+   some as field pairs; a frame picture comes out whole and is copied as it is. The player says
+   which an access unit is (PLAT_AU_FIELD), and the output carries its time. The second field is shown one field period (1/59.94 s) after the first.
    The copy uses the GPU transfer engine: one strided copy per field and line parity, 4 per frame.
    (Per-line sceDmacMemcpy took 47 ms per frame on hardware, too slow for 30 frames a second.) */
 #include "../platform.h"
@@ -37,6 +39,7 @@
 #define FIELD_TICKS 1501      /* one field at 59.94 Hz in 90 kHz ticks */
 #define PIC_W 720
 #define FIELD_H 240
+#define SENT_MAX 32           /* access units remembered, to know what an output was */
 
 /* Exported by SceVideodec_stub but missing from psp2/videodec.h. Needed before
    sceVideodecInitLibrary for field-coded streams; returns 0 (checked on hardware). */
@@ -54,6 +57,10 @@ struct plat_video {
     int ready;
     struct { plat_frame *frame; uint64_t pts; } out[POOL];
     int out_count;
+    struct { uint64_t pts; int field; } sent[SENT_MAX];
+    int sent_next;
+    int last_kind;            /* 1 field pair, 2 frame: logged when it changes */
+    int kind_logs;
 };
 
 static plat_frame pool[POOL];
@@ -164,6 +171,31 @@ static void bob_field(plat_frame *dst, const uint8_t *field, int bottom)
         sceDmacMemcpy(pic, field, PIC_W * 4);
 }
 
+/* Copies a whole frame from the scratch buffer into a framebuffer. */
+static void copy_frame(plat_frame *dst, const uint8_t *src)
+{
+    uint8_t *pic = dst->pixels + (PIC_Y * SCREEN_W + PIC_X) * 4;
+
+    if (gxm_ready) {
+        sceGxmTransferCopy(PIC_W, 2 * FIELD_H, 0, 0, SCE_GXM_TRANSFER_COLORKEY_NONE,
+                           SCE_GXM_TRANSFER_FORMAT_U8U8U8U8_ABGR, SCE_GXM_TRANSFER_LINEAR, src, 0, 0, SCREEN_W * 4,
+                           SCE_GXM_TRANSFER_FORMAT_U8U8U8U8_ABGR, SCE_GXM_TRANSFER_LINEAR, pic, 0, 0, SCREEN_W * 4,
+                           NULL, 0, NULL);
+        return;
+    }
+    for (int y = 0; y < 2 * FIELD_H; y++)
+        sceDmacMemcpy(pic + (size_t)y * SCREEN_W * 4, src + (size_t)y * SCREEN_W * 4, PIC_W * 4);
+}
+
+/* Whether the access unit with this time was a field (1) or a frame (0); a field if unknown. */
+static int sent_field(const plat_video *v, uint64_t pts)
+{
+    for (int i = 0; i < SENT_MAX; i++)
+        if (v->sent[i].pts == pts)
+            return v->sent[i].field;
+    return 1;
+}
+
 static int decoder_create(plat_video *v)
 {
     SceVideodecQueryInitInfoHwAvcdec init;
@@ -245,9 +277,14 @@ int plat_video_decode(plat_video *v, const uint8_t *au, uint32_t size, uint64_t 
 
     if (!v->ready)
         return -1;
-    (void)flags;   /* in interlaced mode the decoder takes each field on its own */
+    /* In interlaced mode the decoder takes each field on its own; remember which were fields. */
     if (!target || size > ES_SIZE || v->out_count == POOL)
         return -1;
+    if (pts != PLAT_PTS_HIDDEN) {
+        v->sent[v->sent_next].pts = pts;
+        v->sent[v->sent_next].field = (flags & PLAT_AU_FIELD) != 0;
+        v->sent_next = (v->sent_next + 1) % SENT_MAX;
+    }
     memcpy(es_buf, au, size);
     memset(&in, 0xFF, sizeof(in));
     if (pts != PLAT_PTS_HIDDEN) {
@@ -289,6 +326,19 @@ int plat_video_decode(plat_video *v, const uint8_t *au, uint32_t size, uint64_t 
         uint64_t out_pts = (uint64_t)pic.info.pts.upper << 32 | pic.info.pts.lower;
         int hidden = pic.info.pts.lower == 0xFFFFFFFF;
 
+        if (v->interlaced && !hidden && !sent_field(v, out_pts)) {
+            if (v->last_kind != 2 && v->kind_logs++ < 20)
+                plat_log("frame picture in a field-coded title: picStruct %u %u\n", pic.info.picStruct[0],
+                         pic.info.picStruct[1]);
+            v->last_kind = 2;
+            copy_frame(target, scratch);
+            if (gxm_ready)
+                sceGxmTransferFinish();
+            target->app_ref = 1;
+            v->out[v->out_count].frame = target;
+            v->out[v->out_count++].pts = out_pts;
+            return 0;
+        }
         if (v->interlaced) {
             plat_frame *second = pool_get(target);
             int first_bottom = pic.info.picStruct[0] == 2;
@@ -296,6 +346,9 @@ int plat_video_decode(plat_video *v, const uint8_t *au, uint32_t size, uint64_t 
 
             if (hidden || !second || v->out_count + 2 > POOL)
                 return 0;
+            if (v->last_kind != 1 && v->kind_logs++ < 20)
+                plat_log("field pair: picStruct %u %u\n", pic.info.picStruct[0], pic.info.picStruct[1]);
+            v->last_kind = 1;
             bob_field(target, scratch, first_bottom);
             bob_field(second, scratch + (size_t)FIELD_H * SCREEN_W * 4, !first_bottom);
             if (gxm_ready)
