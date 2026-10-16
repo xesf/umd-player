@@ -107,6 +107,8 @@ With "Start with: Disc", UMD Player runs the disc's own menus: the menu screens,
 
 Some discs move their highlight themselves and have no items to tap. On those, swipe to the item, then tap anywhere to choose it.
 
+Some discs show a list over the movie, such as Saw's scene list, where ○ only hides the list. The corner then shows "△ Disc menu": △ leaves the movie for the disc's main menu.
+
 Holding ○ for 1.5 seconds also goes back to the library.
 
 When you leave a disc, it saves its own place, as on a PSP. The next time, the disc continues from there. Some discs ask first. In the library, the Select panel says "Continue where you left off", and □ starts the disc from the beginning instead.

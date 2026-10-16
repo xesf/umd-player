@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Disc menus: a list shown over the movie (Saw's scene list) shows "△ Disc menu" in the corner. On such lists ○ only hides the list, and △, the PSP's menu button, is the way back to the main menu.
 - Disc menus receive the discs' event marks (movieplayer.onMark). Doom's menus waited for one after a blank opening clip and never appeared; they now show the warnings, then the main menu. Event marks no longer count as chapters, so movies such as Cabin Fever, Doom and 2 Fast 2 Furious lose a duplicate last chapter.
 
 ## v0.6.1 (2026-10-16)
