@@ -1,13 +1,12 @@
 # Changelog
 
-## Unreleased
+## v0.6.1 (2026-10-16)
 
-- Desktop: started without a folder, the library shows the app's own folder when it holds disc images, then a UMD folder next to the app, then UMD in the home folder. Dropping umdplayer.exe into a movie folder is enough.
-
-- macOS: releases include `umdplayer-v<version>-macos.zip`, an app for Apple silicon and Intel Macs (macOS 11 or later). `make app` builds it.
-- Desktop: Escape no longer quits. It works like ○ (Backspace): it goes back one step, and leaves a movie for the library. Closing the window quits.
+- macOS: releases include umdplayer-v0.6.1-macos.zip, an app for Apple silicon and Intel Macs (macOS 11 or later). `make app` builds it.
 - Fixed a crash when quitting during a movie (Escape on Windows): the player freed its demuxer, then used it. The other platforms wrote to freed memory without crashing.
 - Windows and Linux: drawing the picture is about three times faster. Video scaling interpolates each source row once and keeps the scaled picture between presents of the same frame, and transparent rows of the UI are skipped, so the time bar no longer slows the movie.
+- Desktop: Escape no longer quits. It works like ○ (Backspace): it goes back one step, and leaves a movie for the library. Closing the window quits.
+- Desktop: started without a folder, the library shows the app's own folder when it holds disc images, then a UMD folder next to the app, then UMD in the home folder. Dropping the app into a movie folder is enough.
 - Desktop: a folder or disc after --window or --fullscreen is no longer taken for an option's value.
 - Makefile: make run, make run-windows (Wine) and make run-linux (native, or Docker on macOS).
 
