@@ -29,6 +29,7 @@ static uint32_t button_for_key(unsigned short code)
     case 124: return PLAT_BTN_RIGHT;
     case 49:  return PLAT_BTN_CROSS;     /* space */
     case 51:  return PLAT_BTN_CIRCLE;    /* backspace */
+    case 53:  return PLAT_BTN_CIRCLE;    /* escape */
     case 0:   return PLAT_BTN_SQUARE;    /* A */
     case 13:  return PLAT_BTN_TRIANGLE;  /* W */
     case 12:  return PLAT_BTN_L;         /* Q */
@@ -46,11 +47,6 @@ static uint32_t button_for_key(unsigned short code)
 - (BOOL)acceptsFirstResponder { return YES; }
 - (void)keyDown:(NSEvent *)e
 {
-    if (e.keyCode == 53) {   /* escape */
-        printf("quit: escape key\n");
-        [NSApp terminate:nil];
-        return;
-    }
     held_buttons |= button_for_key(e.keyCode);
 }
 - (void)keyUp:(NSEvent *)e { held_buttons &= ~button_for_key(e.keyCode); }

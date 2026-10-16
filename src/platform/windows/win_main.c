@@ -161,6 +161,7 @@ static uint32_t key_button(WPARAM vk)
     case VK_RIGHT: return PLAT_BTN_RIGHT;
     case VK_SPACE: return PLAT_BTN_CROSS;
     case VK_BACK: return PLAT_BTN_CIRCLE;
+    case VK_ESCAPE: return PLAT_BTN_CIRCLE;
     case 'A': return PLAT_BTN_SQUARE;
     case 'W': return PLAT_BTN_TRIANGLE;
     case 'Q': return PLAT_BTN_L;
@@ -198,10 +199,7 @@ static LRESULT CALLBACK wnd_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
         }
         break;
     case WM_KEYDOWN:
-        if (wp == VK_ESCAPE) {
-            plat_log("quit: escape key\n");
-            quit = 1;
-        } else if (wp == VK_F11) {
+        if (wp == VK_F11) {
             set_fullscreen(!fullscreen);
         } else {
             key_buttons |= key_button(wp);

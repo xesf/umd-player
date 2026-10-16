@@ -241,6 +241,7 @@ static uint32_t key_button(KeySym k)
     case XK_Right: return PLAT_BTN_RIGHT;
     case XK_space: return PLAT_BTN_CROSS;
     case XK_BackSpace: return PLAT_BTN_CIRCLE;
+    case XK_Escape: return PLAT_BTN_CIRCLE;
     case XK_a: return PLAT_BTN_SQUARE;
     case XK_w: return PLAT_BTN_TRIANGLE;
     case XK_q: return PLAT_BTN_L;
@@ -260,10 +261,7 @@ static void handle_events(void)
         case KeyPress:
         case KeyRelease: {
             KeySym k = XLookupKeysym(&e.xkey, 0);
-            if (e.type == KeyPress && k == XK_Escape) {
-                plat_log("quit: escape key\n");
-                quit = 1;
-            } else if (e.type == KeyPress && k == XK_F11) {
+            if (e.type == KeyPress && k == XK_F11) {
                 set_fullscreen(!fullscreen);
             } else if (e.type == KeyPress) {
                 key_buttons |= key_button(k);
