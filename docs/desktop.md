@@ -18,7 +18,7 @@ Windows 10 or 11, 64-bit; older versions are not tested. Windows may warn that t
 2. Copy your disc images to `~/UMD`.
 3. Run `./umdplayer/umdplayer`.
 
-The app needs X11 (any Wayland desktop provides it through XWayland) and ALSA (PipeWire and PulseAudio provide it). Both are on every desktop distribution. To read gamepads, your user needs access to `/dev/input/event*`; desktop distributions give it to the user at the screen.
+The app needs X11 (any Wayland desktop provides it through XWayland) and ALSA (PipeWire and PulseAudio provide it). Both are on every desktop distribution. Titles in Japanese and other scripts use the X server's "fixed" fonts, from the `xfonts-base` package on Debian and Ubuntu. To read gamepads, your user needs access to `/dev/input/event*`; desktop distributions give it to the user at the screen.
 
 `--fullscreen` starts in full screen and `--window` in a window; F11 switches.
 

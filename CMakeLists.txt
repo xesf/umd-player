@@ -83,6 +83,7 @@ add_executable(umdplayer
   ${AT3P_SOURCES}
   src/platform/vita/vita_main.c
   src/platform/vita/vita_sys.c
+  src/platform/vita/vita_font.c
   src/platform/vita/vita_video.c
   src/platform/vita/vita_gfx.c
   src/platform/vita/vita_shaders.c
@@ -103,6 +104,7 @@ target_link_libraries(umdplayer
   ScePower_stub
   SceRtc_stub
   SceAppUtil_stub
+  ScePgf_stub
 )
 
 # UNSAFE: safe homebrew cannot open ux0:pspemu, where Adrenaline users keep their ISOs.

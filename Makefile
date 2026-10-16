@@ -43,8 +43,8 @@ ifeq ($(PLATFORM),macos)
     BUILD = build/macos-universal
   endif
   PLAT = src/platform/posix/posix_sys.c src/platform/macos/mac_video.c src/platform/macos/mac_audio.c
-  EXTRA_OBJS = $(BUILD)/src/platform/macos/mac_main.o
-  LIBS = -framework Cocoa -framework QuartzCore -framework CoreVideo -framework AudioToolbox
+  EXTRA_OBJS = $(BUILD)/src/platform/macos/mac_main.o $(BUILD)/src/platform/macos/mac_font.o
+  LIBS = -framework Cocoa -framework QuartzCore -framework CoreVideo -framework AudioToolbox -framework CoreText
   AT3P_CFLAGS += -Wno-shift-op-parentheses
   TARGET = $(BUILD)/umdplayer
 else ifeq ($(PLATFORM),linux)
@@ -59,7 +59,7 @@ else ifeq ($(PLATFORM),windows)
     CC = x86_64-w64-mingw32-gcc
   endif
   WINDRES = $(patsubst %gcc,%windres,$(CC))
-  PLAT = src/platform/windows/win_sys.c src/platform/windows/win_main.c src/platform/windows/win_audio.c $(SOFT)
+  PLAT = src/platform/windows/win_sys.c src/platform/windows/win_font.c src/platform/windows/win_main.c src/platform/windows/win_audio.c $(SOFT)
   EXTRA_OBJS = $(BUILD)/umdplayer_res.o
   CFLAGS += -D__USE_MINGW_ANSI_STDIO=1
   AT3P_CFLAGS += -Wno-overflow
@@ -88,6 +88,10 @@ $(BUILD)/%.o: %.c $(wildcard src/core/*.h src/app/*.h src/platform/*.h)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(BUILD)/src/platform/macos/mac_main.o: src/platform/macos/mac_main.m src/platform/platform.h src/platform/macos/mac_frame.h
+	@mkdir -p $(dir $@)
+	$(CC) -fobjc-arc -O2 -g -Wall -Wextra -c -o $@ $<
+
+$(BUILD)/src/platform/macos/mac_font.o: src/platform/macos/mac_font.m src/platform/platform.h
 	@mkdir -p $(dir $@)
 	$(CC) -fobjc-arc -O2 -g -Wall -Wextra -c -o $@ $<
 

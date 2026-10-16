@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Titles in Japanese, with accents, or in other scripts show their real characters instead of "?". The 8x8 font still draws ASCII; other characters come from the system's fonts: the Vita's built-in fonts, Core Text on macOS, GDI on Windows, and the X server's Unicode fonts on Linux. Without a font for a character, accented letters show their base letter.
+
 ## v0.6.2 (2026-10-16)
 
 - Disc menus: Doom's menus appear. The app now passes the discs' event marks to their menu scripts (movieplayer.onMark), and Doom waits for one after a blank opening clip before it shows its warnings and main menu. Event marks no longer count as chapters, so movies such as Cabin Fever, Doom and 2 Fast 2 Furious lose a duplicate last chapter.

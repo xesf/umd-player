@@ -1105,7 +1105,7 @@ static void build_osd(player *p, osd_view *v)
     if (v->show_bar) {
         v->paused = p->paused;
         /* The disc's name, not the playlist entry's ("Trailer01", "Feature"). */
-        snprintf(v->title, sizeof(v->title), "%.40s", p->disc_title[0] ? p->disc_title : p->title->name);
+        canvas_text_fit(v->title, sizeof(v->title), p->disc_title[0] ? p->disc_title : p->title->name, 2, 520);
         format_time(a, sizeof(a), now > p->title->start_pts ? now - p->title->start_pts : 0);
         format_time(b, sizeof(b), len);
         snprintf(v->time_text, sizeof(v->time_text), "%.20s / %.20s", a, b);

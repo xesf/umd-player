@@ -380,3 +380,9 @@ int plat_data_save(const char *name, const char *buf, int size)
     fclose(f);
     return rename(tmp, path);
 }
+
+int plat_glyph(uint32_t cp, int px, uint8_t *alpha)
+{
+    (void)cp; (void)px; (void)alpha;
+    return 0;
+}

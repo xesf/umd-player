@@ -373,6 +373,104 @@ static int open_window(void)
     return 0;
 }
 
+/* ---- characters the 8x8 font lacks, drawn with the X server's Unicode fonts ---- */
+
+/* Whether the font has the character (and it is not an empty cell). */
+static int font_has(const XFontStruct *f, uint32_t cp)
+{
+    unsigned b1 = cp >> 8, b2 = cp & 0xFF;
+    const XCharStruct *c;
+
+    if (b1 < f->min_byte1 || b1 > f->max_byte1 || b2 < f->min_char_or_byte2 || b2 > f->max_char_or_byte2)
+        return 0;
+    if (!f->per_char)
+        return 1;
+    c = &f->per_char[(b1 - f->min_byte1) * (f->max_char_or_byte2 - f->min_char_or_byte2 + 1) +
+                     (b2 - f->min_char_or_byte2)];
+    return c->width != 0 || c->ascent + c->descent != 0;
+}
+
+/* The first font matching the pattern that the server does not scale from another size:
+   scaled bitmap fonts (average width 0 in the name) report every character as present and
+   draw the missing ones as boxes. */
+static XFontStruct *load_unscaled(const char *pattern)
+{
+    XFontStruct *f = NULL;
+    int count = 0;
+    char **names = XListFonts(dpy, pattern, 32, &count);
+
+    for (int i = 0; i < count && !f; i++) {
+        const char *s = names[i];
+        for (int field = 0; field < 11 && s; field++)   /* to the dash before AVERAGE_WIDTH */
+            s = strchr(s + 1, '-');
+        if (s && strncmp(s, "-0-", 3) != 0)
+            f = XLoadQueryFont(dpy, names[i]);
+    }
+    if (names)
+        XFreeFontNames(names);
+    return f;
+}
+
+int plat_glyph(uint32_t cp, int px, uint8_t *alpha)
+{
+    /* The "fixed" fonts (xfonts-base) cover Latin, Greek, Cyrillic and, in their ja and ko
+       variants, Japanese and Korean; then anything else in Unicode. */
+    static const char *const patterns[] = {"-misc-fixed-medium-r-normal--%d-*-*-*-*-*-iso10646-1",
+                                           "-misc-fixed-medium-r-normal-ja-%d-*-*-*-*-*-iso10646-1",
+                                           "-misc-fixed-medium-r-normal-ko-%d-*-*-*-*-*-iso10646-1",
+                                           "-*-*-medium-r-normal-*-%d-*-*-*-*-*-iso10646-1"};
+#define FONT_PATTERNS (int)(sizeof(patterns) / sizeof(patterns[0]))
+    static XFontStruct *fonts[FONT_PATTERNS];
+    static int font_px;
+    static Pixmap pix;
+    static GC gc;
+    XChar2b ch = {(unsigned char)(cp >> 8), (unsigned char)(cp & 0xFF)};
+    XImage *img;
+    int w = 2 * px, advance = 0;
+
+    if (!dpy || cp > 0xFFFF || px > 32)
+        return 0;
+    if (!pix) {
+        pix = XCreatePixmap(dpy, DefaultRootWindow(dpy), 64, 32, (unsigned)DefaultDepth(dpy, DefaultScreen(dpy)));
+        gc = XCreateGC(dpy, pix, 0, NULL);
+    }
+    if (font_px != px) {
+        /* the size asked for, else the nearest smaller one, else a little larger */
+        for (int k = 0; k < FONT_PATTERNS; k++) {
+            char name[96];
+            if (fonts[k])
+                XFreeFont(dpy, fonts[k]);
+            fonts[k] = NULL;
+            for (int i = 0; i <= px / 2 + 3 && !fonts[k]; i++) {
+                int size = i <= px / 2 ? px - i : px + (i - px / 2);
+                snprintf(name, sizeof(name), patterns[k], size);
+                fonts[k] = load_unscaled(name);
+            }
+        }
+        font_px = px;
+    }
+    for (int k = 0; k < FONT_PATTERNS && !advance; k++) {
+        XFontStruct *f = fonts[k];
+        if (!f || !font_has(f, cp))
+            continue;
+        XSetForeground(dpy, gc, BlackPixel(dpy, DefaultScreen(dpy)));
+        XFillRectangle(dpy, pix, gc, 0, 0, 64, 32);
+        XSetForeground(dpy, gc, WhitePixel(dpy, DefaultScreen(dpy)));
+        XSetFont(dpy, gc, f->fid);
+        XDrawString16(dpy, pix, gc, 0, px - px / 8, &ch, 1);   /* the 8x8 font's baseline */
+        if (!(img = XGetImage(dpy, pix, 0, 0, (unsigned)w, (unsigned)px, AllPlanes, ZPixmap)))
+            continue;
+        for (int y = 0; y < px; y++)
+            for (int x = 0; x < w; x++)
+                alpha[y * w + x] = XGetPixel(img, x, y) != BlackPixel(dpy, DefaultScreen(dpy)) ? 255 : 0;
+        XDestroyImage(img);
+        advance = XTextWidth16(f, &ch, 1);
+        if (advance > w)
+            advance = w;
+    }
+    return advance;
+}
+
 int main(int argc, char **argv)
 {
     char *args[64], home_lib[1024];

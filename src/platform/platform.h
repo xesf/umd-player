@@ -132,6 +132,9 @@ void plat_set_power(int mode);
 
 /* The system language as an ISO 639-1 code ("en"), for the default subtitle language. */
 void plat_language(char out[3]);
+/* One character the 8x8 font lacks, drawn with the system's fonts: see canvas_glyph_fn in
+   core/canvas.h. Returns 0 when no font has it. */
+int plat_glyph(uint32_t cp, int px, uint8_t *alpha);
 
 typedef struct plat_status {
     int year, month, day, hour, minute;   /* local time */

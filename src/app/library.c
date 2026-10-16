@@ -689,14 +689,11 @@ static void draw_info(library *l)
     const lib_disc *d = &l->discs[l->sel];
     canvas *c = &l->ui;
     int x = PANEL_X + 16, y = BIG_Y, tx = x + 2 * ICON_SIZE + 8, w = 300;
-    int max_chars = (PANEL_W - 32) / 16;
     char title[96], at[16], total[16], line[48];
 
     if (!l->show_info)
         return;
-    snprintf(title, sizeof(title), "%s", d->title);
-    if ((int)strlen(title) > max_chars)
-        title[max_chars] = 0;
+    canvas_text_fit(title, sizeof(title), d->title, 2, PANEL_W - 32);
     canvas_round_darken(c, PANEL_X, BIG_Y, PANEL_W, 2 * ICON_H, BIG_R, 90);   /* as tall as the icon */
     if (!d->has_resume) {
         canvas_text(c, x, y + ICON_H - (d->interactive ? 18 : 8), 2, RGBA(255, 255, 255, 255), title);   /* centred */
