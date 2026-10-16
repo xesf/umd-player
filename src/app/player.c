@@ -293,7 +293,7 @@ static void push_video(player *p, const demux_unit *u)
     uint64_t pts = u->pts;
     h264_au_info info;
     uint32_t id;
-    int64_t off;
+    int64_t off = 0;
     vq_entry *e;
 
     if (h264_parse_au(&p->h264, u->data, u->size, &info) < 0)

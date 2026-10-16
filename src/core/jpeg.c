@@ -326,7 +326,7 @@ int jpeg_decode(const uint8_t *data, uint32_t size, uint8_t *rgba, int stride)
         for (int y = 0; y < d->height; y++) {
             uint8_t *out = rgba + (size_t)y * stride;
             for (int x = 0; x < d->width; x++) {
-                int v[MAX_COMP];
+                int v[MAX_COMP] = {0};
                 for (int i = 0; i < d->ncomp; i++) {
                     const comp *c = &d->c[i];
                     int sx = x * c->h / d->hmax, sy = y * c->v / d->vmax;

@@ -1,0 +1,2 @@
+// The Windows icon (resource 1, loaded by win_main.c) and version information.
+1 ICON "assets/app/umdplayer.ico"
