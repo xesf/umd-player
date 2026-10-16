@@ -1,10 +1,12 @@
 # Changelog
 
-## Unreleased
+## v0.6.0 (2026-10-16)
 
-- Windows and Linux players, Steam Deck and Steam Machine included: keyboard, gamepads (XInput on Windows, evdev on Linux, which carries the Deck's controls under Steam), and the mouse or touch screen as the Vita's touch screen. Full screen under SteamOS, F11 elsewhere. The library defaults to the UMD folder in the home folder. Releases attach a Linux tar.gz and a Windows zip; see docs/desktop.md.
+- New platforms: Windows and Linux, the Steam Deck and Steam Machine included, alongside the Vita and macOS. Releases attach umdplayer-v0.6.0-windows-x86_64.zip and umdplayer-v0.6.0-linux-x86_64.tar.gz; docs/desktop.md explains installing, and adding the app to Steam on the Deck.
+- Desktop controls: keyboard, gamepads (XInput on Windows; evdev on Linux, which carries the Deck's controls under Steam), and the mouse or touch screen as the Vita's touch screen. Full screen under SteamOS, F11 elsewhere. The library defaults to the UMD folder in the home folder.
+- Every desktop platform plays every disc with video, field-coded ones included (Saw, Rhyme and Reason, Prison Break, The Dark Knight, Valiant, Up in Smoke). They decode H.264 with the app's own decoder (src/core/h264dec.c, see docs/h264-decoder.md), which matches FFmpeg bit for bit on the test discs. VideoToolbox is no longer used on macOS.
 - macOS: the mouse works as the touch screen, and the library defaults to ~/UMD.
-- macOS: the desktop app plays every disc with video, field-coded ones included (Saw, Rhyme and Reason, Prison Break, The Dark Knight, Valiant, Up in Smoke). It decodes H.264 with its own decoder (src/core/h264dec.c, see docs/h264-decoder.md), which matches FFmpeg bit for bit on the test discs. CI builds the Mac app.
+- CI builds the macOS, Windows and Linux players.
 
 ## v0.5.2 (2026-10-15)
 
