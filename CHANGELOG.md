@@ -1,13 +1,13 @@
 # Changelog
 
-## Unreleased
+## v0.6.2 (2026-10-16)
 
-- Desktop: Enter works like Space (✕). It was Start, which only repeated ✕.
-- Library: a disc with only an animated icon (ICON1.PMF, no ICON0.PNG) showed no icon until it was selected. Its icon is now a frame from the animation, the first that is not dark, decoded once when the library loads.
-- Disc menus: Play in 2 Fast 2 Furious's menu did nothing after the movie had been left once. Leaving the movie plays a one-second blank clip, and the app kept that clip as the place to continue, so Play replayed the blank and returned to the menu. A title that played to its end is no longer a place to continue, and a place saved at a title's end by earlier versions is ignored.
-- Vita: Cabin Fever and Doom show a clean picture. Their movies code most pictures as frames and some as field pairs; the Vita split every picture into two fields, which showed two half-height pictures over each other. Frame pictures are now shown whole.
-- Disc menus: a list shown over the movie (Saw's scene list) shows "△ Disc menu" in the corner. On such lists ○ only hides the list, and △, the PSP's menu button, is the way back to the main menu.
-- Disc menus receive the discs' event marks (movieplayer.onMark). Doom's menus waited for one after a blank opening clip and never appeared; they now show the warnings, then the main menu. Event marks no longer count as chapters, so movies such as Cabin Fever, Doom and 2 Fast 2 Furious lose a duplicate last chapter.
+- Disc menus: Doom's menus appear. The app now passes the discs' event marks to their menu scripts (movieplayer.onMark), and Doom waits for one after a blank opening clip before it shows its warnings and main menu. Event marks no longer count as chapters, so movies such as Cabin Fever, Doom and 2 Fast 2 Furious lose a duplicate last chapter.
+- Disc menus: Play in 2 Fast 2 Furious's menu starts the movie again. After the movie had been left once, the app kept the one-second blank clip that follows it as the place to continue, so Play replayed the blank and returned to the menu.
+- Disc menus: a list shown over the movie, such as Saw's scene list, shows "△ Disc menu" in the corner. On such lists ○ only hides the list, and △, the PSP's menu button, leads back to the main menu.
+- Vita: Cabin Fever and Doom show a clean picture. Their movies mix frame pictures and field pairs, and the Vita split every picture into two fields, which showed two squashed pictures over each other.
+- Library: a disc with only an animated icon (ICON1.PMF), such as Dream Models, shows a frame of it in the list instead of an empty icon until it is selected.
+- Desktop: Enter works like Space (✕).
 
 ## v0.6.1 (2026-10-16)
 
