@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Desktop: Enter works like Space (✕). It was Start, which only repeated ✕.
 - Library: a disc with only an animated icon (ICON1.PMF, no ICON0.PNG) showed no icon until it was selected. Its icon is now a frame from the animation, the first that is not dark, decoded once when the library loads.
 - Disc menus: Play in 2 Fast 2 Furious's menu did nothing after the movie had been left once. Leaving the movie plays a one-second blank clip, and the app kept that clip as the place to continue, so Play replayed the blank and returned to the menu. A title that played to its end is no longer a place to continue, and a place saved at a title's end by earlier versions is ignored.
 - Vita: Cabin Fever and Doom show a clean picture. Their movies code most pictures as frames and some as field pairs; the Vita split every picture into two fields, which showed two half-height pictures over each other. Frame pictures are now shown whole.

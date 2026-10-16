@@ -34,7 +34,8 @@ static uint32_t button_for_key(unsigned short code)
     case 13:  return PLAT_BTN_TRIANGLE;  /* W */
     case 12:  return PLAT_BTN_L;         /* Q */
     case 14:  return PLAT_BTN_R;         /* E */
-    case 36:  return PLAT_BTN_START;     /* return */
+    case 36:  return PLAT_BTN_CROSS;     /* return, as space */
+    case 76:  return PLAT_BTN_CROSS;     /* keypad enter */
     case 48:  return PLAT_BTN_SELECT;    /* tab */
     default:  return 0;
     }

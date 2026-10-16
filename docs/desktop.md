@@ -56,12 +56,12 @@ Started without a folder, UMD Player picks the first of these that applies:
 | Vita | Keyboard | Gamepad (Xbox layout) |
 |---|---|---|
 | D-pad | Arrow keys | D-pad or left stick |
-| ✕ | Space | A |
+| ✕ | Space or Enter | A |
 | ○ | Backspace or Escape | B |
 | □ | A | X |
 | △ | W | Y |
 | L, R | Q, E | LB, RB |
-| Start | Return | Start (Menu) |
+| Start | | Start (Menu) |
 | Select | Tab | Back (View) |
 
 Escape works like ○: it goes back one step, and leaves a movie for the library. To quit, close the window. On Windows and Linux, F11 switches full screen; on Windows, Alt+Enter does too. The mouse works as the touch screen: click to tap, drag to swipe.

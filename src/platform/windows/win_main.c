@@ -166,7 +166,7 @@ static uint32_t key_button(WPARAM vk)
     case 'W': return PLAT_BTN_TRIANGLE;
     case 'Q': return PLAT_BTN_L;
     case 'E': return PLAT_BTN_R;
-    case VK_RETURN: return PLAT_BTN_START;
+    case VK_RETURN: return PLAT_BTN_CROSS;    /* as space; the keypad Enter too */
     case VK_TAB: return PLAT_BTN_SELECT;
     default: return 0;
     }

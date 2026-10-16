@@ -246,7 +246,8 @@ static uint32_t key_button(KeySym k)
     case XK_w: return PLAT_BTN_TRIANGLE;
     case XK_q: return PLAT_BTN_L;
     case XK_e: return PLAT_BTN_R;
-    case XK_Return: return PLAT_BTN_START;
+    case XK_Return: return PLAT_BTN_CROSS;    /* as space */
+    case XK_KP_Enter: return PLAT_BTN_CROSS;
     case XK_Tab: return PLAT_BTN_SELECT;
     default: return 0;
     }
