@@ -58,7 +58,9 @@ typedef struct rco_step {
     float duration;           /* ms; for a delay, the wait */
     float accel;
     float value[4];           /* move and scale: x y z; colour: r g b a; fade: alpha */
-    const char *event;        /* RCO_STEP_EVENT */
+    const char *event;        /* RCO_STEP_EVENT: a script handler to call, or NULL */
+    int anim;                 /* RCO_STEP_EVENT: an animation to play (Alien chains its menu's
+                                 fade-in this way), or -1 */
 } rco_step;
 
 typedef struct rco_anim {

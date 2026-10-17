@@ -165,6 +165,7 @@ static void read_step(parser *ps, uint32_t off, int sub)
     memset(s, 0, sizeof(*s));
     s->kind = sub;
     s->object = -1;
+    s->anim = -1;
     switch (sub) {
     case RCO_STEP_MOVE:
     case RCO_STEP_COLOR:
@@ -186,6 +187,8 @@ static void read_step(parser *ps, uint32_t off, int sub)
     case RCO_STEP_EVENT:
         if (rd32(r, d) == REF_EVENT)
             s->event = string_at(ps->events, ps->events_size, rd32(r, d + 4));
+        else if (rd32(r, d) == REF_ANIM && rd32(r, d + 4) != 0xFFFFFFFF)
+            s->anim = (int)rd32(r, d + 4);   /* an entry offset until rco_parse maps it */
         break;
     default:
         break;
@@ -331,6 +334,9 @@ int rco_parse(rco *r, const uint8_t *data, uint32_t size)
                 o->action[a].anim = anim_at(&ps, (uint32_t)o->action[a].anim);
         }
     }
+    for (int i = 0; i < r->step_count; i++)
+        if (r->steps[i].anim >= 0)
+            r->steps[i].anim = anim_at(&ps, (uint32_t)r->steps[i].anim);
     for (int i = 0; i < r->step_count; i++)
         if (r->steps[i].object >= 0)
             r->steps[i].object = object_at(&ps, (uint32_t)r->steps[i].object);

@@ -412,6 +412,16 @@ static void step_anims(menu *m)
             case RCO_STEP_LOCK: run->locked = 1; break;
             case RCO_STEP_UNLOCK: run->locked = 0; break;
             case RCO_STEP_EVENT:
+                if (s->anim >= 0) {
+                    /* Another animation, on the same widget. Playing this one again restarts
+                       it; from the next frame, so a loop without a delay cannot spin. */
+                    int again = s->anim == run->anim;
+                    play_anim(m, s->anim, run->target);
+                    if (again)
+                        run->wait_until = m->now + 1;
+                }
+                if (!s->event)
+                    break;
                 /* "this" is the widget the animation runs on (postBlink switches on this.name) */
                 call_event(m, s->event, run->target);
                 if (m->res != r)

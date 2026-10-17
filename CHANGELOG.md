@@ -1,20 +1,16 @@
 # Changelog
 
-## Unreleased
+## v0.6.5 (2026-10-17)
 
-- Disc mode: a disc continues only if it was left during its movie. Left in a menu, a logo or a warning, it starts from the beginning the next time.
-- Disc mode: ○ (Escape) during the movie goes to the disc's main menu in one press. Where a disc answers the menu button with a list over the movie (Saw's scene list), UMD Player presses it again.
-- Opening a movie or a disc shows black until its first picture, instead of the app's film-strip backdrop. The backdrop stays in the library.
-- Disc menus: on a list shown over the movie, ○ (Escape) is the disc's menu button, as during the movie. On Saw, ○ during a scene shows the scene list and a second ○ stops the movie for the main menu; the list's own Back only hid it.
-- A title whose stream holds no video (a missing or unreadable file) ends at once instead of waiting for ever, so the disc's menus go on. Metallica - Classic Albums stopped on a black clip that its image lacked.
-- Library: an image that ends before its files do (an unfinished download or a bad dump) says "Incomplete image: some videos are missing" in its panel, and the log gives the sizes.
-- Disc menus: only a main video (a title of 10 minutes or more: the movie, an episode) has a place to resume. Logos, warnings, blank clips, trailers and menu loops no longer become the place the disc continues from, which sent re-entered discs back into a short clip. Leaving a disc during such a clip starts it afresh the next time; leaving during the movie or a menu continues as before. Interactive discs (UMD-PG), which have no title that long, keep resuming any clip.
-- Disc menus: Alien's menus start. Its script carries source line markers (instructions 0x46 and 0x47) from a debug build, which the script interpreter refused, so the disc stayed black. They are now skipped. The Dark Knight's `delete` (0x32) is implemented too; every instruction the test discs use is now supported.
-- Disc menus: Toy Story's menu is in place. It positions its pictures by their top-left corners, and only left and right edges were understood.
-- Disc menus: no more "△ Disc menu" hint in the corner. △ still opens the main menu from a list over the movie.
-- Fixed titles that never ended: when a clip's last pictures come after its sound (Akira's logo, Toy Story's intro clips), the clock stopped with the sound, so the last picture never showed and the disc stalled before its menu. After the sound, the system timer now runs the clock on.
-- Desktop: UMD_TEST_BUTTONS="3000:cross,9000:circle" presses buttons at those times, for testing any platform without a keyboard.
-- Disc mode: L and R (Q and E on a keyboard) go to the previous or next chapter during the movie, as Down and Up do. They did nothing; with "Start with: Movie" they still switch titles.
+- Discs that stalled before their menu play on: Akira, Toy Story and others whose clips end with a picture after the sound. The clock stopped with the sound, so the last picture never showed; after the sound the system timer now runs it on.
+- Alien's menus work. Its script has source line markers (instructions 0x46 and 0x47) that stopped the script interpreter, and its main menu fades in through an animation that another animation starts, which was not supported. Every script instruction the test discs use is now implemented, The Dark Knight's `delete` included.
+- Toy Story's menu is in place: it positions pictures by their top-left corners, and only left and right edges were understood.
+- Disc mode resumes only the movie. A disc continues only if it was left during its main video (a title of 10 minutes or more, or a part of one); left in a menu, a logo, a warning or a trailer, it starts from the beginning. Interactive discs (UMD-PG) keep resuming any clip.
+- Disc mode: ○ (Escape) during the movie goes to the disc's main menu in one press, also on discs that first show a list over the movie, such as Saw's scene list. The "△ Disc menu" hint is gone.
+- Disc mode: L and R (Q and E) go to the previous or next chapter during the movie.
+- Opening a movie or a disc shows black until its first picture, instead of the film-strip backdrop.
+- Incomplete images: a title whose stream is missing ends at once instead of hanging, and the library marks an image that ends before its files do ("Incomplete image: some videos are missing"), as on a Metallica download that stopped early.
+- Desktop: UMD_TEST_BUTTONS="3000:cross,9000:circle" presses buttons at those times, for testing without a keyboard.
 
 ## v0.6.4 (2026-10-16)
 
