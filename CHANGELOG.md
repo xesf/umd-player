@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Disc mode: ○ in a resumed movie goes straight to the disc's main menu, skipping its logos and warnings; Play there resumes the movie.
+
 ## v0.6.6 (2026-10-17)
 
 - Manual built into the app: F1 on a computer, Start in the library on the Vita, with a page of keys on computers.

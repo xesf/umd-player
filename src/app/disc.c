@@ -40,6 +40,9 @@ struct disc {
     uint32_t presented;       /* layer_id last presented without a player */
     uint64_t circle_since;
     int menus_ended;          /* controller.end: the disc finished, nothing to continue */
+    int resumed;              /* the movie was resumed directly: the menus have not started */
+    int skip_intros;          /* on the way to the menu: clips other than the movie end at once */
+    int pending_end;          /* a skipped clip, whose end the menus hear next frame */
 };
 
 /* The key of the disc's saved state: its file name, as for resume.txt. */
@@ -117,6 +120,20 @@ static void d_play(void *user, int playlist, int chapter, int audio, int subtitl
        place for resume(), as a stop would. */
     if (d->title != playlist)
         keep_place(d);
+    /* On the way to the menu after a resumed movie: a logo or a warning ends as it starts;
+       a menu video, the movie or a menu page ends the skipping. */
+    if (d->skip_intros) {
+        if (menu_mode || menu_title_resumable(d->m, playlist) || menu_has_focus(d->m)) {
+            d->skip_intros = 0;
+        } else {
+            player_close(d->pl);
+            d->pl = NULL;
+            d->title = playlist;
+            d->menu_video = 0;
+            d->pending_end = playlist;
+            return;
+        }
+    }
     d->menu_video = menu_mode;
     /* The same title again (a looping menu video): restart it in place, which is quick. */
     if (d->pl && d->title == playlist && audio == d->audio && subtitle == d->subtitle) {
@@ -310,6 +327,7 @@ disc *disc_open(const char *iso_path)
             return d;
         }
         if (!menu_interactive(d->m) && d_resume(d) == 0) {
+            d->resumed = 1;
             plat_log("disc: resuming the movie\n");
             return d;
         }
@@ -346,6 +364,18 @@ static int menus_take_input(const disc *d)
    movie for the main menu at the second. Three presses at most, for discs that ignore it. */
 static void to_main_menu(disc *d)
 {
+    /* After a direct resume the disc's start-up never ran: its menu button may restart the
+       disc, or its continue resume the movie, depending on the state it saved. Start the
+       menus from the beginning instead, ending each logo and warning as it starts, so the
+       menu comes up at once. The movie's place is kept for Play. */
+    if (d->resumed) {
+        d->resumed = 0;
+        d_stop(d);
+        d->skip_intros = 1;
+        plat_log("disc: to the menu, skipping the intros\n");
+        menu_start(d->m);
+        return;
+    }
     for (int i = 0; i < 3; i++) {
         menu_menu_button(d->m);
         if (!movie_playing(d) || !menus_take_input(d))
@@ -371,6 +401,11 @@ int disc_update(disc *d, uint32_t pressed)
         d->circle_since = 0;
     }
 
+    if (d->pending_end) {      /* a clip skipped on the way to the menu */
+        int t = d->pending_end;
+        d->pending_end = 0;
+        menu_playlist_ended(d->m, t);
+    }
     /* Playback events, before the menus run this frame. */
     if (d->pl) {
         int ch = player_chapter(d->pl);
