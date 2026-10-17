@@ -16,7 +16,4 @@ extern const unsigned int backdrop_png_size;
    out of memory. */
 const uint8_t *backdrop_rgba(void);
 
-/* Shows only the backdrop, for example while a movie loads. */
-void backdrop_present(void);
-
 #endif

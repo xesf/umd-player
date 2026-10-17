@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Opening a movie or a disc shows black until its first picture, instead of the app's film-strip backdrop. The backdrop stays in the library.
 - Disc menus: on a list shown over the movie, ○ (Escape) is the disc's menu button, as during the movie. On Saw, ○ during a scene shows the scene list and a second ○ stops the movie for the main menu; the list's own Back only hid it.
 - A title whose stream holds no video (a missing or unreadable file) ends at once instead of waiting for ever, so the disc's menus go on. Metallica - Classic Albums stopped on a black clip that its image lacked.
 - Library: an image that ends before its files do (an unfinished download or a bad dump) says "Incomplete image: some videos are missing" in its panel, and the log gives the sizes.

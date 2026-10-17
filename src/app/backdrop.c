@@ -25,20 +25,3 @@ const uint8_t *backdrop_rgba(void)
     free(work);
     return rgba;
 }
-
-void backdrop_present(void)
-{
-    static uint32_t id;
-    plat_present_info info;
-    const uint8_t *rgba = backdrop_rgba();
-
-    if (!rgba)
-        return;
-    memset(&info, 0, sizeof(info));
-    info.ui_rgba = rgba;
-    info.ui_w = BACKDROP_W;
-    info.ui_h = BACKDROP_H;
-    info.ui_stride = BACKDROP_W * 4;
-    info.ui_id = 0x80000000u | ++id;   /* never equal to a library or player UI id */
-    plat_present(NULL, &info);
-}

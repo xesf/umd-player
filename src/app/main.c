@@ -8,7 +8,6 @@
 #include "../core/canvas.h"
 #include "../core/disc_image.h"
 #include "../platform/platform.h"
-#include "backdrop.h"
 #include "disc.h"
 #include "intro.h"
 #include "resume.h"
@@ -62,6 +61,17 @@ int app_init(int argc, char **argv)
     return lib ? 0 : 1;
 }
 
+/* Black while a movie or a disc opens, until its first picture. */
+static void present_black(void)
+{
+    static uint32_t id;
+    plat_present_info info;
+
+    memset(&info, 0, sizeof(info));
+    info.ui_id = 0x80000000u | ++id;   /* never equal to a library or player UI id */
+    plat_present(NULL, &info);
+}
+
 static int has_saved_position(const char *key)
 {
     resume_entry e;
@@ -73,7 +83,7 @@ static int start_next_intro(void)
 {
     player_options opt = {.iso_path = current_path, .title = -1, .audio = -1, .resume_key = base_name(current_path)};
 
-    backdrop_present();
+    present_black();
     while (intro_next < intro_count) {
         player_options in = {.iso_path = current_path, .title = intros[intro_next++], .audio = -1, .intro = 1};
         if ((current = player_open(&in)) != NULL)
@@ -146,7 +156,7 @@ int app_frame(void)
         } else if (next >= 0) {
             /* L or R: another title of the same disc. */
             player_options opt = {.iso_path = current_path, .title = next, .audio = -1, .resume_key = base_name(current_path)};
-            backdrop_present();
+            present_black();
             if ((current = player_open(&opt)) != NULL)
                 return 1;
         }
@@ -161,7 +171,7 @@ int app_frame(void)
         opt.iso_path = current_path;
         opt.resume_key = base_name(current_path);
         library_suspend(lib);
-        backdrop_present();          /* until the movie's first frame */
+        present_black();             /* until the movie's first frame */
         intro_count = intro_next = 0;
         /* "Start with: Disc": the disc's own menus, or without them its intro titles. */
         if ((settings_get()->start_disc || library_interactive(lib, pick)) && (current_disc = disc_open(current_path)) != NULL)
