@@ -32,6 +32,8 @@ typedef struct wstate {
     int image, has_crop;
     int hidden;               /* widget.visible = false: it and its children are not drawn */
     float fade;               /* fade steps (RCO step 6): an opacity apart from the colour's alpha */
+    float view_rot[3];        /* while a rotation turns: the orientation drawn, the short way */
+    int view_rot_on;
 } wstate;
 
 typedef struct tween {
@@ -206,6 +208,8 @@ static void start_tween(menu *m, int widget, int prop, const float *to, int n, f
     if (dur <= 0) {           /* instant; a tween left running would overwrite it when it ends */
         if (t)
             t->active = 0;
+        if (prop == P_ROT)
+            r->w[widget].view_rot_on = 0;
         memcpy(cur, to, (size_t)n * sizeof(float));
         m->dirty = 1;
         return;
@@ -223,18 +227,71 @@ static void start_tween(menu *m, int widget, int prop, const float *to, int n, f
     t->n = n;
     memcpy(t->from, cur, (size_t)n * sizeof(float));
     memcpy(t->to, to, (size_t)n * sizeof(float));
-    /* Angles turn the short way round: the wheels of The Legend of Zorro and Christmas With
-       the Kranks go from -pi to 2pi/3 as a 60-degree step, not a 300-degree spin. */
-    for (int i = 0; prop == P_ROT && i < n; i++) {
-        float d = fmodf(t->to[i] - t->from[i], 2 * (float)M_PI);
-        if (d > (float)M_PI)
-            d -= 2 * (float)M_PI;
-        if (d < -(float)M_PI)
-            d += 2 * (float)M_PI;
-        t->from[i] = t->to[i] - d;
-    }
     t->dur = dur;
     t->start = m->now;
+}
+
+/* ---- rotations as orientations ---- */
+
+/* The quaternion (w, x, y, z) of the rotation Y, then X, then Z (see local_matrix). */
+static void euler_quat(const float *r, float q[4])
+{
+    float cx = cosf(r[0] / 2), sx = sinf(r[0] / 2), cy = cosf(r[1] / 2), sy = sinf(r[1] / 2);
+    float cz = cosf(r[2] / 2), sz = sinf(r[2] / 2);
+    /* qy * qx * qz */
+    float w = cy * cx, x = cy * sx, y = sy * cx, z = -sy * sx;
+    q[0] = w * cz - z * sz;
+    q[1] = x * cz + y * sz;
+    q[2] = y * cz - x * sz;
+    q[3] = z * cz + w * sz;
+}
+
+/* Back to angles for Y, X, Z, from the quaternion's matrix. */
+static void quat_euler(const float q[4], float *r)
+{
+    float w = q[0], x = q[1], y = q[2], z = q[3];
+    float m02 = 2 * (x * z + w * y), m12 = 2 * (y * z - w * x), m22 = 1 - 2 * (x * x + y * y);
+    float m10 = 2 * (x * y + w * z), m11 = 1 - 2 * (x * x + z * z);
+    float m00 = 1 - 2 * (y * y + z * z), m01 = 2 * (x * y - w * z);
+    r[0] = asinf(-m12 > 1 ? 1 : -m12 < -1 ? -1 : -m12);
+    if (fabsf(m12) < 0.9999f) {
+        r[1] = atan2f(m02, m22);
+        r[2] = atan2f(m10, m11);
+    } else {                  /* straight up or down: Y and Z turn about the same axis */
+        r[1] = 0;
+        r[2] = atan2f(-m01, m00);
+    }
+}
+
+/* The rotation k of the way from a to b along the shorter arc. */
+static void rotation_between(const float *a, const float *b, float k, float *out)
+{
+    float qa[4], qb[4], q[4], dot = 0, len = 0;
+
+    euler_quat(a, qa);
+    euler_quat(b, qb);
+    for (int i = 0; i < 4; i++)
+        dot += qa[i] * qb[i];
+    if (dot < 0) {            /* q and -q are the same rotation: take the nearer one */
+        for (int i = 0; i < 4; i++)
+            qb[i] = -qb[i];
+        dot = -dot;
+    }
+    if (dot > 0.9995f) {
+        for (int i = 0; i < 4; i++)
+            q[i] = qa[i] + (qb[i] - qa[i]) * k;
+    } else {
+        float th = acosf(dot), s = sinf(th);
+        float fa = sinf((1 - k) * th) / s, fb = sinf(k * th) / s;
+        for (int i = 0; i < 4; i++)
+            q[i] = qa[i] * fa + qb[i] * fb;
+    }
+    for (int i = 0; i < 4; i++)
+        len += q[i] * q[i];
+    len = sqrtf(len);
+    for (int i = 0; i < 4; i++)
+        q[i] /= len;
+    quat_euler(q, out);
 }
 
 static void step_tweens(menu *m)
@@ -253,6 +310,17 @@ static void step_tweens(menu *m)
         cur = prop_ptr(&m->res->w[t->widget], t->prop, &n);
         for (int c = 0; c < t->n; c++)
             cur[c] = t->from[c] + (t->to[c] - t->from[c]) * k;
+        /* Rotations are drawn turning as orientations, the short way round: the wheels of The
+           Legend of Zorro and Christmas With the Kranks step between angles such as
+           (pi/3, -pi, -pi) and (pi/3, pi, pi), the same orientation, and turning each angle
+           on its own spun the items over. The scripts still read the angles moving
+           (getRotate), and build their next steps from them. */
+        if (t->prop == P_ROT && t->n == 3) {
+            wstate *w = &m->res->w[t->widget];
+            w->view_rot_on = k < 1;
+            if (k < 1)
+                rotation_between(t->from, t->to, k, w->view_rot);
+        }
         m->dirty = 1;
     }
 }
@@ -1813,7 +1881,7 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
     /* Position in the parent's frame, then this widget's own rotation and scale. */
     for (int k = 0; k < 3; k++)
         x.t[k] = parent->t[k] + parent->l[k][0] * w->pos[0] + parent->l[k][1] * w->pos[1] + parent->l[k][2] * w->pos[2];
-    local_matrix(lm, w->rot, w->scale);
+    local_matrix(lm, w->view_rot_on ? w->view_rot : w->rot, w->scale);
     mat_mul(x.l, (float (*)[3])parent->l, lm);
     if (w->image >= 0 && r->r.objects[i].kind != RCO_PAGE && r->r.objects[i].kind != RCO_GROUP && *count < MAX_SPRITES) {
         int iw, ih;

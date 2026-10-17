@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Disc menus: 3D wheels no longer flip their items while turning (The Legend of Zorro, Christmas With the Kranks).
 - Disc mode: ○ in a resumed movie goes straight to the disc's main menu, skipping its logos and warnings; Play there resumes the movie.
 
 ## v0.6.6 (2026-10-17)
