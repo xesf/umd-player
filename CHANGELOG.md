@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Disc mode: ○ during a scene picked from Valiant's menu returns to the menu in one press, not to its chapter list over the movie.
 - Disc menus: 3D wheels no longer flip their items while turning (The Legend of Zorro, Christmas With the Kranks).
 - Disc mode: ○ in a resumed movie goes straight to the disc's main menu, skipping its logos and warnings; Play there resumes the movie.
 

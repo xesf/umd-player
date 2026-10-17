@@ -376,9 +376,13 @@ static void to_main_menu(disc *d)
         menu_start(d->m);
         return;
     }
+    /* Again while the movie still plays under a page the press opened: Saw and Valiant show
+       their chapter list over the movie first. Whether the page shows something is only known
+       once it is drawn, so a newly active page with buttons counts. */
     for (int i = 0; i < 3; i++) {
+        int page = menu_active_page(d->m);
         menu_menu_button(d->m);
-        if (!movie_playing(d) || !menus_take_input(d))
+        if (!movie_playing(d) || !menu_has_focus(d->m) || menu_active_page(d->m) == page)
             break;
     }
 }

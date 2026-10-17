@@ -94,5 +94,7 @@ void menu_draw(menu *m, canvas *c);
 void menu_touch(menu *m, int down, int x, int y);
 /* 1 while the active page has a button to take the buttons; the player should not handle them. */
 int menu_has_focus(const menu *m);
+/* The active page (a widget index), or -1; it changes when a page opens. */
+int menu_active_page(const menu *m);
 
 #endif
