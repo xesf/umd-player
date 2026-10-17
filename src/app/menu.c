@@ -427,13 +427,18 @@ static int script_handler(menu *m, int widget, const char *name)
    handler, or an animation played on the widget. Returns 0 if there was nothing to do. */
 static int do_action_named(menu *m, const rco_action *a, int widget, const char *name)
 {
+    /* The event can load another resource and free the one a points into. */
+    const char *event = a->event;
+    int anim = a->anim;
+    res *r = m->res;
+
     if (name && script_handler(m, widget, name))
         return 1;
-    if (a->event)
-        call_event(m, a->event, widget);
-    if (a->anim >= 0)
-        play_anim(m, a->anim, widget);
-    return a->event || a->anim >= 0;
+    if (event)
+        call_event(m, event, widget);
+    if (anim >= 0 && m->res == r)
+        play_anim(m, anim, widget);
+    return event || anim >= 0;
 }
 
 static void do_action(menu *m, const rco_action *a, int widget)
@@ -1850,9 +1855,15 @@ static void blit(canvas *c, const sprite *s, const int *clip)
     float u0 = s->has_crop ? s->crop[0] : 0, v0 = s->has_crop ? s->crop[1] : 0;
     float u1 = s->has_crop ? s->crop[0] + s->crop[2] : 1, v1 = s->has_crop ? s->crop[1] + s->crop[3] : 1;
     int32_t umin, umax, vmin, vmax, dudx, dvdx;
-    int cr = (int)(s->color[0] * 256), cg = (int)(s->color[1] * 256), cb = (int)(s->color[2] * 256);
-    int ca = (int)(s->color[3] * 256);
+    int cr, cg, cb, ca;
 
+    /* A script can compute a colour that is not a number (24: Redemption): nothing to draw. */
+    if (isnan(s->color[0]) || isnan(s->color[1]) || isnan(s->color[2]) || !(s->color[3] > 0))
+        return;
+    cr = (int)(s->color[0] * 256);
+    cg = (int)(s->color[1] * 256);
+    cb = (int)(s->color[2] * 256);
+    ca = (int)(s->color[3] * 256);
     if (fabsf(det) < 0.5f || ca <= 0 || x0 >= x1 || y0 >= y1)
         return;
     if (u0 < 0) u0 = 0;
