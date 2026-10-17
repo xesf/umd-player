@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Disc mode: a disc continues only if it was left during its movie. Left in a menu, a logo or a warning, it starts from the beginning the next time.
+- Disc mode: ○ (Escape) during the movie goes to the disc's main menu in one press. Where a disc answers the menu button with a list over the movie (Saw's scene list), UMD Player presses it again.
 - Opening a movie or a disc shows black until its first picture, instead of the app's film-strip backdrop. The backdrop stays in the library.
 - Disc menus: on a list shown over the movie, ○ (Escape) is the disc's menu button, as during the movie. On Saw, ○ during a scene shows the scene list and a second ○ stops the movie for the main menu; the list's own Back only hid it.
 - A title whose stream holds no video (a missing or unreadable file) ends at once instead of waiting for ever, so the disc's menus go on. Metallica - Classic Albums stopped on a black clip that its image lacked.

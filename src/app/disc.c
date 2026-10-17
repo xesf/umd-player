@@ -231,8 +231,13 @@ static int load_state(disc *d)
         sscanf(text, "%d %llu %d %d %n", &d->stopped_title, &pos, &d->stopped_audio, &d->stopped_sub, &n) < 4 || !n)
         return 0;
     d->stopped_pos = pos;
-    if (!menu_title_resumable(d->m, d->stopped_title))
-        d->stopped_title = 0;     /* a clip, saved by earlier versions: nothing to continue */
+    /* Only a disc left in its main video continues; earlier versions also saved discs left
+       in a menu or a clip, and those start from the beginning. */
+    if (!d->stopped_title || !menu_title_resumable(d->m, d->stopped_title)) {
+        d->stopped_title = 0;
+        disc_state_save(state_key(d), NULL);
+        return 0;
+    }
     menu_set_state(d->m, text + n);
     return 1;
 }
@@ -242,14 +247,15 @@ static void save_state(disc *d)
     static char text[STATE_MAX];
     int n;
 
-    /* Left during a clip that is not a main video (a logo, a warning, a trailer): the next
-       time the disc starts afresh. Continuing would make the scripts resume() into the clip,
-       or, as on Akira, start the movie from its beginning without the menus. */
-    if (d->menus_ended || (d->pl && !d->menu_video && !player_title_ended(d->pl) && !menu_title_resumable(d->m, d->title))) {
+    /* A disc continues only from its main video. Left before reaching it (in a logo, a
+       warning, a menu), the next time it starts from the beginning: continuing made the
+       scripts resume() into a clip or return to a menu, and Akira started its movie without
+       the menus. Left in a clip after the movie, it continues the movie. */
+    keep_place(d);
+    if (d->menus_ended || !d->stopped_title) {
         disc_state_save(state_key(d), NULL);
         return;
     }
-    keep_place(d);   /* left during the movie: the PSP keeps its place */
     menu_exit(d->m);
     n = snprintf(text, sizeof(text), "%d %llu %d %d ", d->stopped_title, (unsigned long long)d->stopped_pos,
                  d->stopped_audio, d->stopped_sub);
@@ -308,6 +314,25 @@ static int layer_has_pixels(const canvas *c)
     return 0;
 }
 
+/* A title other than a menu's own video is playing, and has not ended. */
+static int movie_playing(const disc *d)
+{
+    return d->pl && !d->menu_video && !player_title_ended(d->pl);
+}
+
+/* Circle during the movie: the disc's main menu. The PSP's menu button is pressed for it, and
+   pressed again while the movie still plays under a page the press opened: Saw answers the
+   first press with its scene list over the movie, whose own Back only hides it, and stops the
+   movie for the main menu at the second. Three presses at most, for discs that ignore it. */
+static void to_main_menu(disc *d)
+{
+    for (int i = 0; i < 3; i++) {
+        menu_menu_button(d->m);
+        if (!movie_playing(d) || !menu_has_focus(d->m))
+            break;
+    }
+}
+
 int disc_update(disc *d, uint32_t pressed)
 {
     uint32_t held = plat_buttons();
@@ -348,16 +373,15 @@ int disc_update(disc *d, uint32_t pressed)
         menu_playlist_ended(d->m, d->title);
     }
     if (d->pl && player_menu_requested(d->pl))
-        menu_menu_button(d->m);
-    /* On a page over the movie, Circle and Triangle are the PSP's menu button, as Circle is
-       during the movie: Saw shows its scene list over the movie at the first press and stops
-       it for the main menu at the second, while the list's own Back only hid it. On other
-       pages Triangle does nothing: Spider-Man 2's warning cards would take it as "back to the
-       main menu" and skip the movie. During the movie Triangle stays the options panel. */
+        to_main_menu(d);
+    /* On a page over the movie, Circle and Triangle go to the main menu too, as Circle does
+       during the movie. On other pages Triangle does nothing: Spider-Man 2's warning cards
+       would take it as "back to the main menu" and skip the movie. During the movie Triangle
+       stays the options panel. */
     if (menu_focus && (pressed & (PLAT_BTN_CIRCLE | PLAT_BTN_TRIANGLE))) {
-        int over_movie = d->pl && !d->menu_video && !player_title_ended(d->pl);
+        int over_movie = movie_playing(d);
         if (over_movie)
-            menu_menu_button(d->m);
+            to_main_menu(d);
         pressed &= over_movie ? ~(uint32_t)(PLAT_BTN_CIRCLE | PLAT_BTN_TRIANGLE) : ~(uint32_t)PLAT_BTN_TRIANGLE;
     }
 

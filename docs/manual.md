@@ -108,7 +108,7 @@ With "Start with: Disc", UMD Player runs the disc's own menus: the menu screens,
 
 Some discs move their highlight themselves and have no items to tap. On those, swipe to the item, then tap anywhere to choose it.
 
-Some discs show a list over the movie when you open the disc's menu, such as Saw's scene list. On such a list, ○ or △ is the disc's menu button again: Saw then stops the movie and shows its main menu.
+During the movie, ○ goes to the disc's main menu. Some discs answer the PSP's menu button with a list over the movie, such as Saw's scene list; UMD Player then presses it again, so ○ always ends at the main menu.
 
 Holding ○ for 1.5 seconds also goes back to the library.
 
