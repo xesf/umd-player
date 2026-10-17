@@ -92,6 +92,10 @@ For testing without a screen or a keyboard: `UMD_SNAPSHOT=frame.ppm` makes the W
 - [Build plan](docs/plan.md)
 - [Licensing](docs/licensing.md)
 
+## Contributions
+
+Specter has been very helpful playtesting the app.
+
 ## Licence
 
 UMD Player is copyright (c) 2026 xesf and released under the [MIT License](LICENSE), with these exceptions:
