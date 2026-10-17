@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Disc menus: a menu opens with its first item selected (Tenjho Tenge, Shorts Play, Ah My Goddess, Freddy vs. Jason).
+
 ## v0.6.7 (2026-10-17)
 
 - Disc mode: ○ in a resumed movie goes straight to the main menu; Play there resumes the movie.

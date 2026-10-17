@@ -556,6 +556,24 @@ static int first_button(const res *r, int i)
     return -1;
 }
 
+/* A page that has settled with buttons and no focus gets its first button focused, with that
+   button's focus-in action: Tenjho Tenge and Shorts Play highlight an item only that way, and
+   showed none until the first key, which then also moved past it. Not over a playing movie,
+   where Valiant leaves a page of hidden buttons active. */
+static void auto_focus(menu *m)
+{
+    res *r = m->res;
+    int page = r->active, first;
+    menu_status st;
+
+    if (page < 0 || m->lock || r->focus[page] >= 0 || (first = first_button(r, page)) < 0)
+        return;
+    m->p.status(m->p.user, &st);
+    if (st.playing && !m->menu_mode)
+        return;
+    set_focus(m, first);
+}
+
 static void do_input(menu *m, uint32_t pressed)
 {
     static const struct { uint32_t button; int action; const char *name; } dirs[] = {
@@ -1685,6 +1703,7 @@ int menu_update(menu *m, uint32_t pressed, uint64_t now_us)
     m->lock = 0;
     for (int i = 0; i < MAX_RUNS; i++)
         m->lock += m->runs[i].active && m->runs[i].locked;
+    auto_focus(m);
     do_input(m, pressed);
     return !m->ended;
 }
