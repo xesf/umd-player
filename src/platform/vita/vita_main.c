@@ -44,6 +44,11 @@ int plat_touch(int *x, int *y)
     return 1;
 }
 
+int plat_scroll(void)
+{
+    return 0;
+}
+
 static uint32_t read_buttons(void)
 {
     static const struct { unsigned sce; uint32_t plat; } map[] = {

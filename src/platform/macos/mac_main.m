@@ -16,6 +16,7 @@
 
 static uint32_t held_buttons;
 static int touch_down, touch_x, touch_y;   /* the mouse stands in for the touch screen */
+static double scroll_acc;                  /* wheel distance not yet given out as steps */
 static CALayer *video_layer, *overlay_layer, *ui_layer;
 static uint32_t overlay_id, ui_id;
 static NSView *content_view;
@@ -68,6 +69,8 @@ static uint32_t button_for_key(unsigned short code)
 - (void)mouseDown:(NSEvent *)e { [self track:e]; touch_down = 1; }
 - (void)mouseDragged:(NSEvent *)e { [self track:e]; }
 - (void)mouseUp:(NSEvent *)e { (void)e; touch_down = 0; }
+/* A wheel notch is about one line; a trackpad reports points, so a step takes a swipe of 40. */
+- (void)scrollWheel:(NSEvent *)e { scroll_acc -= e.hasPreciseScrollingDeltas ? e.scrollingDeltaY / 40 : e.scrollingDeltaY; }
 @end
 
 @interface UMDAppDelegate : NSObject <NSApplicationDelegate>
@@ -140,6 +143,13 @@ int plat_touch(int *x, int *y)
     *x = touch_x;
     *y = touch_y;
     return 1;
+}
+
+int plat_scroll(void)
+{
+    int steps = (int)scroll_acc;     /* toward zero: the rest waits for more scrolling */
+    scroll_acc -= steps;
+    return steps;
 }
 
 static CGRect screen_rect(plat_rect r)

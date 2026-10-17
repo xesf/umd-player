@@ -43,6 +43,7 @@ static int win_w = WINDOW_W, win_h = WINDOW_H;
 static int fullscreen, quit;
 static uint32_t key_buttons;
 static int touch_down, touch_x, touch_y;
+static int scroll_steps;              /* wheel buttons 4 (away) and 5 (toward the user) */
 
 /* ---- gamepads ---- */
 
@@ -213,6 +214,13 @@ int plat_touch(int *x, int *y)
     return 1;
 }
 
+int plat_scroll(void)
+{
+    int steps = scroll_steps;
+    scroll_steps = 0;
+    return steps;
+}
+
 /* ---- the window ---- */
 
 static void set_fullscreen(int on)
@@ -292,6 +300,10 @@ static void handle_events(void)
                 touch_down = 1;
                 touch_x = e.xbutton.x;
                 touch_y = e.xbutton.y;
+            } else if (e.xbutton.button == Button4) {
+                scroll_steps--;
+            } else if (e.xbutton.button == Button5) {
+                scroll_steps++;
             }
             break;
         case ButtonRelease:

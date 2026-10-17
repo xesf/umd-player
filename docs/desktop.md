@@ -64,7 +64,7 @@ Started without a folder, UMD Player picks the first of these that applies:
 | Start | | Start (Menu) |
 | Select | Tab | Back (View) |
 
-On screen, hints name the keys (Space, Esc, W, A) while you use the keyboard, and the Vita's buttons once you use a gamepad. F1 opens the manual, with a page of these keys first. On macOS, Control-F11 switches full screen. Escape works like ○: it goes back one step, and leaves a movie for the library. To quit, close the window. On Windows and Linux, F11 switches full screen; on Windows, Alt+Enter does too. The mouse works as the touch screen: click to tap, drag to swipe.
+On screen, hints name the keys (Space, Esc, W, A) while you use the keyboard, and the Vita's buttons once you use a gamepad. F1 opens the manual, with a page of these keys first. On macOS, Control-F11 switches full screen. Escape works like ○: it goes back one step, and leaves a movie for the library. To quit, close the window. On Windows and Linux, F11 switches full screen; on Windows, Alt+Enter does too. The mouse works as the touch screen: click to tap, drag to swipe. In the library, the mouse wheel scrolls through the discs.
 
 The [manual](manual.md) describes every screen.
 

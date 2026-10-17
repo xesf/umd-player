@@ -157,5 +157,8 @@ uint32_t plat_buttons(void);            /* buttons held now */
 /* The front touch screen: 1 while a finger is on it, with its position in 960x544 screen
    pixels. 0 on platforms without one. */
 int plat_touch(int *x, int *y);
+/* Mouse wheel steps since the last call: positive toward the user (down the list), negative
+   away. 0 on platforms without a mouse. */
+int plat_scroll(void);
 
 #endif

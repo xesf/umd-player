@@ -246,7 +246,8 @@ def main():
             ('Esc, Backspace', 'Circle (B): back; the disc\'s main menu'),
             ('W', 'Triangle (Y): settings, options'), ('A', 'Square (X)'), ('Q, E', 'L and R (LB, RB)'),
             ('Tab', 'Select (Back)'), ('F1', 'This manual'), ('F11', 'Full screen (Control-F11 on a Mac)'),
-            ('Mouse', 'The touch screen: click to tap, drag to swipe')], key_w=250, chars=34)
+            ('Mouse', 'The touch screen: click to tap, drag to swipe'),
+            ('Wheel', 'Scroll the disc list')], key_w=250, chars=34)
     keys = os.path.join(ROOT, 'assets', 'app', 'manual_keys.png')
     A.save(p.c, keys)
     embed([keys] + [os.path.join(out, '%03d.png' % n) for n in range(1, PAGES + 1)],

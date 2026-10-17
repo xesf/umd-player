@@ -139,6 +139,8 @@ struct library {
     int ui_dirty;
     int show_info;                   /* SELECT toggles the title and resume panel */
     int touch_down, touch_x0, touch_y0, touch_step_y, touch_moved;   /* a finger on the screen */
+    int scroll;                      /* mouse wheel steps not yet taken, positive down the list */
+    uint64_t scroll_us;              /* when the wheel was last read */
     int settings_open, settings_row; /* △: the defaults for new discs */
     int keys_shown;                  /* the hints name keyboard keys (plat_keyboard_ui) */
     int marks_stale;                 /* reread the resume points: a movie was played */
@@ -1291,6 +1293,31 @@ static uint32_t touch_buttons(library *l)
     return 0;
 }
 
+/* The mouse wheel, as Up and Down: a disc per step, one step a frame. Steps from while the
+   library was not on screen (a movie playing) are dropped. */
+static uint32_t scroll_buttons(library *l)
+{
+    uint64_t now = plat_time_us();
+    int steps = plat_scroll();
+
+    if (now - l->scroll_us > 500000)
+        l->scroll = 0;
+    else
+        l->scroll += steps;
+    l->scroll_us = now;
+    if (l->scroll > 8) l->scroll = 8;
+    if (l->scroll < -8) l->scroll = -8;
+    if (l->scroll > 0) {
+        l->scroll--;
+        return PLAT_BTN_DOWN;
+    }
+    if (l->scroll < 0) {
+        l->scroll++;
+        return PLAT_BTN_UP;
+    }
+    return 0;
+}
+
 int library_update(library *l, uint32_t pressed)
 {
     int present = 0;
@@ -1320,7 +1347,7 @@ int library_update(library *l, uint32_t pressed)
         load_resume_marks(l);
         l->ui_dirty = 1;
     }
-    pressed |= touch_buttons(l);
+    pressed |= touch_buttons(l) | scroll_buttons(l);
     if (l->settings_open) {
         settings_input(l, pressed);
         pressed = 0;

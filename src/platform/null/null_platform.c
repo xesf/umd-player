@@ -277,6 +277,11 @@ int plat_touch(int *x, int *y)
     return null_touch_down;
 }
 
+int plat_scroll(void)
+{
+    return 0;
+}
+
 void plat_keep_awake(void)
 {
 }

@@ -32,6 +32,7 @@ static int quit, fullscreen;
 static WINDOWPLACEMENT saved_placement;
 static uint32_t key_buttons;
 static int touch_down, touch_x, touch_y;
+static int wheel_acc;                /* WHEEL_DELTA (120) per notch, positive away from the user */
 
 /* ---- XInput, loaded at run time ---- */
 
@@ -102,6 +103,13 @@ int plat_touch(int *x, int *y)
         return 0;
     soft_touch_point(touch_x, touch_y, win_w, win_h, x, y);
     return 1;
+}
+
+int plat_scroll(void)
+{
+    int steps = wheel_acc / WHEEL_DELTA;
+    wheel_acc -= steps * WHEEL_DELTA;
+    return -steps;
 }
 
 /* ---- the window ---- */
@@ -240,6 +248,9 @@ static LRESULT CALLBACK wnd_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
     case WM_LBUTTONUP:
         touch_down = 0;
         ReleaseCapture();
+        return 0;
+    case WM_MOUSEWHEEL:
+        wheel_acc += GET_WHEEL_DELTA_WPARAM(wp);
         return 0;
     default:
         break;

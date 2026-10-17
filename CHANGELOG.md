@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Computers: the mouse wheel scrolls through the disc list.
+
 ## v0.6.8 (2026-10-17)
 
 - Fixed a black screen on discs whose titles play several clips in a row (My Chemical Romance: Life on the Murder Scene).
