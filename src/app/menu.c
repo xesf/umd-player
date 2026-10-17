@@ -1024,9 +1024,12 @@ NATIVE(mp_status)
     (void)self; (void)args; (void)argc;
     m->p.status(m->p.user, &st);
     *ret = vs_new_object(vm);
-    /* playStatus: 0 stopped, 1 playing, 2 paused. Harry Potter logs "successfully playing
-       video" on 1, and Speed waits for 1 before it uncovers the movie. */
-    vs_set(vm, *ret, vs_intern(vm, "playStatus"), vs_int(!st.playing ? 0 : st.paused ? 2 : 1));
+    /* playStatus: 1 playing; 2 paused, or stopped with a place to resume; 0 nothing. Harry
+       Potter logs "successfully playing video" on 1 and Speed waits for 1 before it uncovers
+       the movie; 2012 stops the movie and waits for 2 before resume(), and Freddy vs. Jason
+       counts 1 or 2 as a title in progress. */
+    vs_set(vm, *ret, vs_intern(vm, "playStatus"),
+           vs_int(st.playing ? (st.paused ? 2 : 1) : m->resume_playlist && menu_title_resumable(m, m->resume_playlist) ? 2 : 0));
     vs_set(vm, *ret, vs_intern(vm, "playListNumber"), vs_int(st.playlist));
     vs_set(vm, *ret, vs_intern(vm, "chapterNumber"), vs_int(st.chapter));
     vs_set(vm, *ret, vs_intern(vm, "menuMode"), vs_int(st.playing && m->menu_mode));
@@ -1395,6 +1398,15 @@ static void apply_pending(menu *m)
         m->pending[0] = 0;
         if ((r = load_res(m, name)) == NULL)
             return;
+        /* A menu's own video belongs to the resource it played in: 2012 changes to its warning
+           cards on Play without stopping its menu video, which went on behind them. A movie
+           keeps playing. */
+        {
+            menu_status st;
+            m->p.status(m->p.user, &st);
+            if (st.playing && m->menu_mode)
+                m->p.stop(m->p.user);
+        }
         for (int i = 0; i < MAX_TIMERS; i++)
             m->timers[i].used = 0;
         memset(m->tweens, 0, sizeof(m->tweens));

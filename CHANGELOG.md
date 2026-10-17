@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Disc menus: a menu's video stops when the disc switches to its warning cards (2012, 21, Christmas With the Kranks, The Legend of Zorro played it behind them).
+- Disc menus: Play after returning from the movie resumes it instead of leaving a black screen (2012): a stopped movie reports "stopped, can resume".
 - Disc mode: ○ during a scene picked from Valiant's menu returns to the menu in one press, not to its chapter list over the movie.
 - Disc menus: 3D wheels no longer flip their items while turning (The Legend of Zorro, Christmas With the Kranks).
 - Disc mode: ○ in a resumed movie goes straight to the disc's main menu, skipping its logos and warnings; Play there resumes the movie.
