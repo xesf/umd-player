@@ -706,6 +706,41 @@ static void format_time(char *out, size_t size, uint64_t ticks)
     snprintf(out, size, "%u:%02u:%02u", s / 3600, s / 60 % 60, s % 60);
 }
 
+/* The title on up to two lines of max_w pixels, broken at a space; a second line that is still
+   too long ends with "...". Returns the number of lines. */
+static int wrap_title(const char *s, char *l1, char *l2, int size, int max_w)
+{
+    const char *rest;
+    int n;
+
+    canvas_text_fit(l1, size, s, 2, max_w);
+    l2[0] = 0;
+    n = (int)strlen(l1);
+    if (!s[n])
+        return 1;
+    if (s[n] != ' ') {                       /* back up to the last space, if the line keeps a third */
+        char *sp = strrchr(l1, ' ');
+        if (sp && canvas_text_width(sp, 2) * 3 <= canvas_text_width(l1, 2) * 2) {
+            *sp = 0;
+            n = (int)(sp - l1);
+        }
+    }
+    l1[n] = 0;
+    while (n > 0 && l1[n - 1] == ' ')
+        l1[--n] = 0;
+    for (rest = s + n; *rest == ' '; rest++)
+        ;
+    canvas_text_fit(l2, size, rest, 2, max_w);
+    if (rest[strlen(l2)]) {
+        canvas_text_fit(l2, size - 3, rest, 2, max_w - canvas_text_width("...", 2));
+        n = (int)strlen(l2);
+        while (n > 0 && l2[n - 1] == ' ')
+            l2[--n] = 0;
+        strcat(l2, "...");
+    }
+    return 2;
+}
+
 /* Right of the selected icon, while △ has it on: the disc's title and, for a disc with a saved
    position, how far it was played with × to resume and □ to start over. */
 static void draw_info(library *l)
@@ -713,8 +748,8 @@ static void draw_info(library *l)
     const lib_disc *d = &l->discs[l->sel];
     canvas *c = &l->ui;
     int x = PANEL_X + 16, y = BIG_Y, tx = x + 2 * ICON_SIZE + 8, w = 300;
-    char title[96], at[16], total[16], line[48];
-    int bw = osd_button_width(ICON_BUTTON_CROSS, 2);
+    char title[96], title2[96], at[16], total[16], line[48];
+    int bw = osd_button_width(ICON_BUTTON_CROSS, 2), lines;
 
     if (!l->show_info)
         return;
@@ -724,16 +759,22 @@ static void draw_info(library *l)
     if (osd_button_width(ICON_BUTTON_SQUARE, 2) > bw)
         bw = osd_button_width(ICON_BUTTON_SQUARE, 2);
     tx = x + bw + 8;
-    canvas_text_fit(title, sizeof(title), d->title, 2, PANEL_W - 32);
+    lines = wrap_title(d->title, title, title2, sizeof(title), PANEL_W - 32);
     canvas_round_darken(c, PANEL_X, BIG_Y, PANEL_W, 2 * ICON_H, BIG_R, 90);   /* as tall as the icon */
     if (!d->has_resume) {
-        canvas_text(c, x, y + ICON_H - (d->interactive ? 18 : 8), 2, RGBA(255, 255, 255, 255), title);   /* centred */
+        /* centred: lines 22 pixels apart, a little more before the UMD-PG line */
+        int ty = y + ICON_H - 8 - (lines - 1) * 11 - (d->interactive ? 14 : 0);
+        canvas_text(c, x, ty, 2, RGBA(255, 255, 255, 255), title);
+        if (lines > 1)
+            canvas_text(c, x, ty + 22, 2, RGBA(255, 255, 255, 255), title2);
         if (d->interactive)
-            canvas_text(c, x, y + ICON_H + 10, 2, TEXT_DIM, "Interactive movie (UMD-PG)");
+            canvas_text(c, x, ty + lines * 22 + 6, 2, TEXT_DIM, "Interactive movie (UMD-PG)");
         return;
     }
     format_time(at, sizeof(at), d->resume_pos - d->resume_start);
-    canvas_text(c, x, y + 18, 2, RGBA(255, 255, 255, 255), title);
+    canvas_text(c, x, lines > 1 ? y + 4 : y + 18, 2, RGBA(255, 255, 255, 255), title);
+    if (lines > 1)
+        canvas_text(c, x, y + 26, 2, RGBA(255, 255, 255, 255), title2);
     osd_button(c, x, y + 46, 2, ICON_BUTTON_CROSS);
     if (d->resume_disc) {
         snprintf(line, sizeof(line), "Continue where you left off");

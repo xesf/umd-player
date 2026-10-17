@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Computers: the mouse wheel scrolls through the disc list.
+- Library: long movie titles wrap onto a second line in the info panel.
 
 ## v0.6.8 (2026-10-17)
 
