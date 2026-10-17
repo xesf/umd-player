@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Disc menus: an image of a single colour stretches over its whole widget. 12 Monkeys fades its menu through black with a 28x28 black square sized to the screen, which showed as a small square blinking in the middle.
 - The manual is built into the app: F1 opens it on a computer, Start in the library on the Vita. Left and Right (or a swipe) turn the pages, ○ closes it. On computers it starts with a page of the keyboard and gamepad keys. The library shows "F1 Manual" (or "START Manual") next to the settings hint.
 - Disc menus: playing an animation on a widget stops the others running on it, as on a PSP. Freddy vs. Jason stops its looping button fades this way; they kept running and restarted the New Line logo several times a second. Metallica's menu also answers ✕ sooner.
 

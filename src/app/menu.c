@@ -75,6 +75,7 @@ typedef struct res {
     ref *wref, *aref, *iref;
     uint8_t **rgba;           /* decoded images, on first use */
     int *img_w, *img_h;
+    uint8_t *img_fill;        /* the image is one colour: a fill that stretches to its widget */
     int pages[MAX_PAGES], page_count;   /* open pages, in drawing order */
     int active;               /* page that takes input, or -1 */
     int *focus;               /* per page: the focused button, or -1 */
@@ -1232,6 +1233,7 @@ static void free_res(res *r)
     free(r->rgba);
     free(r->img_w);
     free(r->img_h);
+    free(r->img_fill);
     free(r->w);
     free(r->wref);
     free(r->aref);
@@ -1267,8 +1269,9 @@ static res *load_res(menu *m, const char *name)
     r->rgba = calloc((size_t)r->r.image_count + 1, sizeof(uint8_t *));
     r->img_w = calloc((size_t)r->r.image_count + 1, sizeof(int));
     r->img_h = calloc((size_t)r->r.image_count + 1, sizeof(int));
+    r->img_fill = calloc((size_t)r->r.image_count + 1, 1);
     r->vm = vs_create(r->r.script, r->r.script_size, vm_log, m);
-    if (!r->w || !r->wref || !r->focus || !r->aref || !r->iref || !r->rgba || !r->img_w || !r->img_h || !r->vm) {
+    if (!r->w || !r->wref || !r->focus || !r->aref || !r->iref || !r->rgba || !r->img_w || !r->img_h || !r->img_fill || !r->vm) {
         free_res(r);
         return NULL;
     }
@@ -1632,6 +1635,11 @@ static const uint8_t *image_rgba(res *r, int i, int *w, int *h)
         ok = r->rgba[i] && (jpeg ? jpeg_decode(data, size, r->rgba[i], iw * 4) == 0
                                  : work && png_decode(data, size, r->rgba[i], iw * 4, work, (uint32_t)(iw * 8 + 1) * ih) == 0);
         if (ok) {
+            const uint32_t *px = (const uint32_t *)r->rgba[i];
+            int n = iw * ih, same = 1;
+            for (int k = 1; k < n && same; k++)
+                same = px[k] == px[0];
+            r->img_fill[i] = (uint8_t)same;
             r->img_w[i] = iw;
             r->img_h[i] = ih;
         } else {
@@ -1790,11 +1798,13 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
             float sxu = (float)c->w / UNITS_W, syu = (float)c->h / UNITS_H;
             float width = w->size[0] > 0 ? w->size[0] : (float)iw, height = w->size[1] > 0 ? w->size[1] : (float)ih;
             /* An image stretches to its widget's size only when the two have the same shape
-               (16:9 cards and backgrounds) or the image is a tiny colour fill (a 1x1 black
-               fade). Otherwise it is drawn at its own size: 2Fast2Furious and The Bourne
-               Supremacy size their label buttons for the longest translation, and on a PSP
-               each label keeps its own size. */
-            if ((iw > FILL_MAX || ih > FILL_MAX) && iw > 0 && ih > 0 && width > 0 && height > 0) {
+               (16:9 cards and backgrounds) or the image is a colour fill: tiny (a 1x1 black
+               fade) or all one colour (12 Monkeys' 28x28 black fade over the whole screen).
+               Otherwise it is drawn at its own size: 2Fast2Furious and The Bourne Supremacy
+               size their label buttons for the longest translation, and on a PSP each label
+               keeps its own size. */
+            if ((iw > FILL_MAX || ih > FILL_MAX) && !r->img_fill[w->image] && iw > 0 && ih > 0 && width > 0 &&
+                height > 0) {
                 float shape = (width / height) / ((float)iw / (float)ih);
                 if (shape > 1.015f || shape < 0.985f) {   /* the cards and backgrounds match within 1% */
                     width = (float)iw;
