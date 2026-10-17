@@ -1339,7 +1339,8 @@ static const char *start_resource(menu *m)
     return "EN100000";
 }
 
-/* Main videos are titles of 10 minutes or more: movies and episodes. Logos, warnings, blanks,
+/* Main videos are titles of 10 minutes or more, movies and episodes, and titles that play from
+   the same clip as one. Logos, warnings, blanks,
    trailers and menu loops are no place to resume, and keeping one sent re-entered discs back
    into a one-second clip. An interactive disc (UMD-PG) has no title that long; there every
    title counts. */
@@ -1358,6 +1359,12 @@ static void find_main_videos(menu *m)
             any |= pl->titles[t].end_pts - pl->titles[t].start_pts >= MAIN_VIDEO_TICKS;
         for (int t = 0; any && t < pl->title_count; t++)
             m->resumable[t + 1] = pl->titles[t].end_pts - pl->titles[t].start_pts >= MAIN_VIDEO_TICKS;
+        /* Titles that play a part of a main video's clip are that video too: Metallica's scene
+           selection plays each chapter of the feature as its own short title. */
+        for (int t = 0; any && t < pl->title_count; t++)
+            for (int u = 0; u < pl->title_count && !m->resumable[t + 1]; u++)
+                if (m->resumable[u + 1] && strcmp(pl->titles[t].clip, pl->titles[u].clip) == 0)
+                    m->resumable[t + 1] = 1;
     }
     free(pl);
     free(buf);

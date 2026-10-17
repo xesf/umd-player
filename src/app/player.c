@@ -108,6 +108,7 @@ struct player {
     uint64_t min_pts;                /* frames and audio before this time are dropped (after a seek) */
     int seeking;                     /* no frame shown since the last seek: the position is min_pts */
     int64_t events_done;             /* event marks up to this time have been reported */
+    int missing_logged;              /* said once that the title's stream has no video */
     uint64_t entry_pts;              /* the seek table's time for the picture reading starts at, or 0 */
     uint8_t *vq_data;
     uint32_t vq_write;               /* next free byte when the ring is not empty */
@@ -1766,10 +1767,20 @@ int player_update(player *p, uint32_t pressed)
     int best = -1, done;
 
     if (!p->video && !p->video_disabled) {
-        int have;
+        int have, eof;
         plat_mutex_lock(p->lock);
         have = p->have_sps;
+        eof = p->eof;
         plat_mutex_unlock(p->lock);
+        /* The stream ended without a picture: an unreadable or missing stream file (an
+           incomplete image). The title is over, so the menus can move on instead of waiting. */
+        if (!have && eof) {
+            if (!p->missing_logged)
+                plat_log("end of title: no video in %s.MPS (is the image complete?)\n", p->title->clip);
+            p->missing_logged = 1;
+            p->ended = 1;
+            return p->menu_mode;
+        }
         if (!have)
             return 1;
         if (open_video(p) < 0 && !p->has_audio)

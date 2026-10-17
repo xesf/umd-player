@@ -60,6 +60,7 @@ typedef struct lib_disc {
     int has_resume;                  /* a saved position past the start, or a saved disc state */
     int resume_disc;                 /* played through its menus: has_resume is the disc state */
     int interactive;                 /* UMD-PG: an interactive movie, played through its menus */
+    int incomplete;                  /* the image ends before the disc's files do */
     uint64_t resume_pos, resume_start, resume_end;   /* 90 kHz; start and end are 0 for 0.1.0 entries */
 } lib_disc;
 
@@ -267,6 +268,15 @@ static icon_video *parse_icon(const uint8_t *pmf, uint32_t size);
 static void free_icon(icon_video *v);
 static uint8_t *first_icon_frame(const uint8_t *pmf, uint32_t size, int *w, int *h);
 
+static int file_end(void *user, const char *path, const iso_entry *e)
+{
+    uint32_t *end = user, last = e->lba + (e->size + 2047) / 2048;
+    (void)path;
+    if (!e->is_dir && last > *end)
+        *end = last;
+    return 0;
+}
+
 static void read_disc_info(lib_disc *disc)
 {
     disc_file d;
@@ -291,6 +301,17 @@ static void read_disc_info(lib_disc *disc)
     if (!disc->icon0 && (buf = disc_read(&d, "UMD_VIDEO/ICON1.PMF", &size, PMF_MAX)) != NULL) {
         disc->icon0 = first_icon_frame(buf, size, &disc->icon_w, &disc->icon_h);
         free(buf);
+    }
+    {
+        /* A cut-short image (a bad dump or download) plays until the missing part, then
+           waits for pictures that never come: say so in the library. */
+        uint32_t end = 0;
+        iso_walk(&d.vol, "UMD_VIDEO", file_end, &end);
+        if (end > d.src.sector_count) {
+            disc->incomplete = 1;
+            plat_log("library: %s is incomplete: its files need %u sectors, the image has %u\n", disc->title,
+                     end, d.src.sector_count);
+        }
     }
     disc->interactive = is_interactive(&d);
     if (disc->interactive)
@@ -695,6 +716,9 @@ static void draw_info(library *l)
 
     if (!l->show_info)
         return;
+    if (d->incomplete)
+        canvas_text(&l->ui, x, y + 2 * ICON_H - 16, 1, RGBA(255, 120, 100, 255),
+                    "Incomplete image: some videos are missing");
     if (osd_button_width(ICON_BUTTON_SQUARE, 2) > bw)
         bw = osd_button_width(ICON_BUTTON_SQUARE, 2);
     tx = x + bw + 8;
