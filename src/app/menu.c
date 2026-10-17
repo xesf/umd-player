@@ -223,6 +223,16 @@ static void start_tween(menu *m, int widget, int prop, const float *to, int n, f
     t->n = n;
     memcpy(t->from, cur, (size_t)n * sizeof(float));
     memcpy(t->to, to, (size_t)n * sizeof(float));
+    /* Angles turn the short way round: the wheels of The Legend of Zorro and Christmas With
+       the Kranks go from -pi to 2pi/3 as a 60-degree step, not a 300-degree spin. */
+    for (int i = 0; prop == P_ROT && i < n; i++) {
+        float d = fmodf(t->to[i] - t->from[i], 2 * (float)M_PI);
+        if (d > (float)M_PI)
+            d -= 2 * (float)M_PI;
+        if (d < -(float)M_PI)
+            d += 2 * (float)M_PI;
+        t->from[i] = t->to[i] - d;
+    }
     t->dur = dur;
     t->start = m->now;
 }
@@ -1688,8 +1698,11 @@ static void local_matrix(float out[3][3], const float *rot, const float *scale)
     float rz[3][3] = {{cz, -sz, 0}, {sz, cz, 0}, {0, 0, 1}};
     float s[3][3] = {{scale[0], 0, 0}, {0, scale[1], 0}, {0, 0, scale[2]}};
 
-    mat_mul(out, rz, ry);
-    mat_mul(out, out, rx);
+    /* Y, then X, then Z (a vector is turned about Z first). The wheels of Christmas With the
+       Kranks and The Legend of Zorro set angles such as (pi/3, pi, pi), which are the X turn
+       pi - pi/3 in this order; with Z, Y, X they flipped the wheel over. */
+    mat_mul(out, ry, rx);
+    mat_mul(out, out, rz);
     mat_mul(out, out, s);
 }
 
