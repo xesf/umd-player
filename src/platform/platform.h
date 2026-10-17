@@ -150,7 +150,8 @@ void plat_get_status(plat_status *s);
 enum {
     PLAT_BTN_UP = 1 << 0, PLAT_BTN_DOWN = 1 << 1, PLAT_BTN_LEFT = 1 << 2, PLAT_BTN_RIGHT = 1 << 3,
     PLAT_BTN_CROSS = 1 << 4, PLAT_BTN_CIRCLE = 1 << 5, PLAT_BTN_SQUARE = 1 << 6, PLAT_BTN_TRIANGLE = 1 << 7,
-    PLAT_BTN_L = 1 << 8, PLAT_BTN_R = 1 << 9, PLAT_BTN_START = 1 << 10, PLAT_BTN_SELECT = 1 << 11
+    PLAT_BTN_L = 1 << 8, PLAT_BTN_R = 1 << 9, PLAT_BTN_START = 1 << 10, PLAT_BTN_SELECT = 1 << 11,
+    PLAT_BTN_HELP = 1 << 12               /* F1 on a computer: the manual */
 };
 uint32_t plat_buttons(void);            /* buttons held now */
 /* The front touch screen: 1 while a finger is on it, with its position in 960x544 screen

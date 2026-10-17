@@ -54,5 +54,9 @@ int osd_draw_hint(canvas *c, int x, int y, icon_id button, const char *text);
    the key that does the same on a keyboard ("Space"). Returns the width drawn. */
 int osd_button(canvas *c, int x, int y, int scale, icon_id button);
 int osd_button_width(icon_id button, int scale);
+/* A key cap with a label that has no button icon ("F1", "START"), 16 pixels high, and the
+   hint text after it. Returns the width drawn, as osd_draw_hint. */
+int osd_key_width(const char *key);
+int osd_draw_key_hint(canvas *c, int x, int y, const char *key, const char *text);
 
 #endif

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The manual is built into the app: F1 opens it on a computer, Start in the library on the Vita. Left and Right (or a swipe) turn the pages, ○ closes it. On computers it starts with a page of the keyboard and gamepad keys. The library shows "F1 Manual" (or "START Manual") next to the settings hint.
 - Disc menus: playing an animation on a widget stops the others running on it, as on a PSP. Freddy vs. Jason stops its looping button fades this way; they kept running and restarted the New Line logo several times a second. Metallica's menu also answers ✕ sooner.
 
 ## v0.6.5 (2026-10-17)

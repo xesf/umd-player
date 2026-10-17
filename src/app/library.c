@@ -982,8 +982,12 @@ static void draw_version(canvas *c, int y, int settings)
 
     canvas_text(c, vx, y, 1, TEXT_DIM, "v" UMDPLAYER_VERSION);
     if (settings) {
+        const char *key = plat_keyboard_ui() ? "F1" : "START";
         int w = osd_button_width(ICON_BUTTON_TRIANGLE, 1) + 6 + canvas_text_width("Settings", 1);
-        osd_draw_hint(c, vx - 24 - w, y - 4, ICON_BUTTON_TRIANGLE, "Settings");
+        int mw = osd_key_width(key) + 6 + canvas_text_width("Manual", 1);
+        vx -= 24 + w;
+        osd_draw_hint(c, vx, y - 4, ICON_BUTTON_TRIANGLE, "Settings");
+        osd_draw_key_hint(c, vx - 24 - mw, y - 4, key, "Manual");
     }
 }
 

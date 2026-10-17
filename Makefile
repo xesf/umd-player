@@ -33,7 +33,7 @@ CORE = src/core/disc_image.c src/core/iso9660.c src/core/umdv.c src/core/mpeg_ps
        src/core/h264dec.c src/core/h264dec_slice.c src/core/h264dec_recon.c src/core/h264dec_deblock.c src/core/h264_cabac_tables.c
 AT3P = $(wildcard src/core/atrac3p/*.c)
 APP = src/app/main.c src/app/player.c src/app/screen.c src/app/osd.c src/app/library.c src/app/resume.c \
-      src/app/backdrop.c src/app/backdrop_png.c src/app/settings.c src/app/intro.c src/app/disc.c src/app/menu.c
+      src/app/backdrop.c src/app/backdrop_png.c src/app/manual.c src/app/manual_png.c src/app/settings.c src/app/intro.c src/app/disc.c src/app/menu.c
 SOFT = src/platform/soft/soft_video.c src/platform/soft/soft_compose.c
 
 ifeq ($(PLATFORM),macos)

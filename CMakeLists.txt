@@ -59,6 +59,8 @@ add_executable(umdplayer
   src/core/vsmx.c
   src/core/jpeg.c
   src/app/backdrop_png.c
+  src/app/manual.c
+  src/app/manual_png.c
   src/app/resume.c
   src/core/disc_image.c
   src/core/iso9660.c

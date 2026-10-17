@@ -40,6 +40,7 @@ The selected disc is the large icon on the left. On a PSP-authored disc, the bac
 | □ | Play the disc from the start, keeping its settings. With disc menus, the disc starts as if inserted for the first time. |
 | Select | Show or hide the disc's name and resume point |
 | △ | Open the settings |
+| Start (F1 on a computer) | Open this manual. Left and Right turn the pages; ○ closes it. |
 | Touch | Drag up or down to move through the discs. Tap a disc above or below to select it, and the selected disc to play it. |
 | PS button | Leave the app |
 

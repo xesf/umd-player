@@ -13,6 +13,7 @@
 #include "resume.h"
 #include "settings.h"
 #include "library.h"
+#include "manual.h"
 #include "player.h"
 
 static library *lib;
@@ -133,6 +134,14 @@ int app_frame(void)
     int pick;
 
     prev_buttons = held;
+    if (manual_update(pressed))
+        return 1;
+    /* The manual: F1, or Start in the library (the Vita has no F1). */
+    if (lib && !current && !current_disc && (pressed & (PLAT_BTN_HELP | PLAT_BTN_START))) {
+        library_suspend(lib);
+        manual_open(plat_keyboard_ui());
+        return 1;
+    }
     if (current_disc) {
         if (disc_update(current_disc, pressed))
             return 1;

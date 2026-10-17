@@ -42,6 +42,15 @@ static const char *key_name(icon_id b)
     }
 }
 
+static int key_cap(canvas *c, int x, int y, int scale, const char *key, uint32_t color)
+{
+    int w = canvas_text_width(key, scale) + 8 * scale, h = ICON_SIZE * scale;
+    canvas_round_rect(c, x, y, w, h, 3 * scale, RGBA(20, 24, 36, 200));
+    canvas_round_ring(c, x, y, w, h, 3 * scale, scale, color);
+    canvas_text(c, x + 4 * scale, y + (h - 8 * scale) / 2, scale, TEXT, key);
+    return w;
+}
+
 int osd_button_width(icon_id button, int scale)
 {
     const char *key = plat_keyboard_ui() ? key_name(button) : NULL;
@@ -57,11 +66,19 @@ int osd_button(canvas *c, int x, int y, int scale, icon_id button)
         canvas_icon(c, button, x, y, scale, button_color(button));
         return w;
     }
-    /* a key cap: the key's name in a rounded outline, in the button's colour */
-    canvas_round_rect(c, x, y, w, h, 3 * scale, RGBA(20, 24, 36, 200));
-    canvas_round_ring(c, x, y, w, h, 3 * scale, scale, button_color(button));
-    canvas_text(c, x + 4 * scale, y + (h - 8 * scale) / 2, scale, TEXT, key);
-    return w;
+    (void)h;
+    return key_cap(c, x, y, scale, key, button_color(button));   /* the key's name, in the button's colour */
+}
+
+int osd_key_width(const char *key)
+{
+    return canvas_text_width(key, 1) + 8;
+}
+
+int osd_draw_key_hint(canvas *c, int x, int y, const char *key, const char *text)
+{
+    int kw = key_cap(c, x, y, 1, key, TEXT_DIM);
+    return kw + 6 + canvas_text(c, x + kw + 6, y + 4, 1, TEXT_DIM, text) + 18;
 }
 
 int osd_draw_hint(canvas *c, int x, int y, icon_id button, const char *text)
