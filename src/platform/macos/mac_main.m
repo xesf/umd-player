@@ -49,6 +49,12 @@ static uint32_t button_for_key(unsigned short code)
 - (BOOL)acceptsFirstResponder { return YES; }
 - (void)keyDown:(NSEvent *)e
 {
+    /* Control-F11: full screen (macOS keeps F11 alone for Show Desktop). */
+    if (e.keyCode == 103 && (e.modifierFlags & NSEventModifierFlagControl)) {
+        if (!e.isARepeat)
+            [self.window toggleFullScreen:nil];
+        return;
+    }
     held_buttons |= button_for_key(e.keyCode);
 }
 - (void)keyUp:(NSEvent *)e { held_buttons &= ~button_for_key(e.keyCode); }
@@ -79,6 +85,7 @@ static uint32_t button_for_key(unsigned short code)
                                                 backing:NSBackingStoreBuffered
                                                   defer:NO];
     self.window.title = @"UMD Player";
+    self.window.collectionBehavior = NSWindowCollectionBehaviorFullScreenPrimary;
     content_view = [[UMDView alloc] initWithFrame:r];
     content_view.wantsLayer = YES;
     content_view.layer.backgroundColor = CGColorGetConstantColor(kCGColorBlack);

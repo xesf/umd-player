@@ -245,7 +245,7 @@ def main():
     p.rows([('Arrows', 'D-pad (left stick)'), ('Space, Enter', 'Cross (A): choose, play, pause'),
             ('Esc, Backspace', 'Circle (B): back; the disc\'s main menu'),
             ('W', 'Triangle (Y): settings, options'), ('A', 'Square (X)'), ('Q, E', 'L and R (LB, RB)'),
-            ('Tab', 'Select (Back)'), ('F1', 'This manual'), ('F11', 'Full screen; Alt+Enter on Windows'),
+            ('Tab', 'Select (Back)'), ('F1', 'This manual'), ('F11', 'Full screen (Control-F11 on a Mac)'),
             ('Mouse', 'The touch screen: click to tap, drag to swipe')], key_w=250, chars=34)
     keys = os.path.join(ROOT, 'assets', 'app', 'manual_keys.png')
     A.save(p.c, keys)
