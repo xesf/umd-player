@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Disc mode: L and R (Q and E on a keyboard) go to the previous or next chapter during the movie, as Down and Up do. They did nothing; with "Start with: Movie" they still switch titles.
+
 ## v0.6.4 (2026-10-16)
 
 - "Start with: Disc" is the default: a disc plays as on a PSP, with its logos, warnings and menus. A saved "Movie" setting is kept.

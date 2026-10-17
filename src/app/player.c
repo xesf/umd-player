@@ -1450,8 +1450,12 @@ static void play_input(player *p, uint32_t pressed)
         p->menu_request = 1;
         return;
     }
-    if (p->menu_mode)
+    /* With the disc's menus, L and R step through chapters, as Down and Up do: switching
+       titles would leave the menus behind. */
+    if (p->menu_mode && (pressed & (PLAT_BTN_L | PLAT_BTN_R))) {
+        seek_chapter(p, (pressed & PLAT_BTN_R) ? 1 : -1);
         pressed &= ~(PLAT_BTN_L | PLAT_BTN_R);
+    }
     if (p->intro) {
         if (pressed & (PLAT_BTN_CROSS | PLAT_BTN_START)) {
             p->skipped = 1;
