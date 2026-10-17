@@ -1,19 +1,16 @@
 # Changelog
 
-## Unreleased
+## v0.6.6 (2026-10-17)
 
-- Disc menus: 3D menu wheels turn the right way. Rotations apply in the order Y, X, Z, which the wheels of The Legend of Zorro and Christmas With the Kranks rely on (they flipped over going down), and animated angles take the short way round instead of spinning almost a full turn.
-- Disc menus: a page that shows nothing over the movie no longer takes the buttons. After a scene picked in Valiant's menu, △ opened the scene selection again instead of the options panel.
-- Disc mode: a disc left in its movie resumes the movie directly the next time, instead of running the disc's own "continue", which sent 12 Monkeys to its menu. A disc left anywhere else starts from the beginning; interactive discs (UMD-PG) still continue their story.
-- A title asked to play an audio track it lacks plays its first track instead of no sound (16 Blocks' menus ask for track 1 of a disc with one).
-- Disc menus: 2012 and 21 start. Their scripts create objects with `{}` (instruction 0x29), which the script interpreter refused, so neither disc played anything.
-- Disc menus: a thin strip image stretches over its widget. Tenjho Tenge's band behind its buttons, a 10x64 image on a widget as wide as the screen, showed as a small grey bar.
-- Disc menus: rotation steps in animations work. Transporter turns its menu dial with them, and the dial stayed still, so the selection never seemed to change.
-- Disc menus: SAMURAI 7's menu works. Its script names pages with number.toString(), which the script interpreter lacked, so no page opened and the menu over the episode took no input. toString() now works on numbers, booleans, strings and objects.
+- Manual built into the app: F1 on a computer, Start in the library on the Vita, with a page of keys on computers.
 - macOS: Control-F11 switches full screen.
-- Disc menus: an image of a single colour stretches over its whole widget. 12 Monkeys fades its menu through black with a 28x28 black square sized to the screen, which showed as a small square blinking in the middle.
-- The manual is built into the app: F1 opens it on a computer, Start in the library on the Vita. Left and Right (or a swipe) turn the pages, ○ closes it. On computers it starts with a page of the keyboard and gamepad keys. The library shows "F1 Manual" (or "START Manual") next to the settings hint.
-- Disc menus: playing an animation on a widget stops the others running on it, as on a PSP. Freddy vs. Jason stops its looping button fades this way; they kept running and restarted the New Line logo several times a second. Metallica's menu also answers ✕ sooner.
+- Disc mode: a disc left in its movie resumes the movie; left anywhere else it starts from the beginning.
+- Audio: a missing audio track falls back to the title's first track instead of silence (16 Blocks).
+- Fixed menus that never started: 2012 and 21 (object literal), SAMURAI 7 (toString).
+- Fixed menu dials and wheels: Transporter's dial turns; Zorro's and Kranks' wheels no longer flip.
+- Fixed menu drawing: 12 Monkeys' black fade, Tenjho Tenge's band and its dark label letters.
+- Fixed Freddy vs. Jason's menu looping its logo; Metallica's menu answers sooner.
+- Fixed △ reopening Valiant's scene selection during a scene instead of opening the options panel.
 
 ## v0.6.5 (2026-10-17)
 

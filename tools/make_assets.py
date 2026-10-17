@@ -367,7 +367,7 @@ def backdrop(png_path, c_path):
 
 
 TEMPLATE = '''<?xml version="1.0" encoding="utf-8"?>
-<livearea style="a1" format-ver="01.00" content-rev="20">
+<livearea style="a1" format-ver="01.00" content-rev="21">
   <livearea-background>
     <image>bg.png</image>
   </livearea-background>
