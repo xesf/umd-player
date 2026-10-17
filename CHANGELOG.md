@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Disc mode: a disc left in its movie resumes the movie directly the next time, instead of running the disc's own "continue", which sent 12 Monkeys to its menu. A disc left anywhere else starts from the beginning; interactive discs (UMD-PG) still continue their story.
+- A title asked to play an audio track it lacks plays its first track instead of no sound (16 Blocks' menus ask for track 1 of a disc with one).
 - Disc menus: 2012 and 21 start. Their scripts create objects with `{}` (instruction 0x29), which the script interpreter refused, so neither disc played anything.
 - Disc menus: a thin strip image stretches over its widget. Tenjho Tenge's band behind its buttons, a 10x64 image on a widget as wide as the screen, showed as a small grey bar.
 - Disc menus: rotation steps in animations work. Transporter turns its menu dial with them, and the dial stayed still, so the selection never seemed to change.

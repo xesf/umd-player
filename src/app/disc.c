@@ -238,6 +238,8 @@ static int load_state(disc *d)
         disc_state_save(state_key(d), NULL);
         return 0;
     }
+    /* The scripts' saved data says whether the movie can be resumed (16 Blocks keeps
+       g_nResumePossible there), so it is restored either way. */
     menu_set_state(d->m, text + n);
     return 1;
 }
@@ -298,9 +300,19 @@ disc *disc_open(const char *iso_path)
         return NULL;
     }
     plat_log("disc: running the menus of %s\n", iso_path);
-    if (load_state(d) && menu_continue(d->m)) {
-        plat_log("disc: continuing where it was left\n");
-        return d;
+    /* An interactive disc continues its story through its script. Any other disc left in its
+       movie resumes the movie itself, with the scripts' data restored for the menu button
+       and the movie's end: continuing through the script sent 12 Monkeys to its menu and
+       others into clips. A disc left anywhere else starts from the beginning. */
+    if (load_state(d)) {
+        if (menu_interactive(d->m) && menu_continue(d->m)) {
+            plat_log("disc: continuing where it was left\n");
+            return d;
+        }
+        if (!menu_interactive(d->m) && d_resume(d) == 0) {
+            plat_log("disc: resuming the movie\n");
+            return d;
+        }
     }
     menu_start(d->m);
     return d;

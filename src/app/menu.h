@@ -52,6 +52,8 @@ menu *menu_open(const menu_player *player, const char *language);
 void menu_close(menu *m);
 /* Whether a title (1-based) is a main video, the only kind with a place to resume. */
 int menu_title_resumable(const menu *m, int playlist);
+/* No title is a main video: an interactive disc (UMD-PG), whose progress is its saved state. */
+int menu_interactive(const menu *m);
 
 /* Starts the disc as when it is inserted (controller.onAutoPlay). */
 void menu_start(menu *m);

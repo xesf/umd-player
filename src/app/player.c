@@ -1694,6 +1694,13 @@ player *player_open(const player_options *opt)
             audio = p->clip.streams[i].sub_id;
     p->audio_sub = audio < 0 ? 0 : audio;
     p->has_audio = has_stream(p, UMDV_STREAM_AUDIO, p->audio_sub);
+    /* A track the title lacks (16 Blocks' menus ask for track 1 of a disc with one): the
+       first track the title has, as a PSP keeps playing sound. */
+    for (int i = 0; !p->has_audio && i < p->clip.stream_count; i++)
+        if (p->clip.streams[i].kind == UMDV_STREAM_AUDIO) {
+            p->audio_sub = p->clip.streams[i].sub_id;
+            p->has_audio = 1;
+        }
     if (have_resume && resume.sub >= 0 && has_stream(p, UMDV_STREAM_SUBTITLE, resume.sub))
         sub = resume.sub;
     if (opt->menu && opt->subtitle != -2) {

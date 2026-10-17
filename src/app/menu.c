@@ -98,6 +98,7 @@ struct menu {
     int user_count;
     int resume_playlist, resume_chapter;   /* for getResumeInfo */
     uint8_t resumable[UMDV_MAX_TITLES + 1];  /* by 1-based title: a main video, a place to resume */
+    int interactive;          /* no title is a main video: an interactive disc (UMD-PG) */
     int menu_mode;            /* the title playing is a menu video: play(0, 1, ...) */
     int audio_id, sub_id, sub_on;
     float win[4];
@@ -1375,9 +1376,11 @@ static void find_main_videos(menu *m)
     int any = 0;
 
     memset(m->resumable, 1, sizeof(m->resumable));
+    m->interactive = 1;
     if (pl && umdv_playlist_parse(buf, size, pl) == 0) {
         for (int t = 0; t < pl->title_count; t++)
             any |= pl->titles[t].end_pts - pl->titles[t].start_pts >= MAIN_VIDEO_TICKS;
+        m->interactive = !any;
         for (int t = 0; any && t < pl->title_count; t++)
             m->resumable[t + 1] = pl->titles[t].end_pts - pl->titles[t].start_pts >= MAIN_VIDEO_TICKS;
         /* Titles that play a part of a main video's clip are that video too: Metallica's scene
@@ -1394,6 +1397,11 @@ static void find_main_videos(menu *m)
 int menu_title_resumable(const menu *m, int playlist)
 {
     return playlist >= 1 && playlist <= UMDV_MAX_TITLES && m->resumable[playlist];
+}
+
+int menu_interactive(const menu *m)
+{
+    return m->interactive;
 }
 
 menu *menu_open(const menu_player *player, const char *language)
