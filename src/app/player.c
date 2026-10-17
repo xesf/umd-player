@@ -96,7 +96,9 @@ struct player {
     umdv_clip clip;
     uint8_t *clp_buf;
     iso_entry mps;
-    const umdv_title *title;
+    const umdv_title *title;         /* &cur */
+    umdv_title cur;                  /* the title, narrowed to the item that plays */
+    int title_index, item;
     int has_audio;
 
     /* Shared between threads, guarded by lock. */
@@ -769,13 +771,8 @@ static void maybe_start(player *p)
 
 /* Stops the reader, drops everything queued, and restarts reading at the seek point at or
    before target (90 kHz) with the given audio track. */
-static void restart_reader(player *p, uint64_t target, int audio, int sub)
+static void stop_reader(player *p)
 {
-    umdv_ep ep;
-    uint32_t index;
-
-    p->events_done = (int64_t)target - 1;    /* a mark right at the target still counts */
-
     if (p->reader) {
         plat_mutex_lock(p->lock);
         p->stop = 1;
@@ -784,6 +781,16 @@ static void restart_reader(player *p, uint64_t target, int audio, int sub)
         plat_thread_join(p->reader);
         p->reader = NULL;
     }
+}
+
+static void restart_reader(player *p, uint64_t target, int audio, int sub)
+{
+    umdv_ep ep;
+    uint32_t index;
+
+    p->events_done = (int64_t)target - 1;    /* a mark right at the target still counts */
+
+    stop_reader(p);
     for (int i = 0; i < p->frame_count; i++)
         plat_frame_release(p->frames[i].frame);
     p->frame_count = 0;
@@ -848,6 +855,8 @@ static void restart_reader(player *p, uint64_t target, int audio, int sub)
 /* The current position: the seek target until a frame from after the seek is on screen. */
 static void toast(player *p, icon_id icon, const char *fmt, ...) __attribute__((format(printf, 3, 4)));
 static int has_stream(const player *p, int kind, int sub_id);
+static int load_item(player *p, int item);
+static int alloc_audio_queues(player *p);
 static int count_long_titles(const player *p);
 
 static uint64_t now_or_shown(player *p)
@@ -1333,7 +1342,7 @@ static int count_long_titles(const player *p)
    extras). The app reopens the player on it. */
 static void switch_title(player *p, int dir)
 {
-    int cur = (int)(p->title - p->playlist.titles), n = p->playlist.title_count;
+    int cur = p->title_index, n = p->playlist.title_count;
 
     for (int k = 1; k < n; k++) {
         int i = ((cur + dir * k) % n + n) % n;
@@ -1392,7 +1401,14 @@ const char *player_next_event(player *p, uint32_t *data)
 
 void player_restart(player *p, int chapter)
 {
-    uint64_t start = p->title->start_pts;
+    uint64_t start;
+
+    if (chapter <= 1 && p->item != 0) {
+        stop_reader(p);
+        if (load_item(p, 0) < 0 || alloc_audio_queues(p) < 0)
+            return;
+    }
+    start = p->title->start_pts;
 
     if (chapter > 1 && chapter <= p->title->chapter_count)
         start = p->playlist.chapters[p->title->first_chapter + chapter - 1].pts;
@@ -1590,11 +1606,12 @@ static void save_resume(player *p)
 {
     resume_entry e;
 
-    if (!p->resume_key[0] || !p->title)
+    /* Resume points are times in the title's main clip. */
+    if (!p->resume_key[0] || !p->title || p->item != p->playlist.titles[p->title_index].main_item)
         return;
     memset(&e, 0, sizeof(e));
     snprintf(e.key, sizeof(e.key), "%s", p->resume_key);
-    e.title = (int)(p->title - p->playlist.titles);
+    e.title = p->title_index;
     e.pos = p->ended ? p->title->start_pts : now_or_shown(p);
     e.audio = p->want_audio;
     e.sub = p->sub_sub;
@@ -1624,15 +1641,96 @@ static int has_stream(const player *p, int kind, int sub_id)
     return 0;
 }
 
+/* Makes item the part of the title that plays: its clip, times, chapters, and events. The
+   reader must be stopped. */
+static int load_item(player *p, int item)
+{
+    const umdv_title *t = &p->playlist.titles[p->title_index];
+    const umdv_item *it = &p->playlist.items[t->first_item + item];
+    char path[64];
+    uint32_t size;
+    int i;
+
+    p->cur = *t;
+    p->item = item;
+    memcpy(p->cur.clip, it->clip, sizeof(p->cur.clip));
+    p->cur.start_pts = it->start_pts;
+    p->cur.end_pts = it->end_pts;
+    if (t->item_count > 1) {
+        /* The marks of each item are together, in item order. */
+        for (i = 0; i < t->chapter_count && p->playlist.chapters[t->first_chapter + i].item != item; i++)
+            ;
+        p->cur.first_chapter = (uint16_t)(t->first_chapter + i);
+        for (p->cur.chapter_count = 0; i < t->chapter_count && p->playlist.chapters[t->first_chapter + i].item == item; i++)
+            p->cur.chapter_count++;
+        if (!p->cur.chapter_count) {
+            p->cur.first_chapter = t->first_chapter;
+            p->cur.chapter_count = t->chapter_count;
+        }
+        for (i = 0; i < t->event_count && p->playlist.events[t->first_event + i].item != item; i++)
+            ;
+        p->cur.first_event = (uint16_t)(t->first_event + i);
+        for (p->cur.event_count = 0; i < t->event_count && p->playlist.events[t->first_event + i].item == item; i++)
+            p->cur.event_count++;
+    }
+    free(p->clp_buf);
+    snprintf(path, sizeof(path), "UMD_VIDEO/CLIPINF/%s.CLP", it->clip);
+    if ((p->clp_buf = read_file(p, path, &size)) == NULL || umdv_clip_parse(p->clp_buf, size, &p->clip) < 0) {
+        plat_log("cannot read %s\n", path);
+        return -1;
+    }
+    snprintf(path, sizeof(path), "UMD_VIDEO/STREAM/%s.MPS", it->clip);
+    if (iso_find(&p->vol, path, &p->mps) < 0) {
+        plat_log("cannot find %s\n", path);
+        return -1;
+    }
+    return 0;
+}
+
+/* Queues for the clip's audio tracks. */
+static int alloc_audio_queues(player *p)
+{
+    for (int i = 0; i < p->clip.stream_count; i++) {
+        const umdv_stream *st = &p->clip.streams[i];
+        if (st->kind == UMDV_STREAM_AUDIO && st->sub_id < DEMUX_AUDIO_TRACKS && !p->aq[st->sub_id].frames &&
+            !(p->aq[st->sub_id].frames = malloc(AQ_FRAMES * sizeof(aq_frame))))
+            return -1;
+    }
+    return 0;
+}
+
+/* The end of an item that is not the title's last: the next item plays, with the same tracks
+   when its clip has them. */
+static int next_item(player *p)
+{
+    int audio = p->want_audio, sub = p->sub_sub;
+
+    if (p->item + 1 >= p->playlist.titles[p->title_index].item_count)
+        return 0;
+    stop_reader(p);
+    if (load_item(p, p->item + 1) < 0 || alloc_audio_queues(p) < 0)
+        return 0;
+    if (!has_stream(p, UMDV_STREAM_AUDIO, audio))
+        for (int i = 0; i < p->clip.stream_count; i++)
+            if (p->clip.streams[i].kind == UMDV_STREAM_AUDIO) {
+                audio = p->clip.streams[i].sub_id;
+                break;
+            }
+    if (sub != DEMUX_NONE && !has_stream(p, UMDV_STREAM_SUBTITLE, sub))
+        sub = DEMUX_NONE;
+    plat_log("title \"%s\": next clip %s\n", p->title->name, p->title->clip);
+    restart_reader(p, p->title->start_pts, audio, sub);
+    return p->reader != NULL;
+}
+
 player *player_open(const player_options *opt)
 {
     player *p = calloc(1, sizeof(*p));
-    char path[64];
     uint8_t *buf;
     uint32_t size, best = 0;
     int i, have_resume = 0, sub = DEMUX_NONE, audio;
     resume_entry resume;
-    uint64_t start;
+    uint64_t start, chapter_start;
 
     if (!p)
         return NULL;
@@ -1670,18 +1768,27 @@ player *player_open(const player_options *opt)
         plat_log("no title %d\n", opt->title);
         goto fail;
     }
-    p->title = &p->playlist.titles[i];
+    p->title_index = i;
+    p->title = &p->cur;
+    {
+        /* A title of several items starts at its first, unless a resume point, a chapter, or
+           a start time picks a place in the main item. */
+        const umdv_title *t = &p->playlist.titles[i];
+        int item = 0;
+        if (t->item_count > 1) {
+            if ((have_resume && resume.title == i && resume.pos > t->start_pts && resume.pos + RESUME_TAIL < t->end_pts) ||
+                (opt->menu && opt->start_pts > t->start_pts && opt->start_pts < t->end_pts))
+                item = t->main_item;
+            if (opt->menu && opt->chapter > 1 && opt->chapter <= t->chapter_count)
+                item = p->playlist.chapters[t->first_chapter + opt->chapter - 1].item;
+        }
+        if (load_item(p, item) < 0)
+            goto fail;
+        chapter_start = 0;
+        if (opt->menu && opt->chapter > 1 && opt->chapter <= t->chapter_count)
+            chapter_start = p->playlist.chapters[t->first_chapter + opt->chapter - 1].pts;
+    }
     p->menu_short = opt->menu && p->title->end_pts - p->title->start_pts < 10u * 60 * 90000;
-    snprintf(path, sizeof(path), "UMD_VIDEO/CLIPINF/%s.CLP", p->title->clip);
-    if ((p->clp_buf = read_file(p, path, &size)) == NULL || umdv_clip_parse(p->clp_buf, size, &p->clip) < 0) {
-        plat_log("cannot read %s\n", path);
-        goto fail;
-    }
-    snprintf(path, sizeof(path), "UMD_VIDEO/STREAM/%s.MPS", p->title->clip);
-    if (iso_find(&p->vol, path, &p->mps) < 0) {
-        plat_log("cannot find %s\n", path);
-        goto fail;
-    }
     /* Audio: the asked-for track, else the remembered one, else the first in the language from
        the settings, else the first. */
     audio = opt->audio;
@@ -1729,12 +1836,8 @@ player *player_open(const player_options *opt)
     p->mode = (screen_mode)settings_get()->screen;
     if (have_resume && resume.screen >= 0 && resume.screen < SCREEN_MODES)
         p->mode = (screen_mode)resume.screen;
-    for (i = 0; i < p->clip.stream_count; i++) {
-        const umdv_stream *st = &p->clip.streams[i];
-        if (st->kind == UMDV_STREAM_AUDIO && st->sub_id < DEMUX_AUDIO_TRACKS && !p->aq[st->sub_id].frames &&
-            !(p->aq[st->sub_id].frames = malloc(AQ_FRAMES * sizeof(aq_frame))))
-            goto fail;
-    }
+    if (alloc_audio_queues(p) < 0)
+        goto fail;
     if (!p->lock || !p->cond || !p->io_lock || !p->vq_data || !p->pcm || !p->dmx || !p->at3p || !p->sub_rgba || !p->sub_work || !p->ui.rgba)
         goto fail;
     at3p_init_tables();
@@ -1743,11 +1846,11 @@ player *player_open(const player_options *opt)
         p->has_audio = 0;
     }
     start = p->title->start_pts;
-    if (have_resume && resume.title == (int)(p->title - p->playlist.titles) && resume.pos > start &&
+    if (have_resume && resume.title == p->title_index && resume.pos > start &&
         resume.pos + RESUME_TAIL < p->title->end_pts)
         start = resume.pos;
-    if (opt->menu && opt->chapter > 1 && opt->chapter <= p->title->chapter_count)
-        start = p->playlist.chapters[p->title->first_chapter + opt->chapter - 1].pts;
+    if (chapter_start)
+        start = chapter_start;
     if (opt->menu && opt->start_pts > start && opt->start_pts < p->title->end_pts)
         start = opt->start_pts;
     restart_reader(p, start, p->audio_sub, sub);
@@ -1907,6 +2010,8 @@ int player_update(player *p, uint32_t pressed)
     done = p->eof && p->vq_count == 0 && p->pcm_count == 0;
     plat_mutex_unlock(p->lock);
     if (done && p->frame_count == 0) {
+        if (!p->ended && next_item(p))
+            return 1;
         if (!p->ended)
             plat_log("end of title\n");
         p->ended = 1;

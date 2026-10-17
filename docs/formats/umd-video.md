@@ -58,15 +58,29 @@ Offsets count from the start of the entry. The next entry starts at `entry + 4 +
 | Offset | Size | Field |
 |---|---|---|
 | `0x000` | 4 | Length of the rest of the entry |
+| `0x004` | 2 | Offset of the item table, `0x310` on every disc |
+| `0x006` | 2 | Offset of the mark table, `0x332` when the title has one item |
 | `0x02C` | 6 | Unknown. `08 15 23 00 00 00` on 4 discs, `07 19 xx xx 00 00` on *Up in Smoke* |
 | `0x036` | 1 | Title name length |
 | `0x037` | | Title name, for example `Main_Feature` |
-| `0x31E` | 8 | Clip name, for example `00006`. Selects `CLIPINF/00006.CLP` and `STREAM/00006.MPS`. |
-| `0x326` | 6 | Start time |
-| `0x32C` | 6 | End time |
-| `0x332` | 4 | Mark table length: 2 + 40 x mark count |
-| `0x336` | 2 | Mark count, at least 1 |
-| `0x338` | 40 each | Marks |
+| item table | 4 | Length of the rest of the item table |
+| + `0x06` | 2 | Item count, at least 1 |
+| + `0x08` | | Items |
+| mark table | 4 | Length of the rest of the mark table: 2 + 40 x mark count |
+| + `0x04` | 2 | Mark count, at least 1 |
+| + `0x06` | 40 each | Marks |
+
+Most titles have one item, so the clip name is at `0x31E` and the marks start at `0x338`. *My Chemical Romance: Life on the Murder Scene* has titles of two items: a short transition clip, then a part of the concert clip. The items play one after the other.
+
+### Item entry
+
+| Offset | Size | Field |
+|---|---|---|
+| `0x00` | 4 | Length of the rest of the item, `0x16` |
+| `0x04` | 2 | Unknown, `0x0005` |
+| `0x06` | 8 | Clip name, for example `00006`. Selects `CLIPINF/00006.CLP` and `STREAM/00006.MPS`. |
+| `0x0E` | 6 | Start time |
+| `0x14` | 6 | End time |
 
 ### Mark entry
 
@@ -74,7 +88,8 @@ Offsets count from the start of the entry. The next entry starts at `entry + 4 +
 |---|---|---|
 | `0x00` | 1 | Type: `0x05` chapter, `0x10` event |
 | `0x01` | 1 | Name length |
-| `0x04` | 6 | Time |
+| `0x02` | 2 | Item the time belongs to, from 0 |
+| `0x04` | 6 | Time, in that item's clip |
 | `0x0C` | 4 | Data, the script's `mark_data` (0 on the test discs) |
 | `0x10` | 24 | Name, often `Mark<frame>` |
 

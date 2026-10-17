@@ -2,13 +2,14 @@
 
 #include <string.h>
 
+#define PL_ENTRY_ITEMS_OFF  0x04     /* offsets from the entry start */
+#define PL_ENTRY_MARKS_OFF  0x06
 #define PL_ENTRY_NAME_LEN   0x36
 #define PL_ENTRY_NAME       0x37
-#define PL_ENTRY_CLIP       0x31E
-#define PL_ENTRY_START      0x326
-#define PL_ENTRY_END        0x32C
-#define PL_ENTRY_MARK_COUNT 0x336
-#define PL_ENTRY_MARKS      0x338
+#define PL_ITEM_CLIP        0x06     /* offsets from the item start */
+#define PL_ITEM_START       0x0E
+#define PL_ITEM_END         0x14
+#define PL_ITEM_SIZE        0x1A
 #define PL_MARK_SIZE        0x28
 #define PL_MARK_EVENT       0x10     /* mark type; chapters are 0x05 */
 
@@ -50,25 +51,46 @@ int umdv_playlist_parse(const uint8_t *buf, uint32_t size, umdv_playlist *out)
     o = data + 6;
     for (t = 0; t < count; t++) {
         umdv_title *ti = &out->titles[t];
-        uint32_t entry_end;
-        uint16_t marks, m;
+        uint32_t entry_end, items, marks_at, it, best = 0;
+        uint16_t item_count, marks, m, i;
 
-        if (o + PL_ENTRY_MARKS > end)
+        if (o + PL_ENTRY_NAME + 1 > end)
             return -1;
         entry_end = o + 4 + be32(&buf[o]);
-        marks = be16(&buf[o + PL_ENTRY_MARK_COUNT]);
-        if (entry_end > end || o + PL_ENTRY_MARKS + (uint32_t)marks * PL_MARK_SIZE > entry_end)
+        items = o + be16(&buf[o + PL_ENTRY_ITEMS_OFF]);
+        marks_at = o + be16(&buf[o + PL_ENTRY_MARKS_OFF]);
+        if (entry_end > end || items + 8 > entry_end || marks_at + 6 > entry_end)
             return -1;
-        if (out->chapter_count + marks > UMDV_MAX_CHAPTERS)
+        item_count = be16(&buf[items + 6]);
+        marks = be16(&buf[marks_at + 4]);
+        if (item_count == 0 || marks_at + 6 + (uint32_t)marks * PL_MARK_SIZE > entry_end)
+            return -1;
+        if (out->item_count + item_count > UMDV_MAX_ITEMS || out->chapter_count + marks > UMDV_MAX_CHAPTERS)
             return -2;
         copy_name(ti->name, sizeof(ti->name), &buf[o + PL_ENTRY_NAME], buf[o + PL_ENTRY_NAME_LEN]);
-        copy_name(ti->clip, sizeof(ti->clip), &buf[o + PL_ENTRY_CLIP], strnlen((const char *)&buf[o + PL_ENTRY_CLIP], 8));
-        ti->start_pts = be48(&buf[o + PL_ENTRY_START]);
-        ti->end_pts = be48(&buf[o + PL_ENTRY_END]);
+        ti->first_item = out->item_count;
+        ti->item_count = item_count;
+        it = items + 8;
+        for (i = 0; i < item_count; i++) {
+            umdv_item *item = &out->items[out->item_count++];
+            if (it + PL_ITEM_SIZE > marks_at)
+                return -1;
+            copy_name(item->clip, sizeof(item->clip), &buf[it + PL_ITEM_CLIP], strnlen((const char *)&buf[it + PL_ITEM_CLIP], 8));
+            item->start_pts = be48(&buf[it + PL_ITEM_START]);
+            item->end_pts = be48(&buf[it + PL_ITEM_END]);
+            if (i == 0 || item->end_pts - item->start_pts > best) {
+                best = item->end_pts - item->start_pts;
+                ti->main_item = i;
+            }
+            it += 4 + be32(&buf[it]);
+        }
+        memcpy(ti->clip, out->items[ti->first_item + ti->main_item].clip, sizeof(ti->clip));
+        ti->start_pts = out->items[ti->first_item + ti->main_item].start_pts;
+        ti->end_pts = out->items[ti->first_item + ti->main_item].end_pts;
         ti->first_chapter = out->chapter_count;
         ti->first_event = out->event_count;
         for (m = 0; m < marks; m++) {
-            const uint8_t *mk = &buf[o + PL_ENTRY_MARKS + (uint32_t)m * PL_MARK_SIZE];
+            const uint8_t *mk = &buf[marks_at + 6 + (uint32_t)m * PL_MARK_SIZE];
             umdv_chapter *ch;
             if (mk[0] == PL_MARK_EVENT) {
                 if (out->event_count >= UMDV_MAX_EVENTS)
@@ -80,6 +102,7 @@ int umdv_playlist_parse(const uint8_t *buf, uint32_t size, umdv_playlist *out)
                 ti->chapter_count++;
             }
             ch->pts = be48(&mk[4]);
+            ch->item = be16(&mk[2]) < item_count ? be16(&mk[2]) : 0;
             copy_name(ch->name, sizeof(ch->name), &mk[0x10], mk[1]);
             ch->data = (uint32_t)mk[0x0C] << 24 | (uint32_t)mk[0x0D] << 16 | (uint32_t)mk[0x0E] << 8 | mk[0x0F];
         }

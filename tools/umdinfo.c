@@ -109,6 +109,17 @@ static void print_titles(iso_volume *v, const umdv_playlist *pl)
         printf("  title %2u  clip %s  ", t, ti->clip);
         print_time(ti->end_pts, ti->start_pts);
         printf("  %3u chapters  \"%s\"\n", ti->chapter_count, ti->name);
+        if (ti->item_count > 1) {
+            printf("    plays:");
+            for (i = 0; i < ti->item_count; i++) {
+                const umdv_item *it = &pl->items[ti->first_item + i];
+                printf(" %s ", it->clip);
+                print_time(it->start_pts, 90000);
+                printf("-");
+                print_time(it->end_pts, 90000);
+            }
+            printf("\n");
+        }
         if (ti->chapter_count > 1) {
             printf("    chapters:");
             for (i = 0; i < ti->chapter_count; i++) {

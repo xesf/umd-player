@@ -11,6 +11,7 @@
 #define UMDV_MAX_TITLES   256
 #define UMDV_MAX_CHAPTERS 2048
 #define UMDV_MAX_EVENTS   256
+#define UMDV_MAX_ITEMS    512
 #define UMDV_MAX_NAME     128
 #define UMDV_MAX_STREAMS  48
 
@@ -20,13 +21,26 @@ typedef struct umdv_chapter {
     uint32_t pts;
     char name[25];            /* "Mark1783": scripts read it as mark_name */
     uint32_t data;            /* bytes 0x0C-0x0F of the entry, mark_data (0 on the test discs) */
+    uint16_t item;            /* the title's item (clip) the time belongs to */
 } umdv_chapter;
+
+/* One clip, or part of one, played in a title. Most titles have one item; My Chemical Romance
+   plays a short transition clip and then a part of the concert clip as one title. */
+typedef struct umdv_item {
+    char clip[9];
+    uint32_t start_pts;
+    uint32_t end_pts;
+} umdv_item;
 
 typedef struct umdv_title {
     char name[UMDV_MAX_NAME];
+    /* The longest item, which stands for the title's length and its movie clip. */
     char clip[9];            /* "00001": selects CLIPINF/<clip>.CLP and STREAM/<clip>.MPS */
     uint32_t start_pts;
     uint32_t end_pts;
+    uint16_t first_item;     /* index into umdv_playlist.items */
+    uint16_t item_count;
+    uint16_t main_item;      /* the longest, 0-based within the title */
     uint16_t first_chapter;  /* index into umdv_playlist.chapters */
     uint16_t chapter_count;
     uint16_t first_event;    /* index into umdv_playlist.events */
@@ -38,7 +52,9 @@ typedef struct umdv_playlist {
     uint16_t title_count;
     uint16_t chapter_count;
     uint16_t event_count;
+    uint16_t item_count;
     umdv_title titles[UMDV_MAX_TITLES];
+    umdv_item items[UMDV_MAX_ITEMS];
     umdv_chapter chapters[UMDV_MAX_CHAPTERS];
     umdv_chapter events[UMDV_MAX_EVENTS];
 } umdv_playlist;

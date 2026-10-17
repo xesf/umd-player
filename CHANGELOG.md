@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fixed a black screen on discs whose titles play several clips in a row (My Chemical Romance: Life on the Murder Scene).
 - Disc menus: a menu opens with its first item selected (Tenjho Tenge, Shorts Play, Ah My Goddess, Freddy vs. Jason).
 
 ## v0.6.7 (2026-10-17)
