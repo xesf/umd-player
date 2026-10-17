@@ -130,7 +130,7 @@ Objects made with `new F()` inherit from `F.prototype`. The scripts also use `In
 | `timer` | `setInterval`, `clearInterval` |
 | Widgets | `open`, `close`, `activate`, `setFocus`, `setPos` and `getPos`, `setColor` and `getColor`, `setScale` and `getScale`, `setRotate` and `getRotate`, `setSize` and `getSize`, `setCrop`, `animPos`, `animColor`, `animScale`, `animRotate`, `animCrop`; events `onPush`, `onCancel`, `onFocusUp`, `onFocusDown`, `onFocusLeft`, `onFocusRight`, and the init and activate handlers named in the object table |
 | Animations | `play`, `stop`, `end` |
-| Built-ins | `Math` (`abs`, `ceil`, `floor`, `min`, `sin`, `cos`, `PI`), `Array`, `slice`, `call` |
+| Built-ins | `Math` (`abs`, `ceil`, `floor`, `min`, `sin`, `cos`, `PI`), `Array`, `slice`, `call`, `toString` (SAMURAI 7) |
 
 The members the scripts define themselves (`PlayFeature`, `PlayLogo`, `SublistSetup` and so on) are ordinary script code and need nothing from the player.
 

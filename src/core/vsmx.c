@@ -455,11 +455,23 @@ static void native_string(vsmx *vm, void *user, vs_value self, const vs_value *a
 static void native_slice(vsmx *vm, void *user, vs_value self, const vs_value *args, int argc, vs_value *ret);
 static void native_push(vsmx *vm, void *user, vs_value self, const vs_value *args, int argc, vs_value *ret);
 
+/* x.toString() on a number, a boolean, a string or an object: SAMURAI 7 builds its page
+   names as "page" + n.toString(). */
+static void native_to_string(vsmx *vm, void *user, vs_value self, const vs_value *args, int argc, vs_value *ret)
+{
+    char buf[64];
+    (void)user; (void)args; (void)argc;
+    *ret = self.type == VS_STR ? self : vs_string(vm, vs_text(self, buf, sizeof(buf)));
+}
+
 vs_value vs_get(vsmx *vm, vs_value obj, const char *key)
 {
     vs_value out = vs_undef();
     prop *p;
     int depth = 0;
+
+    if ((obj.type == VS_NUM || obj.type == VS_BOOL) && strcmp(key, "toString") == 0)
+        return vs_new_native(vm, native_to_string, NULL);
 
     if (obj.type == VS_STR) {
         static const char *const methods[] = {"charAt", "charCodeAt", "indexOf", "lastIndexOf", "substring",
@@ -469,6 +481,8 @@ vs_value vs_get(vsmx *vm, vs_value obj, const char *key)
         for (unsigned i = 0; i < sizeof(methods) / sizeof(methods[0]); i++)
             if (strcmp(key, methods[i]) == 0)
                 return vs_new_native(vm, native_string, (void *)methods[i]);
+        if (strcmp(key, "toString") == 0)
+            return vs_new_native(vm, native_to_string, NULL);
         return vs_undef();
     }
     if (obj.type != VS_OBJ)
@@ -499,6 +513,8 @@ vs_value vs_get(vsmx *vm, vs_value obj, const char *key)
     for (vs_obj *o = obj.u.o->proto; o && depth < 16; o = o->proto, depth++)
         if ((p = find_prop(o, key)) != NULL)
             return p->value;
+    if (strcmp(key, "toString") == 0)
+        return vs_new_native(vm, native_to_string, NULL);
     return vs_undef();
 }
 
