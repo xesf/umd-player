@@ -169,6 +169,7 @@ static void read_step(parser *ps, uint32_t off, int sub)
     switch (sub) {
     case RCO_STEP_MOVE:
     case RCO_STEP_COLOR:
+    case RCO_STEP_ROTATE:
     case RCO_STEP_SCALE:
     case RCO_STEP_FADE: {
         uint32_t type = rd32(r, d), ptr = rd32(r, d + 4);

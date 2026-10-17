@@ -414,6 +414,7 @@ static void step_anims(menu *m)
             switch (s->kind) {
             case RCO_STEP_MOVE: start_tween(m, obj, P_POS, s->value, 3, s->duration); break;
             case RCO_STEP_COLOR: start_tween(m, obj, P_COLOR, s->value, 4, s->duration); break;
+            case RCO_STEP_ROTATE: start_tween(m, obj, P_ROT, s->value, 3, s->duration); break;
             case RCO_STEP_SCALE: start_tween(m, obj, P_SCALE, s->value, 3, s->duration); break;
             case RCO_STEP_FADE: start_tween(m, obj, P_FADE, s->value, 1, s->duration); break;
             case RCO_STEP_DELAY: run->wait_until = m->now + (uint64_t)(s->duration * 1000); break;

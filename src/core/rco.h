@@ -44,6 +44,7 @@ typedef struct rco_object {
 enum {
     RCO_STEP_MOVE = 2,
     RCO_STEP_COLOR = 3,
+    RCO_STEP_ROTATE = 4,      /* x y z in radians: Transporter turns its menu dial */
     RCO_STEP_SCALE = 5,
     RCO_STEP_FADE = 6,
     RCO_STEP_DELAY = 7,
@@ -57,7 +58,7 @@ typedef struct rco_step {
     int object;               /* widget index, or -1 */
     float duration;           /* ms; for a delay, the wait */
     float accel;
-    float value[4];           /* move and scale: x y z; colour: r g b a; fade: alpha */
+    float value[4];           /* move, rotate and scale: x y z; colour: r g b a; fade: alpha */
     const char *event;        /* RCO_STEP_EVENT: a script handler to call, or NULL */
     int anim;                 /* RCO_STEP_EVENT: an animation to play (Alien chains its menu's
                                  fade-in this way), or -1 */

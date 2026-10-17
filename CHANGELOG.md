@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Disc menus: rotation steps in animations work. Transporter turns its menu dial with them, and the dial stayed still, so the selection never seemed to change.
 - Disc menus: SAMURAI 7's menu works. Its script names pages with number.toString(), which the script interpreter lacked, so no page opened and the menu over the episode took no input. toString() now works on numbers, booleans, strings and objects.
 - macOS: Control-F11 switches full screen.
 - Disc menus: an image of a single colour stretches over its whole widget. 12 Monkeys fades its menu through black with a 28x28 black square sized to the screen, which showed as a small square blinking in the middle.
