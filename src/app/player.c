@@ -196,6 +196,7 @@ struct player {
     int ended;
     uint64_t audio_base_played;      /* plat_audio_played() when playback started */
     uint64_t clk_raw, clk_us, clk_last;  /* last audio clock reading, when it changed, last value given */
+    uint64_t drain_us, drain_pts;        /* when the title's audio ran out, and the clock then */
     uint64_t wall_base_us, wall_base_pts;
     uint64_t last_report_us;
     uint64_t last_awake_us;
@@ -691,6 +692,7 @@ static void drain_video(player *p)
 static int clock_now(player *p, uint64_t *now)
 {
     uint64_t played, raw, est, t;
+    int drained;
 
     if (p->has_audio) {
         if (!p->audio_started)
@@ -700,6 +702,7 @@ static int clock_now(player *p, uint64_t *now)
         plat_mutex_lock(p->lock);
         played = played > p->silence_frames ? played - p->silence_frames : 0;
         raw = p->pcm_first_pts + played * 90000 / AUDIO_RATE;
+        drained = p->eof && p->pcm_count == 0;
         plat_mutex_unlock(p->lock);
         /* The platform reports played audio in buffer-sized steps (about 21 ms on the Vita).
            Between steps, run on the system timer, at most CLOCK_LEAD ahead of the last step,
@@ -712,6 +715,17 @@ static int clock_now(player *p, uint64_t *now)
         est = p->clk_raw + (t - p->clk_us) * 9 / 100;
         if (est > raw + CLOCK_LEAD)
             est = raw + CLOCK_LEAD;
+        /* Once the title's audio has all played, the system timer runs the clock on: the last
+           video frames can end after the sound (Akira's logo by half a frame), and a clock held
+           at the end of the sound would never show them or reach the end of the title. */
+        if (!drained) {
+            p->drain_us = 0;
+        } else if (!p->drain_us) {
+            p->drain_us = t;
+            p->drain_pts = p->clk_last > est ? p->clk_last : est;
+        } else {
+            est = p->drain_pts + (t - p->drain_us) * 9 / 100;
+        }
         if (est < p->clk_last)
             est = p->clk_last;
         p->clk_last = est;
@@ -797,6 +811,7 @@ static void restart_reader(player *p, uint64_t target, int audio, int sub)
 
     p->audio_open = 0;               /* re-measure the audio clock base at the next start */
     p->clk_raw = p->clk_last = 0;
+    p->drain_us = 0;
     p->wall_base_us = 0;
     p->audio_sub = p->want_audio = audio;
     p->resync = 0;

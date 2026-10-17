@@ -84,9 +84,42 @@ static int start_next_intro(void)
     return current != NULL;
 }
 
+/* Testing aid on every platform: UMD_TEST_BUTTONS="3000:cross,9000:circle" presses buttons at
+   those times (ms after start), each for one frame. Names as in tools/playtest.c. */
+static uint32_t test_buttons(void)
+{
+    static const struct { const char *n; uint32_t b; } map[] = {
+        {"up", PLAT_BTN_UP}, {"down", PLAT_BTN_DOWN}, {"left", PLAT_BTN_LEFT}, {"right", PLAT_BTN_RIGHT},
+        {"cross", PLAT_BTN_CROSS}, {"circle", PLAT_BTN_CIRCLE}, {"square", PLAT_BTN_SQUARE},
+        {"triangle", PLAT_BTN_TRIANGLE}, {"l", PLAT_BTN_L}, {"r", PLAT_BTN_R}, {"start", PLAT_BTN_START},
+        {"select", PLAT_BTN_SELECT}};
+    static uint64_t started;
+    static int next;
+    const char *spec = getenv("UMD_TEST_BUTTONS"), *p;
+    unsigned long long at;
+    char name[16];
+
+    if (!spec)
+        return 0;
+    if (!started)
+        started = plat_time_us();
+    p = spec;
+    for (int k = 0; k < next && p; k++)
+        if ((p = strchr(p, ',')) != NULL)
+            p++;
+    if (!p || sscanf(p, "%llu:%15[a-z]", &at, name) != 2 || plat_time_us() - started < at * 1000u)
+        return 0;
+    next++;
+    plat_log("test: press %s\n", name);
+    for (unsigned i = 0; i < sizeof(map) / sizeof(map[0]); i++)
+        if (strcmp(name, map[i].n) == 0)
+            return map[i].b;
+    return 0;
+}
+
 int app_frame(void)
 {
-    uint32_t held = plat_buttons(), pressed = held & ~prev_buttons;
+    uint32_t held = plat_buttons() | test_buttons(), pressed = held & ~prev_buttons;
     int pick;
 
     prev_buttons = held;
