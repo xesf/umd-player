@@ -1303,6 +1303,9 @@ static int run(vsmx *vm, uint32_t pc, int stop_fp, vs_value *result)
         case 0x28:
             push_value(vm, val < vm->text_count && vm->texts[val] ? str_value(vm->texts[val]) : vs_undef());
             break;
+        case 0x29:            /* {}: a new object (2012, 21) */
+            push_value(vm, vs_new_object(vm));
+            break;
         case 0x2B: push_value(vm, vs_new_array(vm, 0)); break;
         case 0x2C: push_value(vm, vm->fp > 0 ? vm->frames[vm->fp - 1].self : vs_undef()); break;
         case 0x2D: s.kind = SLOT_LOCAL; s.local = (int)val; push(vm, s); break;

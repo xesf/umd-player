@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Disc menus: 2012 and 21 start. Their scripts create objects with `{}` (instruction 0x29), which the script interpreter refused, so neither disc played anything.
 - Disc menus: a thin strip image stretches over its widget. Tenjho Tenge's band behind its buttons, a 10x64 image on a widget as wide as the screen, showed as a small grey bar.
 - Disc menus: rotation steps in animations work. Transporter turns its menu dial with them, and the dial stayed still, so the selection never seemed to change.
 - Disc menus: SAMURAI 7's menu works. Its script names pages with number.toString(), which the script interpreter lacked, so no page opened and the menu over the episode took no input. toString() now works on numbers, booleans, strings and objects.
