@@ -1787,9 +1787,13 @@ static void blit(canvas *c, const sprite *s, const int *clip)
             }
             /* out = src * a + dst * da * (1 - a), over oa = a + da * (1 - a); in 0..255 */
             oa = a + da * (255 - a) / 255;
-            d[0] = (uint8_t)(((p[0] * cr >> 8) * a + d[0] * da * (255 - a) / 255) / oa);
-            d[1] = (uint8_t)(((p[1] * cg >> 8) * a + d[1] * da * (255 - a) / 255) / oa);
-            d[2] = (uint8_t)(((p[2] * cb >> 8) * a + d[2] * da * (255 - a) / 255) / oa);
+            /* Rounding can reach 256 (white over a white 141-alpha band in Tenjho Tenge), which
+               would wrap to black: clamp. */
+            for (int k = 0; k < 3; k++) {
+                int src = p[k] * (k == 0 ? cr : k == 1 ? cg : cb) >> 8;
+                int v = (src * a + d[k] * da * (255 - a) / 255) / oa;
+                d[k] = (uint8_t)(v > 255 ? 255 : v);
+            }
             d[3] = (uint8_t)oa;
         }
     }

@@ -151,7 +151,8 @@ static void blend(canvas *c, int x, int y, uint32_t rgba, int a)
         return;
     for (int i = 0; i < 3; i++) {
         int sc = (int)(rgba >> (24 - 8 * i)) & 0xFF;
-        d[i] = (uint8_t)((sc * sa + d[i] * da * (255 - sa) / 255) / oa);
+        int v = (sc * sa + d[i] * da * (255 - sa) / 255) / oa;
+        d[i] = (uint8_t)(v > 255 ? 255 : v);      /* rounding can reach 256 */
     }
     d[3] = (uint8_t)oa;
 }
