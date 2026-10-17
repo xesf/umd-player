@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Disc menus: playing an animation on a widget stops the others running on it, as on a PSP. Freddy vs. Jason stops its looping button fades this way; they kept running and restarted the New Line logo several times a second. Metallica's menu also answers ✕ sooner.
+
 ## v0.6.5 (2026-10-17)
 
 - Discs that stalled before their menu play on: Akira, Toy Story and others whose clips end with a picture after the sound. The clock stopped with the sound, so the last picture never showed; after the sound the system timer now runs it on.

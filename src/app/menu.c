@@ -370,10 +370,17 @@ static void play_anim(menu *m, int anim, int target)
     if (getenv("MENU_TRACE"))
         mlog(m, "menu: play animation %s", m->res->r.anims[anim].name ? m->res->r.anims[anim].name : "?");
 
-    /* The same animation can run on several widgets at once (a list hides each item). */
-    for (int i = 0; i < MAX_RUNS; i++)
-        if (m->runs[i].active && m->runs[i].anim == anim && m->runs[i].target == target)
+    /* The same animation can run on several widgets at once (a list hides each item), but a
+       widget runs one animation at a time: playing one stops the others on it. Freddy vs.
+       Jason stops its looping button fades by playing "killAnim", a bare delay, on the button. */
+    for (int i = 0; i < MAX_RUNS; i++) {
+        if (!m->runs[i].active || m->runs[i].target != target || target < 0)
+            continue;
+        if (m->runs[i].anim == anim)
             run = &m->runs[i];
+        else
+            m->runs[i].active = 0;
+    }
     for (int i = 0; !run && i < MAX_RUNS; i++)
         if (!m->runs[i].active)
             run = &m->runs[i];
