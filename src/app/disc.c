@@ -332,6 +332,14 @@ static int movie_playing(const disc *d)
     return d->pl && !d->menu_video && !player_title_ended(d->pl);
 }
 
+/* The menus have the buttons: a page with buttons is active, and over the movie it shows
+   something. Valiant leaves its p_PLCO_1, buttons with nothing drawn, active while the scene
+   it started plays; Triangle then has to open the options panel, not the disc's menu. */
+static int menus_take_input(const disc *d)
+{
+    return menu_has_focus(d->m) && (!movie_playing(d) || d->layer_shown);
+}
+
 /* Circle during the movie: the disc's main menu. The PSP's menu button is pressed for it, and
    pressed again while the movie still plays under a page the press opened: Saw answers the
    first press with its scene list over the movie, whose own Back only hides it, and stops the
@@ -340,7 +348,7 @@ static void to_main_menu(disc *d)
 {
     for (int i = 0; i < 3; i++) {
         menu_menu_button(d->m);
-        if (!movie_playing(d) || !menu_has_focus(d->m))
+        if (!movie_playing(d) || !menus_take_input(d))
             break;
     }
 }
@@ -348,7 +356,7 @@ static void to_main_menu(disc *d)
 int disc_update(disc *d, uint32_t pressed)
 {
     uint32_t held = plat_buttons();
-    int menu_focus = menu_has_focus(d->m);
+    int menu_focus = menus_take_input(d);
     plat_present_info info;
 
     /* Select, or holding Circle, leaves the disc. */
@@ -411,17 +419,17 @@ int disc_update(disc *d, uint32_t pressed)
     if (d->pl)
         player_set_layer(d->pl, d->layer_shown ? d->layer.rgba : NULL, d->layer.w, d->layer.h, d->layer.stride,
                          d->layer_id);
-    if (menu_focus || menu_has_focus(d->m)) {
+    if (menu_focus || menus_take_input(d)) {
         int tx, ty, down = plat_touch(&tx, &ty);
         menu_touch(d->m, down, tx, ty);
     } else {
         menu_touch(d->m, 0, 0, 0);    /* a finger lifted as the menus closed is no tap */
     }
     if (d->pl)
-        player_set_touch(d->pl, !(menu_focus || menu_has_focus(d->m)));
+        player_set_touch(d->pl, !(menu_focus || menus_take_input(d)));
     /* A press the menus took this frame is theirs, even if it closed their page: the Cross
        that picks a scene would otherwise also pause the movie it starts. */
-    if (d->pl && !player_update(d->pl, menu_focus || menu_has_focus(d->m) ? 0 : pressed)) {
+    if (d->pl && !player_update(d->pl, menu_focus || menus_take_input(d) ? 0 : pressed)) {
         /* The player only stops by itself on an error. */
         player_close(d->pl);
         d->pl = NULL;

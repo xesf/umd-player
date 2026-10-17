@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Disc menus: a page that shows nothing over the movie no longer takes the buttons. After a scene picked in Valiant's menu, △ opened the scene selection again instead of the options panel.
 - Disc mode: a disc left in its movie resumes the movie directly the next time, instead of running the disc's own "continue", which sent 12 Monkeys to its menu. A disc left anywhere else starts from the beginning; interactive discs (UMD-PG) still continue their story.
 - A title asked to play an audio track it lacks plays its first track instead of no sound (16 Blocks' menus ask for track 1 of a disc with one).
 - Disc menus: 2012 and 21 start. Their scripts create objects with `{}` (instruction 0x29), which the script interpreter refused, so neither disc played anything.
