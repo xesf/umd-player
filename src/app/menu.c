@@ -9,6 +9,7 @@
 #include "../core/jpeg.h"
 #include "../core/png.h"
 #include "../core/rco.h"
+#include "../core/umdv.h"
 #include "../core/vsmx.h"
 #include "../platform/platform.h"
 
@@ -95,6 +96,7 @@ struct menu {
     user_value user[MAX_USERDATA];
     int user_count;
     int resume_playlist, resume_chapter;   /* for getResumeInfo */
+    uint8_t resumable[UMDV_MAX_TITLES + 1];  /* by 1-based title: a main video, a place to resume */
     int menu_mode;            /* the title playing is a menu video: play(0, 1, ...) */
     int audio_id, sub_id, sub_on;
     float win[4];
@@ -887,7 +889,7 @@ NATIVE(mp_play)
     {
         menu_status st;
         m->p.status(m->p.user, &st);
-        if (st.playing && !m->menu_mode && st.playlist != playlist) {   /* as a stop: getResumeInfo */
+        if (st.playing && !m->menu_mode && st.playlist != playlist && menu_title_resumable(m, st.playlist)) {   /* as a stop: getResumeInfo */
             m->resume_playlist = st.playlist;
             m->resume_chapter = st.chapter;
         }
@@ -902,7 +904,7 @@ NATIVE(mp_stop)
     menu_status st;
     (void)vm; (void)self; (void)args; (void)argc; (void)ret;
     m->p.status(m->p.user, &st);
-    if (st.playing && !m->menu_mode) {      /* a menu video is no place to resume */
+    if (st.playing && !m->menu_mode && menu_title_resumable(m, st.playlist)) {   /* nor a menu video or a clip */
         m->resume_playlist = st.playlist;
         m->resume_chapter = st.chapter;
     }
@@ -942,7 +944,7 @@ NATIVE(mp_resume_info)
 {
     menu *m = user;
     (void)self; (void)args; (void)argc;
-    if (!m->resume_playlist)
+    if (!m->resume_playlist || !menu_title_resumable(m, m->resume_playlist))
         return;               /* undefined: nothing to resume */
     *ret = vs_new_object(vm);
     vs_set(vm, *ret, vs_intern(vm, "playListNumber"), vs_int(m->resume_playlist));
@@ -1337,6 +1339,35 @@ static const char *start_resource(menu *m)
     return "EN100000";
 }
 
+/* Main videos are titles of 10 minutes or more: movies and episodes. Logos, warnings, blanks,
+   trailers and menu loops are no place to resume, and keeping one sent re-entered discs back
+   into a one-second clip. An interactive disc (UMD-PG) has no title that long; there every
+   title counts. */
+#define MAIN_VIDEO_TICKS (10u * 60 * UMDV_PTS_HZ)
+
+static void find_main_videos(menu *m)
+{
+    uint32_t size = 0;
+    uint8_t *buf = m->p.read_file(m->p.user, "UMD_VIDEO/PLAYLIST.UMD", &size);
+    umdv_playlist *pl = buf ? malloc(sizeof(umdv_playlist)) : NULL;
+    int any = 0;
+
+    memset(m->resumable, 1, sizeof(m->resumable));
+    if (pl && umdv_playlist_parse(buf, size, pl) == 0) {
+        for (int t = 0; t < pl->title_count; t++)
+            any |= pl->titles[t].end_pts - pl->titles[t].start_pts >= MAIN_VIDEO_TICKS;
+        for (int t = 0; any && t < pl->title_count; t++)
+            m->resumable[t + 1] = pl->titles[t].end_pts - pl->titles[t].start_pts >= MAIN_VIDEO_TICKS;
+    }
+    free(pl);
+    free(buf);
+}
+
+int menu_title_resumable(const menu *m, int playlist)
+{
+    return playlist >= 1 && playlist <= UMDV_MAX_TITLES && m->resumable[playlist];
+}
+
 menu *menu_open(const menu_player *player, const char *language)
 {
     menu *m = calloc(1, sizeof(menu));
@@ -1344,6 +1375,7 @@ menu *menu_open(const menu_player *player, const char *language)
     if (!m)
         return NULL;
     m->p = *player;
+    find_main_videos(m);
     snprintf(m->language, sizeof(m->language), "%s", language && language[0] ? language : "en");
     m->sub_id = -1;
     if ((m->res = load_res(m, start_resource(m))) == NULL) {
@@ -1402,7 +1434,7 @@ void menu_exit(menu *m)
     menu_status st;
 
     m->p.status(m->p.user, &st);
-    if (st.playing && !m->menu_mode) {
+    if (st.playing && !m->menu_mode && menu_title_resumable(m, st.playlist)) {
         m->resume_playlist = st.playlist;
         m->resume_chapter = st.chapter;
     }

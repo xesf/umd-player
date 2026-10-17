@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Disc menus: only a main video (a title of 10 minutes or more: the movie, an episode) has a place to resume. Logos, warnings, blank clips, trailers and menu loops no longer become the place the disc continues from, which sent re-entered discs back into a short clip. Leaving a disc during such a clip starts it afresh the next time; leaving during the movie or a menu continues as before. Interactive discs (UMD-PG), which have no title that long, keep resuming any clip.
 - Disc menus: Alien's menus start. Its script carries source line markers (instructions 0x46 and 0x47) from a debug build, which the script interpreter refused, so the disc stayed black. They are now skipped. The Dark Knight's `delete` (0x32) is implemented too; every instruction the test discs use is now supported.
 - Disc menus: Toy Story's menu is in place. It positions its pictures by their top-left corners, and only left and right edges were understood.
 - Disc menus: no more "△ Disc menu" hint in the corner. △ still opens the main menu from a list over the movie.

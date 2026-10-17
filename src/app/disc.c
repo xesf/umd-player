@@ -95,18 +95,28 @@ static void start(disc *d, int title, int chapter, uint64_t pos)
     d->layer_id++;            /* hand the menu layer to the new player */
 }
 
+/* Remembers where the playing title is, for resume(): only for a main video (a movie or an
+   episode, see menu_title_resumable) that is neither a menu's own video nor played to its end.
+   2 Fast 2 Furious plays a one-second blank between the movie and its menu, and a resume into
+   it replayed the blank. */
+static void keep_place(disc *d)
+{
+    if (!d->pl || d->menu_video || player_title_ended(d->pl) || !menu_title_resumable(d->m, d->title))
+        return;
+    d->stopped_title = d->title;
+    d->stopped_pos = player_position(d->pl);
+    d->stopped_audio = player_audio(d->pl);
+    d->stopped_sub = from_substream(player_subtitle(d->pl));
+}
+
 static void d_play(void *user, int playlist, int chapter, int audio, int subtitle, int menu_mode)
 {
     disc *d = user;
 
     /* Another title replacing the movie (Circle opens the menu over it): keep the movie's
        place for resume(), as a stop would. */
-    if (d->pl && !d->menu_video && !player_title_ended(d->pl) && d->title != playlist) {
-        d->stopped_title = d->title;
-        d->stopped_pos = player_position(d->pl);
-        d->stopped_audio = player_audio(d->pl);
-        d->stopped_sub = from_substream(player_subtitle(d->pl));
-    }
+    if (d->title != playlist)
+        keep_place(d);
     d->menu_video = menu_mode;
     /* The same title again (a looping menu video): restart it in place, which is quick. */
     if (d->pl && d->title == playlist && audio == d->audio && subtitle == d->subtitle) {
@@ -126,14 +136,7 @@ static void d_stop(void *user)
 
     if (!d->pl)
         return;
-    /* resume() continues the last title that was not a menu video and did not play to its end
-       (2 Fast 2 Furious plays a one-second blank between the movie and its menu) */
-    if (!d->menu_video && !player_title_ended(d->pl)) {
-        d->stopped_title = d->title;
-        d->stopped_pos = player_position(d->pl);
-        d->stopped_audio = player_audio(d->pl);
-        d->stopped_sub = from_substream(player_subtitle(d->pl));
-    }
+    keep_place(d);
     player_close(d->pl);
     d->pl = NULL;
     d->title = 0;
@@ -228,6 +231,8 @@ static int load_state(disc *d)
         sscanf(text, "%d %llu %d %d %n", &d->stopped_title, &pos, &d->stopped_audio, &d->stopped_sub, &n) < 4 || !n)
         return 0;
     d->stopped_pos = pos;
+    if (!menu_title_resumable(d->m, d->stopped_title))
+        d->stopped_title = 0;     /* a clip, saved by earlier versions: nothing to continue */
     menu_set_state(d->m, text + n);
     return 1;
 }
@@ -237,16 +242,14 @@ static void save_state(disc *d)
     static char text[STATE_MAX];
     int n;
 
-    if (d->menus_ended) {
+    /* Left during a clip that is not a main video (a logo, a warning, a trailer): the next
+       time the disc starts afresh. Continuing would make the scripts resume() into the clip,
+       or, as on Akira, start the movie from its beginning without the menus. */
+    if (d->menus_ended || (d->pl && !d->menu_video && !player_title_ended(d->pl) && !menu_title_resumable(d->m, d->title))) {
         disc_state_save(state_key(d), NULL);
         return;
     }
-    if (d->pl && !d->menu_video && !player_title_ended(d->pl)) {   /* left during a title: the PSP keeps its place */
-        d->stopped_title = d->title;
-        d->stopped_pos = player_position(d->pl);
-        d->stopped_audio = player_audio(d->pl);
-        d->stopped_sub = from_substream(player_subtitle(d->pl));
-    }
+    keep_place(d);   /* left during the movie: the PSP keeps its place */
     menu_exit(d->m);
     n = snprintf(text, sizeof(text), "%d %llu %d %d ", d->stopped_title, (unsigned long long)d->stopped_pos,
                  d->stopped_audio, d->stopped_sub);

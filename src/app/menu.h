@@ -50,6 +50,8 @@ typedef struct menu_player {
    level. NULL if the disc has none. */
 menu *menu_open(const menu_player *player, const char *language);
 void menu_close(menu *m);
+/* Whether a title (1-based) is a main video, the only kind with a place to resume. */
+int menu_title_resumable(const menu *m, int playlist);
 
 /* Starts the disc as when it is inserted (controller.onAutoPlay). */
 void menu_start(menu *m);
