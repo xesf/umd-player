@@ -29,13 +29,14 @@ TYPES = {1: 'main', 2: 'script', 3: 'text', 4: 'image', 5: 'sound', 6: 'model', 
 # Script opcodes. The ones marked (?) are inferred from how they are used, not confirmed.
 OPS = {
     0x01: 'assign', 0x02: 'add', 0x03: 'sub', 0x04: 'mul', 0x05: 'div', 0x06: 'mod', 0x08: 'neg (?)',
-    0x09: 'not', 0x0c: 'inc (?)', 0x0d: 'dec (?)', 0x0e: 'eq (?)', 0x0f: 'ne (?)', 0x10: 'strict eq (?)',
+    0x07: 'unary plus', 0x09: 'not', 0x0a: 'pre inc', 0x0b: 'pre dec', 0x0c: 'inc (?)', 0x0d: 'dec (?)', 0x0e: 'eq (?)', 0x0f: 'ne (?)', 0x10: 'strict eq (?)',
     0x12: 'lt', 0x13: 'le', 0x14: 'ge', 0x15: 'gt', 0x19: 'and (?)', 0x20: 'dup (?)',
     0x22: 'end statement', 0x23: 'undefined (?)', 0x24: 'null (?)', 0x25: 'bool', 0x26: 'int', 0x27: 'float',
     0x28: 'string', 0x2a: 'function', 0x2b: 'array (?)', 0x2c: 'this (?)', 0x2d: 'local', 0x2e: 'name',
     0x2f: 'property', 0x30: 'method', 0x31: 'set property', 0x34: 'get item', 0x35: 'get item for call',
     0x36: 'set item', 0x38: 'array push', 0x39: 'jump', 0x3a: 'jump if true', 0x3b: 'jump if false',
-    0x3c: 'call function', 0x3d: 'call method', 0x3e: 'new', 0x3f: 'return', 0x45: 'end of script'}
+    0x3c: 'call function', 0x3d: 'call method', 0x3e: 'new', 0x3f: 'return', 0x45: 'end of script',
+    0x32: 'delete property', 0x37: 'delete item', 0x46: 'line marker', 0x47: 'line'}
 
 # The objects the PSP's UMD Video player gives the scripts.
 HOST_OBJECTS = ('movieplayer', 'controller', 'resource', 'timer', 'sound', 'Array', 'Math', 'Date', 'String')

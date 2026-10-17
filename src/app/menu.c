@@ -1745,8 +1745,11 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
                     height = (float)ih;
                 }
             }
-            /* Left- or right-anchored images: pos is that edge, so move the centre half a width. */
-            float shift = r->r.objects[i].anchor == 1 ? width / 2 : r->r.objects[i].anchor == 2 ? -width / 2 : 0;
+            /* Anchored images: pos is an edge or a corner (Toy Story places its backgrounds by
+               their top-left corners), so move the centre half a width or height from it. */
+            int ax = r->r.objects[i].anchor & 0xF, ay = (r->r.objects[i].anchor >> 4) & 0xF;
+            float shift = ax == 1 ? width / 2 : ax == 2 ? -width / 2 : 0;
+            float vshift = ay == 1 ? -height / 2 : ay == 2 ? height / 2 : 0;   /* y goes up */
             memset(s, 0, sizeof(*s));
             s->widget = i;
             s->img = img;
@@ -1757,8 +1760,8 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
             s->ex[1] = -x.l[1][0] * width * syu;
             s->ey[0] = -x.l[0][1] * height * sxu;
             s->ey[1] = x.l[1][1] * height * syu;
-            s->cx = (UNITS_W / 2 + x.t[0] + x.l[0][0] * shift) * sxu;
-            s->cy = (UNITS_H / 2 - x.t[1] - x.l[1][0] * shift) * syu;
+            s->cx = (UNITS_W / 2 + x.t[0] + x.l[0][0] * shift + x.l[0][1] * vshift) * sxu;
+            s->cy = (UNITS_H / 2 - x.t[1] - x.l[1][0] * shift - x.l[1][1] * vshift) * syu;
             memcpy(s->color, x.color, sizeof(s->color));
             s->has_crop = w->has_crop;
             if (w->has_crop)

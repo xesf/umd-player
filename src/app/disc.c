@@ -7,7 +7,6 @@
 #include "../core/canvas.h"
 #include "../core/iso9660.h"
 #include "../platform/platform.h"
-#include "osd.h"
 #include "menu.h"
 #include "player.h"
 #include "resume.h"
@@ -38,7 +37,6 @@ struct disc {
     canvas layer;
     uint32_t layer_id;
     int layer_shown;          /* the menus have something on screen */
-    int hint_shown;           /* the layer carries the "△ Disc menu" hint */
     uint32_t presented;       /* layer_id last presented without a player */
     uint64_t circle_since;
     int menus_ended;          /* controller.end: the disc finished, nothing to continue */
@@ -364,23 +362,10 @@ int disc_update(disc *d, uint32_t pressed)
     }
     /* The menu layer before the player draws, so a frame never shows with the last frame's
        layer (it decides between Fit and the user's screen mode). */
-    {
-        /* A page that takes the buttons over the movie (Saw's scene list): its Back may only
-           hide it, and the way on is the PSP's menu button, so say which button that is. */
-        int hint = d->pl && !d->menu_video && !player_title_ended(d->pl) && menu_has_focus(d->m)
-                       ? 1 + plat_keyboard_ui() : 0;
-        if (menu_dirty(d->m) || hint != d->hint_shown) {
-            menu_draw(d->m, &d->layer);
-            d->layer_shown = layer_has_pixels(&d->layer);
-            if (hint) {
-                canvas_rect(&d->layer, 16, LAYER_H - 48, 110 + osd_button_width(ICON_BUTTON_TRIANGLE, 1), 32,
-                            RGBA(10, 14, 28, 190));
-                osd_draw_hint(&d->layer, 24, LAYER_H - 40, ICON_BUTTON_TRIANGLE, "Disc menu");
-                d->layer_shown = 1;
-            }
-            d->hint_shown = hint;
-            d->layer_id++;
-        }
+    if (menu_dirty(d->m)) {
+        menu_draw(d->m, &d->layer);
+        d->layer_shown = layer_has_pixels(&d->layer);
+        d->layer_id++;
     }
     if (d->pl)
         player_set_layer(d->pl, d->layer_shown ? d->layer.rgba : NULL, d->layer.w, d->layer.h, d->layer.stride,

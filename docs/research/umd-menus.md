@@ -107,11 +107,14 @@ The code is an array of 8-byte instructions: a 32-bit opcode and a 32-bit operan
 | `0x2B`, `0x38` | New array literal; append a value to it |
 | `0x2C`, `0x2D`, `0x2E` | `this`; local slot; variable name |
 | `0x2F`, `0x30`, `0x31` | Property reference; property as a method (keeps the object for `this`); set a property |
+| `0x32` | `delete obj.name` (operand: property name); pushes true |
 | `0x34`, `0x35`, `0x36` | Item reference `a[i]`; item as a method; set an item |
+| `0x37` | `delete a[i]`, by analogy with `0x32` (not seen on a disc) |
 | `0x39`, `0x3A`, `0x3B` | Jump; jump if true; jump if false (operand: instruction index) |
 | `0x3C`, `0x3D`, `0x3E` | Call a function, call a method, `new` (operand: argument count) |
 | `0x3F` | Return |
 | `0x45` | End of the script |
+| `0x46`, `0x47` | Source line markers: `0x46`, then `0x47` with the line number, before each statement. Only Alien's main script has them, from a debug build of the script compiler; they do nothing. |
 
 Objects made with `new F()` inherit from `F.prototype`. The scripts also use `Int`, `Float`, `parseInt`, `isNaN`, `Math`, `Array`, `NULL`, `writeln` and `write`.
 

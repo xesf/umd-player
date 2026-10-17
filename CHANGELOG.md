@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Disc menus: Alien's menus start. Its script carries source line markers (instructions 0x46 and 0x47) from a debug build, which the script interpreter refused, so the disc stayed black. They are now skipped. The Dark Knight's `delete` (0x32) is implemented too; every instruction the test discs use is now supported.
+- Disc menus: Toy Story's menu is in place. It positions its pictures by their top-left corners, and only left and right edges were understood.
+- Disc menus: no more "△ Disc menu" hint in the corner. △ still opens the main menu from a list over the movie.
 - Fixed titles that never ended: when a clip's last pictures come after its sound (Akira's logo, Toy Story's intro clips), the clock stopped with the sound, so the last picture never showed and the disc stalled before its menu. After the sound, the system timer now runs the clock on.
 - Desktop: UMD_TEST_BUTTONS="3000:cross,9000:circle" presses buttons at those times, for testing any platform without a keyboard.
 - Disc mode: L and R (Q and E on a keyboard) go to the previous or next chapter during the movie, as Down and Up do. They did nothing; with "Start with: Movie" they still switch titles.

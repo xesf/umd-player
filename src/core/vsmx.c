@@ -561,6 +561,28 @@ static void set_item(vsmx *vm, vs_value obj, vs_value index, vs_value value)
     vs_set(vm, obj, vs_intern(vm, vs_text(index, buf, sizeof(buf))), value);
 }
 
+/* delete obj.key, delete obj[index]: an array item becomes undefined, as in JavaScript. */
+static void delete_key(vs_value obj, const char *key)
+{
+    vs_obj *o = obj.type == VS_OBJ ? obj.u.o : NULL;
+    prop *p = o ? find_prop(o, key) : NULL;
+
+    if (p)
+        *p = o->props[--o->prop_count];
+}
+
+static void delete_item(vsmx *vm, vs_value obj, vs_value index)
+{
+    char buf[32];
+
+    if (obj.type == VS_OBJ && obj.u.o->kind == OBJ_ARRAY && index.type == VS_NUM && index.u.n == floor(index.u.n)) {
+        if (index.u.n >= 0 && index.u.n < obj.u.o->length)
+            obj.u.o->items[(int)index.u.n] = vs_undef();
+        return;
+    }
+    delete_key(obj, vs_intern(vm, vs_text(index, buf, sizeof(buf))));
+}
+
 vs_value vs_global(vsmx *vm, const char *name)
 {
     prop *p = find_prop(vm->globals, vs_intern(vm, name));
@@ -1293,6 +1315,17 @@ static int run(vsmx *vm, uint32_t pc, int stop_fp, vs_value *result)
             vs_set(vm, a, val < vm->prop_count ? vm->props[val] : "", b);
             push_value(vm, b);
             break;
+        case 0x32:            /* delete a property (The Dark Knight) */
+            a = pop_value(vm);
+            delete_key(a, val < vm->prop_count ? vm->props[val] : "");
+            push_value(vm, vs_bool(1));
+            break;
+        case 0x37:            /* delete an item */
+            b = pop_value(vm);
+            a = pop_value(vm);
+            delete_item(vm, a, b);
+            push_value(vm, vs_bool(1));
+            break;
         case 0x34:            /* item reference */
             b = pop_value(vm);
             a = pop_value(vm);
@@ -1357,6 +1390,9 @@ static int run(vsmx *vm, uint32_t pc, int stop_fp, vs_value *result)
         }
         case 0x45:            /* end of the script */
             return 0;
+        case 0x46:            /* source line markers, from a compiler's debug build (Alien): */
+        case 0x47:            /* 0x46, then 0x47 with the line number, before each statement */
+            break;
         default:
             log_msg(vm, "vsmx: unknown opcode %#x at %u", op, pc - 1);
             return -1;
