@@ -18,7 +18,7 @@
 #define MAX_TIMERS   32
 #define MAX_PAGES    16
 #define MAX_USERDATA 64
-#define FILL_MAX     16          /* images this small or smaller are colour fills: they stretch */
+#define FILL_MAX     16          /* images this narrow or short are fills and strips: they stretch */
 #define USERDATA_EMPTY 32           /* getUserData before anything was saved */
 #define UNITS_W      854.0f           /* menu coordinates: a 16:9 screen 480 units high */
 #define UNITS_H      480.0f
@@ -1799,13 +1799,13 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
             float sxu = (float)c->w / UNITS_W, syu = (float)c->h / UNITS_H;
             float width = w->size[0] > 0 ? w->size[0] : (float)iw, height = w->size[1] > 0 ? w->size[1] : (float)ih;
             /* An image stretches to its widget's size only when the two have the same shape
-               (16:9 cards and backgrounds) or the image is a colour fill: tiny (a 1x1 black
-               fade) or all one colour (12 Monkeys' 28x28 black fade over the whole screen).
+               (16:9 cards and backgrounds), the image is a strip at most FILL_MAX across in
+               one direction (a 1x1 black fade; Tenjho Tenge's 10x64 band behind its buttons),
+               or it is all one colour (12 Monkeys' 28x28 black fade over the whole screen).
                Otherwise it is drawn at its own size: 2Fast2Furious and The Bourne Supremacy
                size their label buttons for the longest translation, and on a PSP each label
                keeps its own size. */
-            if ((iw > FILL_MAX || ih > FILL_MAX) && !r->img_fill[w->image] && iw > 0 && ih > 0 && width > 0 &&
-                height > 0) {
+            if (iw > FILL_MAX && ih > FILL_MAX && !r->img_fill[w->image] && width > 0 && height > 0) {
                 float shape = (width / height) / ((float)iw / (float)ih);
                 if (shape > 1.015f || shape < 0.985f) {   /* the cards and backgrounds match within 1% */
                     width = (float)iw;
