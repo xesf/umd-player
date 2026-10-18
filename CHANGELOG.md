@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.6.14 (2026-10-18)
 
 - Fixed Night Warriors stopping on a black screen with music instead of its menu (since v0.6.13).
 
