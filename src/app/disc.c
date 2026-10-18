@@ -413,7 +413,9 @@ int disc_update(disc *d, uint32_t pressed)
     /* Playback events, before the menus run this frame. */
     if (d->pl) {
         int ch = player_chapter(d->pl);
-        if (ch != d->last_chapter && !player_title_ended(d->pl)) {
+        /* Once playback is under way, as on a PSP: Austin Powers shows a mask over its scene
+           preview when it starts one and hides it in its onChapter handler. */
+        if (ch != d->last_chapter && !player_title_ended(d->pl) && player_started(d->pl)) {
             d->last_chapter = ch;
             menu_chapter_changed(d->m, ch);
         }

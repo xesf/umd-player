@@ -455,7 +455,8 @@ static void play_anim(menu *m, int anim, int target)
     anim_run *run = NULL;
 
     if (getenv("MENU_TRACE"))
-        mlog(m, "menu: play animation %s", m->res->r.anims[anim].name ? m->res->r.anims[anim].name : "?");
+        mlog(m, "menu: play animation %s on %s", m->res->r.anims[anim].name ? m->res->r.anims[anim].name : "?",
+             target >= 0 && m->res->r.objects[target].name ? m->res->r.objects[target].name : "-");
 
     /* The same animation can run on several widgets at once (a list hides each item), but a
        widget runs one animation at a time: playing one stops the others on it. Freddy vs.
@@ -713,9 +714,17 @@ NATIVE(w_activate)
 NATIVE(w_set_focus)
 {
     ref *rf = user;
+    res *r = rf->m->res;
+    int page = page_of(r, rf->index);
     (void)vm; (void)args; (void)argc;
     *ret = self;
-    set_focus(rf->m, rf->index);
+    /* The script focusing the widget that has the focus still gets its focus-in: Austin
+       Powers restarts its pulse and records the selected item there on return from a
+       submenu. */
+    if (page >= 0 && r->focus[page] == rf->index)
+        do_action_named(rf->m, &r->r.objects[rf->index].action[RCO_BTN_FOCUS_IN], rf->index, "onFocusIn");
+    else
+        set_focus(rf->m, rf->index);
 }
 
 /* setPos(x, y, z) sets at once; animPos(x, y, z, ms) moves over time: the duration is the
@@ -1988,7 +1997,7 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
             int strip = thin <= FILL_MAX && (thick <= FILL_MAX || thick >= 4 * thin);   /* not a 55x16 label (Jackass) */
             if (!strip && !r->img_fill[w->image] && width > 0 && height > 0) {
                 float shape = (width / height) / ((float)iw / (float)ih);
-                if (shape > 1.015f || shape < 0.985f) {   /* the cards and backgrounds match within 1% */
+                if (shape > 1.03f || shape < 0.97f) {   /* cards and backgrounds match within 3% (Austin Powers' 427x240 mask in 854x490) */
                     width = (float)iw;
                     height = (float)ih;
                 }

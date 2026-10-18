@@ -42,6 +42,7 @@ int player_finished(const player *p);
 
 /* For the disc menus. */
 int player_title_ended(const player *p);          /* the title played to its end (menu mode) */
+int player_started(const player *p);              /* a picture (or, without video, sound) is out since the last seek */
 int player_menu_requested(player *p);             /* Circle was pressed; clears the request */
 int player_chapter(const player *p);              /* 1-based */
 /* The current chapter's mark: its name ("Mark1783") and data, for UMD-PG scripts. */

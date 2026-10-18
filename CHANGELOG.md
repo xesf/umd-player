@@ -7,6 +7,7 @@
 - Disc menus: a held direction repeats, as on a PSP, so Robots' flying cursor reaches its menu items.
 - Fixed the missing language names in Robots' language menu.
 - Fixed Night Warriors' main menu showing no choices the first time it opens.
+- Austin Powers: the selected item pulses again on return from a submenu, and the scene and bonus previews are no longer covered.
 
 ## v0.6.12 (2026-10-18)
 

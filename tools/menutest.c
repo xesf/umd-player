@@ -149,7 +149,7 @@ typedef struct sim {
     iso_volume vol;
     umdv_playlist pl;
     menu_status st;
-    uint64_t now, title_end;  /* virtual time, us */
+    uint64_t now, title_end, title_start;  /* virtual time, us */
     uint64_t chapter_at[64];
     int chapter_count;
     int ended_pending;
@@ -202,6 +202,7 @@ static void sim_play(void *user, int playlist, int chapter, int audio, int subti
     s->st.audio = audio;
     s->st.subtitle = subtitle;
     s->title_end = s->now + (len > from ? len - from : 0);
+    s->title_start = s->now;
     s->last_chapter = 0;
     s->events_done = from;
     s->menu_mode = menu_mode;
@@ -413,7 +414,7 @@ static int run_disc(int argc, char **argv)
                 }
             }
             if (fired) {
-            } else if (ch != s.last_chapter) {
+            } else if (ch != s.last_chapter && s.now >= s.title_start + 100000) {   /* the first picture takes a few frames */
                 const umdv_chapter *mk = &s.pl.chapters[t->first_chapter + ch - 1];
                 s.last_chapter = ch;
                 s.st.chapter = ch;
