@@ -414,7 +414,7 @@ static int run_disc(int argc, char **argv)
                 }
             }
             if (fired) {
-            } else if (ch != s.last_chapter && s.now >= s.title_start + 100000) {   /* the first picture takes a few frames */
+            } else if (ch != s.last_chapter && (s.last_chapter || s.now >= s.title_start + 1500000 || s.now >= s.title_end)) {   /* as src/app/disc.c: FIRST_CHAPTER_US */
                 const umdv_chapter *mk = &s.pl.chapters[t->first_chapter + ch - 1];
                 s.last_chapter = ch;
                 s.st.chapter = ch;

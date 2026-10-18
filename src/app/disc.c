@@ -16,6 +16,7 @@
 #define UNITS_W     854.0f
 #define UNITS_H     480.0f
 #define QUIT_HOLD   1500000          /* us Circle is held to leave the disc */
+#define FIRST_CHAPTER_US 1500000     /* us from opening a title to its first onChapter */
 #define STATE_MAX   4096
 
 struct disc {
@@ -26,6 +27,7 @@ struct disc {
     player *pl;
     int title;                /* 1-based, of pl */
     int last_chapter;
+    uint64_t opened_us;       /* when the title was opened or restarted */
     int end_sent;             /* menu_playlist_ended was called for pl */
     /* what stop() left, for resume() */
     int stopped_title, stopped_audio, stopped_sub;
@@ -88,6 +90,7 @@ static void start(disc *d, int title, int chapter, uint64_t pos)
     d->pl = player_open(&opt);
     d->title = title;
     d->last_chapter = 0;
+    d->opened_us = plat_time_us();
     d->end_sent = 0;
     if (!d->pl) {
         plat_log("disc: cannot play title %d\n", title);
@@ -139,6 +142,7 @@ static void d_play(void *user, int playlist, int chapter, int audio, int subtitl
     if (d->pl && d->title == playlist && audio == d->audio && subtitle == d->subtitle) {
         player_restart(d->pl, chapter);
         d->last_chapter = 0;
+        d->opened_us = plat_time_us();
         d->end_sent = 0;
         return;
     }
@@ -412,10 +416,13 @@ int disc_update(disc *d, uint32_t pressed)
     }
     /* Playback events, before the menus run this frame. */
     if (d->pl) {
-        int ch = player_chapter(d->pl);
-        /* Once playback is under way, as on a PSP: Austin Powers shows a mask over its scene
-           preview when it starts one and hides it in its onChapter handler. */
-        if (ch != d->last_chapter && !player_title_ended(d->pl) && player_started(d->pl)) {
+        int ch = player_chapter(d->pl), ended = player_title_ended(d->pl), first = d->last_chapter == 0;
+        /* Once playback is under way, and the first chapter of a title no sooner than a UMD
+           drive would get there (or just before a shorter title ends): Austin Powers and The
+           Goonies cover their scene preview when they start one and uncover it in onChapter,
+           which The Goonies ignores until its page has finished opening, 1.2 s later. */
+        int due = !first || ended || plat_time_us() - d->opened_us >= FIRST_CHAPTER_US;
+        if (ch != d->last_chapter && (!ended || first) && player_started(d->pl) && due) {
             d->last_chapter = ch;
             menu_chapter_changed(d->m, ch);
         }
