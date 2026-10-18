@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Fixed the missing menu on Little Britain Series 2.
+
 ## v0.6.12 (2026-10-18)
 
 - Library: finds disc images in subfolders, up to three levels deep (movies sorted by genre or country).

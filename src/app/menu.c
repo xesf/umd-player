@@ -1925,8 +1925,15 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
     float lm[3][3];
     xform x;
 
-    for (int k = 0; k < 4; k++)
-        x.color[k] = parent->color[k] * w->color[k];
+    /* A plane without an image only places its children: its colour and alpha do not reach
+       them. Little Britain keeps its menu cube under plnMMFloat, at alpha 0 and never shown. */
+    if (w->image < 0 && r->r.objects[i].kind == RCO_PLANE) {
+        for (int k = 0; k < 4; k++)
+            x.color[k] = parent->color[k];
+    } else {
+        for (int k = 0; k < 4; k++)
+            x.color[k] = parent->color[k] * w->color[k];
+    }
     x.color[3] *= w->fade;
     if (x.color[3] <= 0.004f || w->hidden)
         return;
