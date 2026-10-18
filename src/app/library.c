@@ -99,11 +99,13 @@ typedef struct media {
 
 struct library {
     char dirs[512];                  /* the folders to list, separated by ';' */
-    lib_disc *discs;                 /* count of them, set once a scan has read them all */
+    lib_disc *discs;                 /* every disc found; the first count are read and shown */
     int count, sel;
-    /* A scan in progress: the files listed, read a few a frame, then handed over as discs. */
-    lib_disc *found;
-    int found_count, found_next, scanning;
+    /* The scan thread reads the discs in list order; scan_read of scan_total are done (under
+       cache_lock), and library_update shows them as they come. */
+    plat_thread *scanner;
+    int scanning, scan_total, scan_read, scan_quit;
+    uint64_t scan_start_us, last_loading_us;
     int loaded;                      /* disc whose media is in use, or -1 */
 
     /* Cache filled by the worker thread, guarded by cache_lock. */
@@ -373,12 +375,16 @@ static void free_icon(icon_video *v)
     free(v);
 }
 
-/* Worker thread only: the demuxer, parser, and timing state are static. */
-static icon_video *parse_icon(const uint8_t *pmf, uint32_t size)
+/* The demuxer, parser, and timing state of one parse: too big for a thread's stack, and the
+   worker and the scan thread both parse icons. */
+typedef struct icon_parse {
+    demux dmx;
+    h264_parser parser;
+    vtiming vt;
+} icon_parse;
+
+static icon_video *parse_icon_with(icon_parse *st, const uint8_t *pmf, uint32_t size)
 {
-    static demux dmx;
-    static h264_parser parser;
-    static vtiming vt;
     icon_video *v;
     mem_reader m;
     demux_unit u;
@@ -394,17 +400,17 @@ static icon_video *parse_icon(const uint8_t *pmf, uint32_t size)
     }
     m.data = pmf + offset;
     m.size = size - offset;
-    demux_init(&dmx, read_mem, &m);
-    demux_select_mask(&dmx, 0, 0);
-    h264_parser_init(&parser);
-    while (demux_next(&dmx, &u) > 0 && v->au_count < AU_MAX) {
+    demux_init(&st->dmx, read_mem, &m);
+    demux_select_mask(&st->dmx, 0, 0);
+    h264_parser_init(&st->parser);
+    while (demux_next(&st->dmx, &u) > 0 && v->au_count < AU_MAX) {
         h264_au_info info;
-        if (u.type != DEMUX_VIDEO || h264_parse_au(&parser, u.data, u.size, &info) < 0)
+        if (u.type != DEMUX_VIDEO || h264_parse_au(&st->parser, u.data, u.size, &info) < 0)
             continue;
         if (!started) {
-            if (!parser.sps.valid || !parser.pps_size)
+            if (!st->parser.sps.valid || !st->parser.pps_size)
                 continue;
-            vtiming_reset(&vt, &parser.sps);
+            vtiming_reset(&st->vt, &st->parser.sps);
             started = 1;
         }
         memcpy(v->es + es_len, u.data, u.size);
@@ -412,14 +418,14 @@ static icon_video *parse_icon(const uint8_t *pmf, uint32_t size)
         v->aus[v->au_count].size = u.size;
         v->aus[v->au_count].pts = PS_NO_TS;
         es_len += u.size;
-        vtiming_push(&vt, &info, u.pts);
+        vtiming_push(&st->vt, &info, u.pts);
         v->au_count++;
         /* Collect times while their entries are still in the timing window. */
-        for (uint64_t pts; resolved < v->au_count && vtiming_get(&vt, (uint32_t)resolved, &pts) != 0; resolved++)
-            if (vtiming_get(&vt, (uint32_t)resolved, &pts) > 0)
+        for (uint64_t pts; resolved < v->au_count && vtiming_get(&st->vt, (uint32_t)resolved, &pts) != 0; resolved++)
+            if (vtiming_get(&st->vt, (uint32_t)resolved, &pts) > 0)
                 v->aus[resolved].pts = pts;
     }
-    demux_free(&dmx);
+    demux_free(&st->dmx);
     if (!started || v->au_count == 0) {
         free_icon(v);
         return NULL;
@@ -437,11 +443,19 @@ static icon_video *parse_icon(const uint8_t *pmf, uint32_t size)
     for (int i = 0; i < v->au_count; i++)
         if (v->aus[i].pts - v->first_pts + 3003 > v->loop_len)
             v->loop_len = v->aus[i].pts - v->first_pts + 3003;
-    v->sps = parser.sps;
-    memcpy(v->sps_nal, parser.sps_nal, parser.sps_size);
-    memcpy(v->pps_nal, parser.pps_nal, parser.pps_size);
-    v->sps_size = parser.sps_size;
-    v->pps_size = parser.pps_size;
+    v->sps = st->parser.sps;
+    memcpy(v->sps_nal, st->parser.sps_nal, st->parser.sps_size);
+    memcpy(v->pps_nal, st->parser.pps_nal, st->parser.pps_size);
+    v->sps_size = st->parser.sps_size;
+    v->pps_size = st->parser.pps_size;
+    return v;
+}
+
+static icon_video *parse_icon(const uint8_t *pmf, uint32_t size)
+{
+    icon_parse *st = malloc(sizeof(*st));
+    icon_video *v = st ? parse_icon_with(st, pmf, size) : NULL;
+    free(st);
     return v;
 }
 
@@ -706,22 +720,26 @@ static void tell_worker(library *l, int paused)
 }
 
 /* Reads each disc's resume point for the progress mark under its icon. */
+static void load_resume_mark(lib_disc *d)
+{
+    resume_entry e;
+    static char state[4096];
+
+    d->resume_disc = settings_get()->start_disc || d->interactive;
+    if (d->resume_disc) {
+        d->has_resume = disc_state_load(file_name(d->path), state, sizeof(state)) == 0;
+        return;
+    }
+    d->has_resume = resume_load(file_name(d->path), &e) == 0 && e.pos > e.start && e.pos > 0;
+    d->resume_pos = e.pos;
+    d->resume_start = e.start;
+    d->resume_end = e.end;
+}
+
 static void load_resume_marks(library *l)
 {
-    for (int i = 0; i < l->count; i++) {
-        lib_disc *d = &l->discs[i];
-        resume_entry e;
-        static char state[4096];
-        d->resume_disc = settings_get()->start_disc || d->interactive;
-        if (d->resume_disc) {
-            d->has_resume = disc_state_load(file_name(d->path), state, sizeof(state)) == 0;
-            continue;
-        }
-        d->has_resume = resume_load(file_name(d->path), &e) == 0 && e.pos > e.start && e.pos > 0;
-        d->resume_pos = e.pos;
-        d->resume_start = e.start;
-        d->resume_end = e.end;
-    }
+    for (int i = 0; i < l->count; i++)
+        load_resume_mark(&l->discs[i]);
     l->marks_stale = 0;
 }
 
@@ -1098,6 +1116,17 @@ static void draw_ui(library *l)
     draw_app_name(c, l->bg ? 18 : 72);
     if (!l->settings_open)
         draw_hints(c, l->bg ? UI_H - 18 : UI_H - 72);
+    if (l->scanning) {
+        /* above the hints: discs still being read, with a bar under the count */
+        char line[48];
+        int y = (l->bg ? UI_H - 18 : UI_H - 72) - 30, w;
+        snprintf(line, sizeof(line), "Reading movies %d of %d", l->count, l->scan_total);
+        w = canvas_text_width(line, 1);
+        canvas_round_darken(c, UI_W - 28 - w, y - 6, w + 16, 26, 6, 140);
+        canvas_text(c, UI_W - 20 - w, y, 1, TEXT_DIM, line);
+        canvas_rect(c, UI_W - 20 - w, y + 12, w, 3, RGBA(70, 80, 100, 255));
+        canvas_rect(c, UI_W - 20 - w, y + 12, l->scan_total ? w * l->count / l->scan_total : 0, 3, RGBA(255, 255, 255, 230));
+    }
 
     l->info.ui_rgba = c->rgba;
     l->info.ui_w = c->w;
@@ -1199,8 +1228,28 @@ static int advance_icon(library *l)
 
 /* ---- public ---- */
 
-/* Lists the disc images in every folder; library_update then reads them a few a frame. Only
-   called while the library is empty, so the worker has nothing to read. */
+/* The scan thread: reads every disc in list order and publishes each as it is done. It waits
+   while a movie plays, as the worker does, so the movie has the memory card to itself. */
+static void scan_main(void *user)
+{
+    library *l = user;
+
+    for (int i = 0; i < l->scan_total; i++) {
+        plat_mutex_lock(l->cache_lock);
+        while (l->worker_paused && !l->scan_quit)
+            plat_cond_wait(l->cache_cond, l->cache_lock);
+        plat_mutex_unlock(l->cache_lock);
+        if (l->scan_quit)
+            return;
+        read_disc_info(&l->discs[i]);     /* not shown yet: only this thread touches it */
+        plat_mutex_lock(l->cache_lock);
+        l->scan_read = i + 1;
+        plat_mutex_unlock(l->cache_lock);
+    }
+}
+
+/* Lists the disc images in every folder and starts the scan thread on them. Only called
+   while the library is empty, so the worker has nothing to read. */
 static void start_scan(library *l)
 {
     list_ctx ctx;
@@ -1222,37 +1271,47 @@ static void start_scan(library *l)
     }
     if (ctx.count)
         qsort(ctx.discs, (size_t)ctx.count, sizeof(ctx.discs[0]), compare_discs);
-    free(l->found);
-    l->found = ctx.discs;
-    l->found_count = ctx.count;
-    l->found_next = 0;
-    l->scanning = 1;
-}
-
-/* Reads discs for about 30 ms; once all are read, they become the library's list. */
-static void scan_step(library *l)
-{
-    uint64_t t0 = plat_time_us();
-
-    while (l->found_next < l->found_count && (l->found_next == 0 || plat_time_us() - t0 < 30000))
-        read_disc_info(&l->found[l->found_next++]);
-    if (l->found_next < l->found_count)
-        return;
     plat_mutex_lock(l->cache_lock);
     free(l->discs);
-    l->discs = l->found;
-    l->count = l->found_count;
+    l->discs = ctx.discs;
+    l->count = 0;
     l->sel = 0;
+    l->scan_total = ctx.count;
+    l->scan_read = 0;
+    l->scan_quit = 0;
     plat_mutex_unlock(l->cache_lock);
-    l->found = NULL;
-    l->found_count = l->found_next = 0;
-    l->scanning = 0;
-    l->loaded = -1;
-    l->ui_dirty = 1;
-    load_resume_marks(l);
-    plat_log("library: %d discs in total\n", l->count);
-    if (l->count)
+    l->scanning = 1;
+    l->scan_start_us = plat_time_us();
+    l->scanner = plat_thread_start(scan_main, l, "scan");
+    if (!l->scanner)
+        scan_main(l);
+}
+
+/* Shows the discs the scan thread has read since the last frame; at the end, joins it. */
+static void scan_update(library *l)
+{
+    int read, old = l->count;
+
+    plat_mutex_lock(l->cache_lock);
+    read = l->scan_read;
+    if (read > old)
+        l->count = read;
+    plat_mutex_unlock(l->cache_lock);
+    for (int i = old; i < read; i++)
+        load_resume_mark(&l->discs[i]);
+    if (read > old)
+        l->ui_dirty = 1;
+    if (old == 0 && read > 0) {
+        l->loaded = -1;
         tell_worker(l, 0);
+    }
+    if (read < l->scan_total)
+        return;
+    plat_thread_join(l->scanner);
+    l->scanner = NULL;
+    l->scanning = 0;
+    l->ui_dirty = 1;
+    plat_log("library: %d discs in total, read in %.1f s\n", l->count, (plat_time_us() - l->scan_start_us) / 1e6);
 }
 
 library *library_open(const char *dir)
@@ -1287,14 +1346,13 @@ library *library_open(const char *dir)
     return l;
 }
 
-/* While the discs are read: the backdrop, how many are done, and the one being read. */
+/* Before the first disc is read: the backdrop, how many are done, and the one being read. */
 static void draw_loading(library *l)
 {
     canvas *c = &l->ui;
     const uint8_t *bg = backdrop_rgba();
     const char *title = "Reading your movies";
     char line[64], name[128];
-    int n = l->found_next < l->found_count ? l->found_next + 1 : l->found_count;
     int bw = 400, bx = (UI_W - bw) / 2, y = 220;
 
     if (bg)
@@ -1304,16 +1362,13 @@ static void draw_loading(library *l)
     draw_app_name(c, 72);   /* below the film strip */
     canvas_text(c, (UI_W - canvas_text_width(title, 3)) / 2, y, 3, RGBA(255, 255, 255, 255), title);
     y += 50;
-    snprintf(line, sizeof(line), "%d of %d", n, l->found_count);
+    snprintf(line, sizeof(line), "%d of %d", l->count + 1, l->scan_total);
     canvas_text(c, (UI_W - canvas_text_width(line, 2)) / 2, y, 2, TEXT_DIM, line);
     y += 34;
     canvas_rect(c, bx, y, bw, 6, RGBA(70, 80, 100, 255));
-    canvas_rect(c, bx, y, l->found_count ? bw * l->found_next / l->found_count : 0, 6, RGBA(255, 255, 255, 230));
     y += 24;
-    if (l->found_next < l->found_count) {
-        canvas_text_fit(name, sizeof(name), file_name(l->found[l->found_next].path), 1, UI_W - 80);
-        canvas_text(c, (UI_W - canvas_text_width(name, 1)) / 2, y, 1, TEXT_DIM, name);
-    }
+    canvas_text_fit(name, sizeof(name), file_name(l->discs[l->count].path), 1, UI_W - 80);
+    canvas_text(c, (UI_W - canvas_text_width(name, 1)) / 2, y, 1, TEXT_DIM, name);
     l->info.ui_rgba = c->rgba;
     l->info.ui_w = c->w;
     l->info.ui_h = c->h;
@@ -1449,9 +1504,12 @@ int library_update(library *l, uint32_t pressed)
     }
 
     if (l->scanning) {
-        scan_step(l);
-        if (l->scanning) {
-            draw_loading(l);
+        scan_update(l);
+        if (l->scanning && l->count == 0) {
+            if (plat_time_us() - l->last_loading_us > 100000) {   /* ten times a second is enough */
+                l->last_loading_us = plat_time_us();
+                draw_loading(l);
+            }
             return -1;
         }
     }
@@ -1547,6 +1605,13 @@ void library_close(library *l)
 {
     if (!l)
         return;
+    if (l->scanner) {
+        plat_mutex_lock(l->cache_lock);
+        l->scan_quit = 1;
+        plat_cond_broadcast(l->cache_cond);
+        plat_mutex_unlock(l->cache_lock);
+        plat_thread_join(l->scanner);
+    }
     if (l->worker) {
         plat_mutex_lock(l->cache_lock);
         l->worker_quit = 1;
@@ -1558,12 +1623,9 @@ void library_close(library *l)
         release_devices(l);
     for (int i = 0; i < CACHE_N; i++)
         free_media(&l->cache[i]);
-    for (int i = 0; i < l->count; i++)
+    for (int i = 0; i < l->scan_total; i++)
         free(l->discs[i].icon0);
-    for (int i = 0; i < l->found_next; i++)
-        free(l->found[i].icon0);
     free(l->discs);
-    free(l->found);
     plat_cond_destroy(l->cache_cond);
     plat_mutex_destroy(l->cache_lock);
     plat_mutex_destroy(l->lock);

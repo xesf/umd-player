@@ -124,22 +124,10 @@ static int inflate_codes(bitin *b, outbuf *o, const huffman *lit, const huffman 
 
 static int inflate_stream(bitin *b, outbuf *o)
 {
-    static huffman fixed_lit, fixed_dist;
-    static int fixed_ready;
-    int last;
+    /* The fixed codes, built per stream rather than once in statics: two threads decode PNGs. */
+    huffman fixed_lit, fixed_dist;
+    int last, fixed_ready = 0;
 
-    if (!fixed_ready) {
-        uint8_t l[288];
-        int i;
-        for (i = 0; i < 144; i++) l[i] = 8;
-        for (; i < 256; i++) l[i] = 9;
-        for (; i < 280; i++) l[i] = 7;
-        for (; i < 288; i++) l[i] = 8;
-        build(&fixed_lit, l, 288);
-        memset(l, 5, 30);
-        build(&fixed_dist, l, 30);
-        fixed_ready = 1;
-    }
     do {
         int type;
         last = (int)getbits(b, 1);
@@ -155,6 +143,18 @@ static int inflate_stream(bitin *b, outbuf *o)
             for (uint32_t i = 0; i < len; i++)
                 o->out[o->pos++] = (uint8_t)getbits(b, 8);
         } else if (type == 1) {
+            if (!fixed_ready) {
+                uint8_t l[288];
+                int i;
+                for (i = 0; i < 144; i++) l[i] = 8;
+                for (; i < 256; i++) l[i] = 9;
+                for (; i < 280; i++) l[i] = 7;
+                for (; i < 288; i++) l[i] = 8;
+                build(&fixed_lit, l, 288);
+                memset(l, 5, 30);
+                build(&fixed_dist, l, 30);
+                fixed_ready = 1;
+            }
             if (inflate_codes(b, o, &fixed_lit, &fixed_dist) < 0)
                 return -1;
         } else if (type == 2) {

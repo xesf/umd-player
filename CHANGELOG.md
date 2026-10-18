@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Library: discs appear and can be browsed as they are read; the progress shows at the bottom right.
+
 ## v0.6.10 (2026-10-18)
 
 - Library: shows every disc (it stopped at 64).
