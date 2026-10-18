@@ -9,6 +9,7 @@
 - Fixed Night Warriors' main menu showing no choices the first time it opens.
 - Austin Powers: the selected item pulses again on return from a submenu, and the scene and bonus previews are no longer covered.
 - The Goonies: the selected scene shows in the scene frame.
+- The Goonies: the subtitle list is no longer drawn four times too big.
 
 ## v0.6.12 (2026-10-18)
 
