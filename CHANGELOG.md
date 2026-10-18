@@ -1,8 +1,9 @@
 # Changelog
 
-## Unreleased
+## v0.6.11 (2026-10-18)
 
-- Library: discs appear and can be browsed as they are read; the progress shows at the bottom right.
+- Library: discs appear and can be browsed while the rest are still being read.
+- Library: the reading progress shows at the bottom right.
 
 ## v0.6.10 (2026-10-18)
 
