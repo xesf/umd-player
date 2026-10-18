@@ -1727,8 +1727,8 @@ void menu_debug(const menu *m)
     for (int p = 0; p < r->page_count; p++)
         for (int i = 0; i < r->r.object_count; i++)
             if (page_of(r, i) == r->pages[p])
-                mlog((menu *)m, "menu:   %-22s pos %6.1f %6.1f %6.1f scale %.2f rot %.2f %.2f %.2f rgba %.2f %.2f %.2f %.2f image %d", r->r.objects[i].name ? r->r.objects[i].name : "?",
-                     r->w[i].pos[0], r->w[i].pos[1], r->w[i].pos[2], r->w[i].scale[0], r->w[i].rot[0], r->w[i].rot[1], r->w[i].rot[2], r->w[i].color[0], r->w[i].color[1], r->w[i].color[2], r->w[i].color[3], r->w[i].image);
+                mlog((menu *)m, "menu:   %-22s pos %6.1f %6.1f %6.1f scale %.2f %.2f %.2f size %.0f %.0f rot %.2f %.2f %.2f rgba %.2f %.2f %.2f %.2f image %d", r->r.objects[i].name ? r->r.objects[i].name : "?",
+                     r->w[i].pos[0], r->w[i].pos[1], r->w[i].pos[2], r->w[i].scale[0], r->w[i].scale[1], r->w[i].scale[2], r->w[i].size[0], r->w[i].size[1], r->w[i].rot[0], r->w[i].rot[1], r->w[i].rot[2], r->w[i].color[0], r->w[i].color[1], r->w[i].color[2], r->w[i].color[3], r->w[i].image);
 }
 
 int menu_dirty(const menu *m)
@@ -1951,13 +1951,16 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
             float sxu = (float)c->w / UNITS_W, syu = (float)c->h / UNITS_H;
             float width = w->size[0] > 0 ? w->size[0] : (float)iw, height = w->size[1] > 0 ? w->size[1] : (float)ih;
             /* An image stretches to its widget's size only when the two have the same shape
-               (16:9 cards and backgrounds), the image is a strip at most FILL_MAX across in
-               one direction (a 1x1 black fade; Tenjho Tenge's 10x64 band behind its buttons),
+               (16:9 cards and backgrounds), the image is a fill or a strip at most FILL_MAX
+               across in one direction and four times as long (a 1x1 black fade; Tenjho Tenge's
+               10x64 band behind its buttons; not Jackass's 55x16 labels),
                or it is all one colour (12 Monkeys' 28x28 black fade over the whole screen).
                Otherwise it is drawn at its own size: 2Fast2Furious and The Bourne Supremacy
                size their label buttons for the longest translation, and on a PSP each label
                keeps its own size. */
-            if (iw > FILL_MAX && ih > FILL_MAX && !r->img_fill[w->image] && width > 0 && height > 0) {
+            int thin = iw < ih ? iw : ih, thick = iw < ih ? ih : iw;
+            int strip = thin <= FILL_MAX && (thick <= FILL_MAX || thick >= 4 * thin);   /* not a 55x16 label (Jackass) */
+            if (!strip && !r->img_fill[w->image] && width > 0 && height > 0) {
                 float shape = (width / height) / ((float)iw / (float)ih);
                 if (shape > 1.015f || shape < 0.985f) {   /* the cards and backgrounds match within 1% */
                     width = (float)iw;

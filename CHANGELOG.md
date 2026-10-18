@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Fixed the missing menu on Little Britain Series 2.
+- Fixed stretched segment numbers in Jackass Volume 1's menu.
 
 ## v0.6.12 (2026-10-18)
 
