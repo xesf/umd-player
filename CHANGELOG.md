@@ -6,6 +6,7 @@
 - Fixed stretched segment numbers in Jackass Volume 1's menu.
 - Disc menus: a held direction repeats, as on a PSP, so Robots' flying cursor reaches its menu items.
 - Fixed the missing language names in Robots' language menu.
+- Fixed Night Warriors' main menu showing no choices the first time it opens.
 
 ## v0.6.12 (2026-10-18)
 

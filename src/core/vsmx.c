@@ -1139,7 +1139,12 @@ static int enter(vsmx *vm, vs_obj *fn, vs_value self, const vs_value *args, int 
         return -1;
     f->local_count = count;
     for (int i = 0; i < argc && i < fn->params; i++)
-        f->locals[i + 1] = args[i];        /* slot 0 is not a parameter */
+        f->locals[i + 1] = args[i];
+    /* Slot 0 is the arguments array: Night Warriors calls UMDMenu_LoadMenu() and checks
+       arguments.length == 0 to open its main menu. */
+    f->locals[0] = vs_new_array(vm, 0);
+    for (int i = 0; i < argc; i++)
+        vs_set_index(vm, f->locals[0], i, args[i]);
     f->ret_pc = ret_pc;
     f->stack_base = vm->sp;
     f->self = self;

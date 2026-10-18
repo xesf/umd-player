@@ -104,7 +104,7 @@ The code is an array of 8-byte instructions: a 32-bit opcode and a 32-bit operan
 | `0x23`, `0x24` | Push undefined; push null |
 | `0x25`, `0x26`, `0x27`, `0x28` | Boolean, integer, float, string constant (operand: value or string index) |
 | `0x29` | New empty object, `{}` (2012, 21) |
-| `0x2A` | Function: operand is its first instruction; bits 8-15 of the opcode are the parameter count and bits 24-31 the local slots (parameters are slots 1 to N) |
+| `0x2A` | Function: operand is its first instruction; bits 8-15 of the opcode are the parameter count and bits 24-31 the local slots (parameters are slots 1 to N; slot 0 is the `arguments` array, which Night Warriors checks with `arguments.length`) |
 | `0x2B`, `0x38` | New array literal; append a value to it |
 | `0x2C`, `0x2D`, `0x2E` | `this`; local slot; variable name |
 | `0x2F`, `0x30`, `0x31` | Property reference; property as a method (keeps the object for `this`); set a property |
