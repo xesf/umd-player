@@ -47,9 +47,11 @@ The keyboard and the mouse work; gamepads are not supported on macOS yet. To bui
 
 Started without a folder, UMD Player picks the first of these that applies:
 
-1. The folder the app is in, when it holds disc images. Copy `umdplayer.exe` (`umdplayer` on Linux, `UMDPlayer.app` on macOS) into your movie folder and run it from there.
-2. A `UMD` folder next to the app, when it holds disc images.
+1. The folder the app is in, when it or a subfolder holds disc images. Copy `umdplayer.exe` (`umdplayer` on Linux, `UMDPlayer.app` on macOS) into your movie folder and run it from there.
+2. A `UMD` folder next to the app, when it or a subfolder holds disc images.
 3. The `UMD` folder in your home folder, created when it does not exist yet.
+
+The library also shows disc images in subfolders, up to three levels deep (`UMD/Action/1990s/`), so you can sort movies by genre or country. A file name that appears in two places shows once.
 
 ## Controls
 

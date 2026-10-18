@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Library: disc images in subfolders are found too, up to three levels deep (movies sorted by genre or country).
+
 ## v0.6.11 (2026-10-18)
 
 - Library: discs appear and can be browsed while the rest are still being read.

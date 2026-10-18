@@ -20,8 +20,9 @@ void plat_iso_close(umd_source *src);
 /* ---- Logging: stdout on macOS, ux0:data/umdplayer/log.txt on the Vita ---- */
 void plat_log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 
-/* Calls fn for each entry of a directory. Returns 0, or -1 if it cannot be read. */
-typedef void (*plat_dir_fn)(void *user, const char *name);
+/* Calls fn for each entry of a directory, hidden ones (".name") left out; is_dir is 1 for a
+   folder, or a link to one. Returns 0, or -1 if it cannot be read. */
+typedef void (*plat_dir_fn)(void *user, const char *name, int is_dir);
 int plat_list_dir(const char *dir, plat_dir_fn fn, void *user);
 
 /* Small files of app data (settings, resume points), stored under a platform folder:

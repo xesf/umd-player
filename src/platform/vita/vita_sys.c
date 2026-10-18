@@ -215,7 +215,7 @@ int plat_list_dir(const char *dir, plat_dir_fn fn, void *user)
         return -1;
     while (sceIoDread(d, &ent) > 0)
         if (ent.d_name[0] != '.')
-            fn(user, ent.d_name);
+            fn(user, ent.d_name, SCE_S_ISDIR(ent.d_stat.st_mode));
     sceIoDclose(d);
     return 0;
 }

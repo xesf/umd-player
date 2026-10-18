@@ -207,7 +207,18 @@ typedef struct list_ctx {
     lib_disc *discs;
     int count, cap;
     const char *dir;
+    int depth;                       /* subfolders below the listed folder */
 } list_ctx;
+
+/* Movies sorted in folders (by genre, by country, then by decade) are found down to three
+   levels below each library folder. macOS app bundles are folders too; they hold no movies. */
+#define LIB_DEPTH 3
+
+static int is_bundle(const char *name)
+{
+    size_t n = strlen(name);
+    return n > 4 && strcmp(name + n - 4, ".app") == 0;
+}
 
 static const char *file_name(const char *path)
 {
@@ -218,11 +229,23 @@ static const char *file_name(const char *path)
     return slash ? slash + 1 : path;
 }
 
-static void on_entry(void *user, const char *name)
+static void on_entry(void *user, const char *name, int is_dir)
 {
     list_ctx *c = (list_ctx *)user;
     size_t n = strlen(name);
 
+    if (is_dir) {
+        char sub[512];
+        const char *dir = c->dir;
+        if (c->depth >= LIB_DEPTH || is_bundle(name) || snprintf(sub, sizeof(sub), "%s/%s", dir, name) >= (int)sizeof(sub))
+            return;
+        c->dir = sub;
+        c->depth++;
+        plat_list_dir(sub, on_entry, c);
+        c->depth--;
+        c->dir = dir;
+        return;
+    }
     if (n <= 4 || !image_name_supported(name)) {
         plat_log("library: skipped %s/%s\n", c->dir, name);
         return;
@@ -1634,14 +1657,35 @@ void library_close(library *l)
     free(l);
 }
 
-static void count_disc(void *user, const char *name)
+typedef struct count_ctx {
+    const char *dir;
+    int depth, found;
+} count_ctx;
+
+static void count_disc(void *user, const char *name, int is_dir)
 {
-    if (image_name_supported(name))
-        (*(int *)user)++;
+    count_ctx *c = user;
+    char sub[512];
+    const char *dir = c->dir;
+
+    if (c->found)
+        return;
+    if (!is_dir) {
+        c->found = image_name_supported(name);
+        return;
+    }
+    if (c->depth >= LIB_DEPTH || is_bundle(name) || snprintf(sub, sizeof(sub), "%s/%s", dir, name) >= (int)sizeof(sub))
+        return;
+    c->dir = sub;
+    c->depth++;
+    plat_list_dir(sub, count_disc, c);
+    c->depth--;
+    c->dir = dir;
 }
 
+/* Whether the folder or one of its subfolders (LIB_DEPTH deep) holds a disc image. */
 int library_has_discs(const char *dir)
 {
-    int n = 0;
-    return plat_list_dir(dir, count_disc, &n) == 0 && n > 0;
+    count_ctx c = {dir, 0, 0};
+    return plat_list_dir(dir, count_disc, &c) == 0 && c.found;
 }

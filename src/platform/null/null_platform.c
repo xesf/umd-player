@@ -330,9 +330,14 @@ int plat_list_dir(const char *dir, plat_dir_fn fn, void *user)
 
     if (!d)
         return -1;
-    while ((e = readdir(d)) != NULL)
-        if (e->d_name[0] != '.')
-            fn(user, e->d_name);
+    while ((e = readdir(d)) != NULL) {
+        char path[1024];
+        struct stat st;
+        if (e->d_name[0] == '.')
+            continue;
+        snprintf(path, sizeof(path), "%s/%s", dir, e->d_name);
+        fn(user, e->d_name, stat(path, &st) == 0 && S_ISDIR(st.st_mode));
+    }
     closedir(d);
     return 0;
 }

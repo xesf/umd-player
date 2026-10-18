@@ -19,7 +19,7 @@ Copy disc images to either folder on the memory card:
 - `ux0:umd/`
 - `ux0:pspemu/ISO/VIDEO/` (the folder Adrenaline users already have)
 
-UMD Player reads `.iso`, `.cso` and `.zso` files. A file in both folders shows once.
+UMD Player reads `.iso`, `.cso` and `.zso` files, also in subfolders up to three levels deep, so you can sort movies by genre or country (`ux0:umd/Action/`). A file in two places shows once.
 
 You need a dump of a UMD Video disc. A PSP with custom firmware can dump a UMD over USB. Only UMD Video discs play; PSP game discs do not.
 

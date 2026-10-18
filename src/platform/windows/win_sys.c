@@ -87,7 +87,7 @@ int plat_list_dir(const char *dir, plat_dir_fn fn, void *user)
             continue;
         to_utf8(fd.cFileName, name, sizeof(name));
         if (name[0])
-            fn(user, name);
+            fn(user, name, (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0);
     } while (FindNextFileW(h, &fd));
     FindClose(h);
     return 0;
