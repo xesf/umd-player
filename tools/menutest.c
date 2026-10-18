@@ -150,6 +150,7 @@ typedef struct sim {
     umdv_playlist pl;
     menu_status st;
     uint64_t now, title_end, title_start;  /* virtual time, us */
+    int start_chapter;
     uint64_t chapter_at[64];
     int chapter_count;
     int ended_pending;
@@ -203,6 +204,7 @@ static void sim_play(void *user, int playlist, int chapter, int audio, int subti
     s->st.subtitle = subtitle;
     s->title_end = s->now + (len > from ? len - from : 0);
     s->title_start = s->now;
+    s->start_chapter = chapter > 1 && chapter <= t->chapter_count ? chapter : 1;
     s->last_chapter = 0;
     s->events_done = from;
     s->menu_mode = menu_mode;
@@ -415,6 +417,8 @@ static int run_disc(int argc, char **argv)
             }
             if (fired) {
             } else if (ch != s.last_chapter && (s.last_chapter || s.now >= s.title_start + 1500000 || s.now >= s.title_end)) {   /* as src/app/disc.c: FIRST_CHAPTER_US */
+                if (!s.last_chapter)
+                    ch = s.start_chapter;    /* the first event is the chapter it started in */
                 const umdv_chapter *mk = &s.pl.chapters[t->first_chapter + ch - 1];
                 s.last_chapter = ch;
                 s.st.chapter = ch;

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Fixed Night Warriors stopping on a black screen with music instead of its menu (since v0.6.13).
+
 ## v0.6.13 (2026-10-18)
 
 - Fixed the missing menu on Little Britain Series 2.

@@ -28,6 +28,7 @@ struct disc {
     int title;                /* 1-based, of pl */
     int last_chapter;
     uint64_t opened_us;       /* when the title was opened or restarted */
+    int first_chapter;        /* the chapter playback started in, 0 until it started */
     int end_sent;             /* menu_playlist_ended was called for pl */
     /* what stop() left, for resume() */
     int stopped_title, stopped_audio, stopped_sub;
@@ -90,6 +91,7 @@ static void start(disc *d, int title, int chapter, uint64_t pos)
     d->pl = player_open(&opt);
     d->title = title;
     d->last_chapter = 0;
+    d->first_chapter = 0;
     d->opened_us = plat_time_us();
     d->end_sent = 0;
     if (!d->pl) {
@@ -142,6 +144,7 @@ static void d_play(void *user, int playlist, int chapter, int audio, int subtitl
     if (d->pl && d->title == playlist && audio == d->audio && subtitle == d->subtitle) {
         player_restart(d->pl, chapter);
         d->last_chapter = 0;
+        d->first_chapter = 0;
         d->opened_us = plat_time_us();
         d->end_sent = 0;
         return;
@@ -422,6 +425,13 @@ int disc_update(disc *d, uint32_t pressed)
            Goonies cover their scene preview when they start one and uncover it in onChapter,
            which The Goonies ignores until its page has finished opening, 1.2 s later. */
         int due = !first || ended || plat_time_us() - d->opened_us >= FIRST_CHAPTER_US;
+        if (!d->first_chapter && player_started(d->pl))
+            d->first_chapter = ch;
+        /* The delayed first event is the chapter playback started in, and the ones passed
+           since follow in later frames: Night Warriors opens its menu at chapter 1 of a video
+           whose chapter 2 starts at 1 s. */
+        if (first && d->first_chapter)
+            ch = d->first_chapter;
         if (ch != d->last_chapter && (!ended || first) && player_started(d->pl) && due) {
             d->last_chapter = ch;
             menu_chapter_changed(d->m, ch);
