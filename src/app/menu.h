@@ -69,9 +69,10 @@ void menu_exit(menu *m);
 int menu_get_state(const menu *m, char *out, int size);
 void menu_set_state(menu *m, const char *text);
 
-/* Call once per display refresh with the buttons pressed since the last call (PLAT_BTN_*)
-   and the time. Returns 0 when the menus ended (controller.end). */
-int menu_update(menu *m, uint32_t pressed, uint64_t now_us);
+/* Call once per display refresh with the buttons pressed since the last call and those held
+   (PLAT_BTN_*; a held direction repeats), and the time. Returns 0 when the menus ended
+   (controller.end). */
+int menu_update(menu *m, uint32_t pressed, uint32_t held, uint64_t now_us);
 
 /* Playback events from the player. */
 void menu_playlist_ended(menu *m, int playlist);

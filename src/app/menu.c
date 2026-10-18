@@ -95,6 +95,8 @@ struct menu {
     int next_timer;
     int lock;                 /* animations holding an input lock */
     uint64_t now;
+    uint32_t repeat_button;   /* a held direction, sent again from repeat_at on, as on a PSP */
+    uint64_t repeat_at;
     int dirty;
     user_value user[MAX_USERDATA];
     int user_count;
@@ -1694,9 +1696,31 @@ void menu_menu_button(menu *m)
     call_handler(m, "controller", "onMenu", NULL, 0);
 }
 
-int menu_update(menu *m, uint32_t pressed, uint64_t now_us)
+/* A held direction repeats after REPEAT_FIRST, every REPEAT_NEXT: Robots flies its cursor 43
+   units a step for as long as the D-pad is held. */
+#define REPEAT_FIRST 400000
+#define REPEAT_NEXT  120000
+
+static uint32_t repeat_dirs(menu *m, uint32_t pressed, uint32_t held)
+{
+    const uint32_t dirs = PLAT_BTN_UP | PLAT_BTN_DOWN | PLAT_BTN_LEFT | PLAT_BTN_RIGHT;
+
+    if (pressed & dirs) {
+        m->repeat_button = pressed & dirs & (0u - (pressed & dirs));   /* one of them */
+        m->repeat_at = m->now + REPEAT_FIRST;
+    } else if (m->repeat_button && !(held & m->repeat_button)) {
+        m->repeat_button = 0;
+    } else if (m->repeat_button && m->now >= m->repeat_at) {
+        pressed |= m->repeat_button;
+        m->repeat_at = m->now + REPEAT_NEXT;
+    }
+    return pressed;
+}
+
+int menu_update(menu *m, uint32_t pressed, uint32_t held, uint64_t now_us)
 {
     m->now = now_us;
+    pressed = repeat_dirs(m, pressed, held);
     for (int i = 0; i < MAX_TIMERS; i++) {
         mtimer *t = &m->timers[i];
         if (t->used && now_us >= t->due) {

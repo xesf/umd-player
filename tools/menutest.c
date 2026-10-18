@@ -8,7 +8,7 @@
                                       player on a virtual clock: titles end after their length,
                                       buttons are pressed at the given times (up down left right
                                       cross circle triangle start, menu for the menu button
-                                      during playback, tap:x:y and swipe:x0:y0:x1:y1 on the
+                                      during playback, hold:<button>:<seconds>, tap:x:y and swipe:x0:y0:x1:y1 on the
                                       960x544 touch screen), and with -o every new menu
                                       picture is saved as dir/menu-<ms>.ppm, over the 960x544
                                       PNG given with -b (a frame of the menu video). With -s,
@@ -359,10 +359,22 @@ static int run_disc(int argc, char **argv)
         menu_start(m);
     }
     for (s.now = 0; s.now < (uint64_t)(seconds * 1e6); s.now += 16667) {
-        uint32_t pressed = 0;
+        uint32_t pressed = 0, held = 0;
         for (int i = 4; i < argc; i++) {
             const char *b = strchr(argv[i], ':');
             uint64_t at = (uint64_t)(atof(argv[i]) * 1e6);
+            char hb[16];
+            float hold_s;
+            /* <time>:hold:<button>:<seconds> presses and holds a button */
+            if (b && sscanf(b + 1, "hold:%15[a-z]:%f", hb, &hold_s) == 2) {
+                if (s.now >= at && s.now < at + (uint64_t)(hold_s * 1e6))
+                    held |= button(hb);
+                if (s.now >= at && s.now < at + 16667) {
+                    pressed |= button(hb);
+                    printf("%8.2f s  hold %s for %.1f s\n", s.now / 1e6, hb, hold_s);
+                }
+                continue;
+            }
             if (b && s.now >= at && s.now < at + 16667) {
                 pressed |= button(b + 1);
                 printf("%8.2f s  press %s\n", s.now / 1e6, b + 1);
@@ -422,7 +434,7 @@ static int run_disc(int argc, char **argv)
             if (strstr(argv[i], ":debug") && s.now >= at && s.now < at + 16667)
                 menu_debug(m);
         }
-        if (!menu_update(m, pressed, s.now)) {
+        if (!menu_update(m, pressed, held, s.now)) {
             printf("%8.2f s  menus ended\n", s.now / 1e6);
             break;
         }

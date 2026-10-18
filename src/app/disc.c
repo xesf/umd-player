@@ -444,7 +444,7 @@ int disc_update(disc *d, uint32_t pressed)
         pressed &= over_movie ? ~(uint32_t)(PLAT_BTN_CIRCLE | PLAT_BTN_TRIANGLE) : ~(uint32_t)PLAT_BTN_TRIANGLE;
     }
 
-    if (!menu_update(d->m, menu_focus ? pressed : 0, plat_time_us())) {
+    if (!menu_update(d->m, menu_focus ? pressed : 0, menu_focus ? held : 0, plat_time_us())) {
         d->menus_ended = 1;
         return 0;
     }
