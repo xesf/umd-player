@@ -4,9 +4,10 @@
 
 - Computers: the mouse wheel scrolls through the disc list.
 - Library: long movie titles wrap onto a second line in the info panel.
-- Library: the version moved under "by xesf"; resume lines no longer run past the info panel with keyboard hints.
+- Library: the version moved next to "by xesf"; resume lines no longer run past the info panel with keyboard hints.
 - Fixed a black screen on Little Britain Series 2: its menu script uses an object literal we did not run.
 - Jackass Volume 2 and 3 play, their menus take input, and they are no longer taken for interactive (UMD-PG) discs.
+- Interactive (UMD-PG) discs are recognised by how their video is spread over many clips (2ch-kanojo, Momichupa).
 
 ## v0.6.8 (2026-10-17)
 

@@ -238,14 +238,17 @@ static int compare_discs(const void *a, const void *b)
 
 /* Reads the title and ICON0.PNG of every disc; the rest loads when a disc is selected. */
 /* UMD-PG discs (interactive movies, like Summer Days) carry no flag of their own. They are
-   UMD Video with menus whose scripts pick the next clip: many short unnamed titles and no
-   feature-length one. Such a disc only makes sense played through its menus. */
+   UMD Video with menus whose scripts pick the next clip: many unnamed titles, none of which
+   plays much of the disc's video (5 to 21% on the test discs, against 61 to 99% for the
+   longest title of a movie disc, Jackass included). Such a disc only makes sense played
+   through its menus. */
 static int is_interactive(disc_file *d)
 {
     iso_entry dir;
     umdv_playlist *pl;
     uint8_t *buf;
-    uint32_t size, longest = 0;
+    uint32_t size;
+    uint64_t longest = 0, total = 0;
     int named = 0, result = 0;
 
     if (iso_find(&d->vol, "UMD_VIDEO/RESOURCE", &dir) < 0 || !dir.is_dir)
@@ -259,7 +262,17 @@ static int is_interactive(disc_file *d)
                 longest = len;
             named += pl->titles[i].name[0] != 0;
         }
-        result = pl->title_count >= 20 && named == 0 && longest < 45u * 60 * 90000;
+        /* The disc's video: each clip once, by the longest part of it a title plays. */
+        for (int i = 0; i < pl->item_count; i++) {
+            uint32_t len = pl->items[i].end_pts - pl->items[i].start_pts;
+            int seen = 0;
+            for (int j = 0; j < pl->item_count && !seen; j++)
+                seen = j != i && strcmp(pl->items[j].clip, pl->items[i].clip) == 0 &&
+                       (pl->items[j].end_pts - pl->items[j].start_pts > len || (pl->items[j].end_pts - pl->items[j].start_pts == len && j < i));
+            if (!seen)
+                total += len;
+        }
+        result = pl->title_count >= 20 && named == 0 && longest * 3 < total;
     }
     free(pl);
     free(buf);
@@ -1018,12 +1031,11 @@ static void draw_settings(library *l)
     osd_draw_menu(&v, &l->ui);
 }
 
-/* "UMD Player" at the top left, with "by xesf" and the version below it in small text. */
+/* "UMD Player" at the top left, with "by xesf - v0.6.8" below it in small text. */
 static void draw_app_name(canvas *c, int y)
 {
     canvas_text(c, 20, y, 2, RGBA(255, 255, 255, 220), "UMD Player");
-    canvas_text(c, 20, y + 22, 1, TEXT_DIM, "by xesf");
-    canvas_text(c, 20, y + 34, 1, TEXT_DIM, "v" UMDPLAYER_VERSION);
+    canvas_text(c, 20, y + 22, 1, TEXT_DIM, "by xesf - v" UMDPLAYER_VERSION);
 }
 
 /* At the bottom right: the buttons that open the settings and the manual. */
