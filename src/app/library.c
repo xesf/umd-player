@@ -25,7 +25,6 @@
 #include "settings.h"
 #include "version.h"
 
-#define LIB_MAX        64
 #define UI_W           960
 #define UI_H           544
 #define ICON_W         144             /* ICON0.PNG and ICON1.PMF size on every disc */
@@ -100,8 +99,11 @@ typedef struct media {
 
 struct library {
     char dirs[512];                  /* the folders to list, separated by ';' */
-    lib_disc discs[LIB_MAX];
+    lib_disc *discs;                 /* count of them, set once a scan has read them all */
     int count, sel;
+    /* A scan in progress: the files listed, read a few a frame, then handed over as discs. */
+    lib_disc *found;
+    int found_count, found_next, scanning;
     int loaded;                      /* disc whose media is in use, or -1 */
 
     /* Cache filled by the worker thread, guarded by cache_lock. */
@@ -201,7 +203,7 @@ static uint8_t *decode_png(const uint8_t *png, uint32_t size, int *w, int *h, in
 
 typedef struct list_ctx {
     lib_disc *discs;
-    int count;
+    int count, cap;
     const char *dir;
 } list_ctx;
 
@@ -219,7 +221,7 @@ static void on_entry(void *user, const char *name)
     list_ctx *c = (list_ctx *)user;
     size_t n = strlen(name);
 
-    if (c->count >= LIB_MAX || n <= 4 || !image_name_supported(name)) {
+    if (n <= 4 || !image_name_supported(name)) {
         plat_log("library: skipped %s/%s\n", c->dir, name);
         return;
     }
@@ -227,6 +229,16 @@ static void on_entry(void *user, const char *name)
     for (int i = 0; i < c->count; i++)
         if (strcmp(file_name(c->discs[i].path), name) == 0)
             return;
+    if (c->count == c->cap) {
+        int cap = c->cap ? c->cap * 2 : 64;
+        lib_disc *more = realloc(c->discs, (size_t)cap * sizeof(*more));
+        if (!more) {
+            plat_log("library: no memory for %s/%s\n", c->dir, name);
+            return;
+        }
+        c->discs = more;
+        c->cap = cap;
+    }
     memset(&c->discs[c->count], 0, sizeof(c->discs[0]));
     snprintf(c->discs[c->count++].path, sizeof(c->discs[0].path), "%s/%s", c->dir, name);
 }
@@ -1187,16 +1199,13 @@ static int advance_icon(library *l)
 
 /* ---- public ---- */
 
-/* Lists the disc images in every folder. Only called while the library is empty, so the
-   worker has nothing to read; the count is published under cache_lock. */
-static void scan(library *l)
+/* Lists the disc images in every folder; library_update then reads them a few a frame. Only
+   called while the library is empty, so the worker has nothing to read. */
+static void start_scan(library *l)
 {
-    static lib_disc found[LIB_MAX];
     list_ctx ctx;
-    int count;
 
-    ctx.discs = found;
-    ctx.count = 0;
+    memset(&ctx, 0, sizeof(ctx));
     for (const char *p = l->dirs; *p;) {
         char one[256];
         size_t n = strcspn(p, ";");
@@ -1211,19 +1220,39 @@ static void scan(library *l)
         }
         p += n + (p[n] == ';');
     }
-    count = ctx.count;
-    qsort(found, (size_t)count, sizeof(found[0]), compare_discs);
-    for (int i = 0; i < count; i++)
-        read_disc_info(&found[i]);
-    memcpy(l->discs, found, (size_t)count * sizeof(found[0]));
-    if (l->cache_lock)
-        plat_mutex_lock(l->cache_lock);
-    l->count = count;
+    if (ctx.count)
+        qsort(ctx.discs, (size_t)ctx.count, sizeof(ctx.discs[0]), compare_discs);
+    free(l->found);
+    l->found = ctx.discs;
+    l->found_count = ctx.count;
+    l->found_next = 0;
+    l->scanning = 1;
+}
+
+/* Reads discs for about 30 ms; once all are read, they become the library's list. */
+static void scan_step(library *l)
+{
+    uint64_t t0 = plat_time_us();
+
+    while (l->found_next < l->found_count && (l->found_next == 0 || plat_time_us() - t0 < 30000))
+        read_disc_info(&l->found[l->found_next++]);
+    if (l->found_next < l->found_count)
+        return;
+    plat_mutex_lock(l->cache_lock);
+    free(l->discs);
+    l->discs = l->found;
+    l->count = l->found_count;
     l->sel = 0;
-    if (l->cache_lock)
-        plat_mutex_unlock(l->cache_lock);
+    plat_mutex_unlock(l->cache_lock);
+    l->found = NULL;
+    l->found_count = l->found_next = 0;
+    l->scanning = 0;
+    l->loaded = -1;
+    l->ui_dirty = 1;
     load_resume_marks(l);
-    plat_log("library: %d discs in total\n", count);
+    plat_log("library: %d discs in total\n", l->count);
+    if (l->count)
+        tell_worker(l, 0);
 }
 
 library *library_open(const char *dir)
@@ -1233,7 +1262,6 @@ library *library_open(const char *dir)
     if (!l)
         return NULL;
     snprintf(l->dirs, sizeof(l->dirs), "%s", dir);
-    scan(l);
     l->lock = plat_mutex_create();
     l->at3p = malloc(at3p_decoder_size());
     l->ui.w = UI_W;
@@ -1255,7 +1283,43 @@ library *library_open(const char *dir)
     l->info.video_h = ICON_H;
     l->info.dst = (plat_rect){(float)BIG_X / UI_W, (float)BIG_Y / UI_H, 2.0f * ICON_W / UI_W, 2.0f * ICON_H / UI_H};
     l->worker = plat_thread_start(worker_main, l, "library");
+    start_scan(l);
     return l;
+}
+
+/* While the discs are read: the backdrop, how many are done, and the one being read. */
+static void draw_loading(library *l)
+{
+    canvas *c = &l->ui;
+    const uint8_t *bg = backdrop_rgba();
+    const char *title = "Reading your movies";
+    char line[64], name[128];
+    int n = l->found_next < l->found_count ? l->found_next + 1 : l->found_count;
+    int bw = 400, bx = (UI_W - bw) / 2, y = 220;
+
+    if (bg)
+        memcpy(c->rgba, bg, UI_W * UI_H * 4);
+    else
+        canvas_rect(c, 0, 0, UI_W, UI_H, RGBA(12, 22, 52, 255));
+    draw_app_name(c, 72);   /* below the film strip */
+    canvas_text(c, (UI_W - canvas_text_width(title, 3)) / 2, y, 3, RGBA(255, 255, 255, 255), title);
+    y += 50;
+    snprintf(line, sizeof(line), "%d of %d", n, l->found_count);
+    canvas_text(c, (UI_W - canvas_text_width(line, 2)) / 2, y, 2, TEXT_DIM, line);
+    y += 34;
+    canvas_rect(c, bx, y, bw, 6, RGBA(70, 80, 100, 255));
+    canvas_rect(c, bx, y, l->found_count ? bw * l->found_next / l->found_count : 0, 6, RGBA(255, 255, 255, 230));
+    y += 24;
+    if (l->found_next < l->found_count) {
+        canvas_text_fit(name, sizeof(name), file_name(l->found[l->found_next].path), 1, UI_W - 80);
+        canvas_text(c, (UI_W - canvas_text_width(name, 1)) / 2, y, 1, TEXT_DIM, name);
+    }
+    l->info.ui_rgba = c->rgba;
+    l->info.ui_w = c->w;
+    l->info.ui_h = c->h;
+    l->info.ui_stride = c->stride;
+    l->info.ui_id++;
+    plat_present(NULL, &l->info);
 }
 
 /* No discs: say where to put them. × lists the folders again. */
@@ -1384,13 +1448,17 @@ int library_update(library *l, uint32_t pressed)
         l->ui_dirty = 1;
     }
 
+    if (l->scanning) {
+        scan_step(l);
+        if (l->scanning) {
+            draw_loading(l);
+            return -1;
+        }
+    }
     if (l->count == 0) {
         if (pressed & PLAT_BTN_CROSS) {
-            scan(l);
-            l->loaded = -1;
-            l->ui_dirty = 1;
-            if (l->count)
-                tell_worker(l, 0);
+            start_scan(l);
+            return -1;
         }
         if (l->count == 0) {
             if (l->ui_dirty) {
@@ -1492,6 +1560,10 @@ void library_close(library *l)
         free_media(&l->cache[i]);
     for (int i = 0; i < l->count; i++)
         free(l->discs[i].icon0);
+    for (int i = 0; i < l->found_next; i++)
+        free(l->found[i].icon0);
+    free(l->discs);
+    free(l->found);
     plat_cond_destroy(l->cache_cond);
     plat_mutex_destroy(l->cache_lock);
     plat_mutex_destroy(l->lock);

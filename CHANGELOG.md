@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Library: no limit on the number of discs (it stopped at 64); while the discs are read, a screen shows how many are done.
+
 ## v0.6.9 (2026-10-18)
 
 - Fixed a black screen on Jackass Volume 2 and 3 and Little Britain Series 2.
