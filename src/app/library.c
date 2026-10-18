@@ -788,6 +788,13 @@ static void draw_info(library *l)
     } else {
         snprintf(line, sizeof(line), "Resume at %s", at);
     }
+    /* A wide key name ("Space") leaves less room: the short form, the bar shows the rest. */
+    if (canvas_text_width(line, 2) > PANEL_X + PANEL_W - 16 - tx) {
+        if (d->resume_disc)
+            snprintf(line, sizeof(line), "Continue");
+        else
+            snprintf(line, sizeof(line), "Resume at %s", at);
+    }
     canvas_text(c, tx, y + 54, 2, RGBA(255, 255, 255, 255), line);
     osd_button(c, x, y + 106, 2, ICON_BUTTON_SQUARE);
     canvas_text(c, tx, y + 114, 2, TEXT_DIM, "Play from the start");
@@ -1011,27 +1018,24 @@ static void draw_settings(library *l)
     osd_draw_menu(&v, &l->ui);
 }
 
-/* "UMD Player" at the top left, with "by xesf" below it in small text like the version. */
+/* "UMD Player" at the top left, with "by xesf" and the version below it in small text. */
 static void draw_app_name(canvas *c, int y)
 {
     canvas_text(c, 20, y, 2, RGBA(255, 255, 255, 220), "UMD Player");
     canvas_text(c, 20, y + 22, 1, TEXT_DIM, "by xesf");
+    canvas_text(c, 20, y + 34, 1, TEXT_DIM, "v" UMDPLAYER_VERSION);
 }
 
-/* The version at the bottom right; with settings, the button that opens them to its left. */
-static void draw_version(canvas *c, int y, int settings)
+/* At the bottom right: the buttons that open the settings and the manual. */
+static void draw_hints(canvas *c, int y)
 {
-    int vx = UI_W - 20 - canvas_text_width("v" UMDPLAYER_VERSION, 1);
+    const char *key = plat_keyboard_ui() ? "F1" : "START";
+    int w = osd_button_width(ICON_BUTTON_TRIANGLE, 1) + 6 + canvas_text_width("Settings", 1);
+    int mw = osd_key_width(key) + 6 + canvas_text_width("Manual", 1);
+    int x = UI_W - 20 - w;
 
-    canvas_text(c, vx, y, 1, TEXT_DIM, "v" UMDPLAYER_VERSION);
-    if (settings) {
-        const char *key = plat_keyboard_ui() ? "F1" : "START";
-        int w = osd_button_width(ICON_BUTTON_TRIANGLE, 1) + 6 + canvas_text_width("Settings", 1);
-        int mw = osd_key_width(key) + 6 + canvas_text_width("Manual", 1);
-        vx -= 24 + w;
-        osd_draw_hint(c, vx, y - 4, ICON_BUTTON_TRIANGLE, "Settings");
-        osd_draw_key_hint(c, vx - 24 - mw, y - 4, key, "Manual");
-    }
+    osd_draw_hint(c, x, y - 4, ICON_BUTTON_TRIANGLE, "Settings");
+    osd_draw_key_hint(c, x - 24 - mw, y - 4, key, "Manual");
 }
 
 static void draw_ui(library *l)
@@ -1068,7 +1072,8 @@ static void draw_ui(library *l)
     draw_settings(l);
     /* On the backdrop (a disc without PIC1), keep clear of its film strips. */
     draw_app_name(c, l->bg ? 18 : 72);
-    draw_version(c, l->bg ? UI_H - 18 : UI_H - 72, !l->settings_open);
+    if (!l->settings_open)
+        draw_hints(c, l->bg ? UI_H - 18 : UI_H - 72);
 
     l->info.ui_rgba = c->rgba;
     l->info.ui_w = c->w;
@@ -1277,7 +1282,6 @@ static void draw_empty(library *l)
         osd_button(c, x, y - 8, 2, ICON_BUTTON_CROSS);
         canvas_text(c, x + bw + 10, y, 2, TEXT_DIM, again);
     }
-    draw_version(c, UI_H - 72, 0);   /* above the film strip */
     l->info.ui_rgba = c->rgba;
     l->info.ui_w = c->w;
     l->info.ui_h = c->h;
