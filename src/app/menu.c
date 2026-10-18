@@ -1751,9 +1751,16 @@ int menu_update(menu *m, uint32_t pressed, uint32_t held, uint64_t now_us)
     }
     step_anims(m);
     step_tweens(m);
+    /* A lock counts while its animation's widget is on an open page: Jackass and Wildboyz
+       lock input for 15 days on a widget of a page they close, sometimes after closing it. */
     m->lock = 0;
-    for (int i = 0; i < MAX_RUNS; i++)
-        m->lock += m->runs[i].active && m->runs[i].locked;
+    for (int i = 0; i < MAX_RUNS; i++) {
+        const anim_run *run = &m->runs[i];
+        int page = run->target >= 0 ? page_of(m->res, run->target) : -1, open = run->target < 0;
+        for (int p = 0; p < m->res->page_count && !open; p++)
+            open = m->res->pages[p] == page;
+        m->lock += run->active && run->locked && open;
+    }
     auto_focus(m);
     do_input(m, pressed);
     return !m->ended;
