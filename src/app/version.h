@@ -1,6 +1,6 @@
 #ifndef VERSION_H
 #define VERSION_H
 
-#define UMDPLAYER_VERSION "0.6.12"
+#define UMDPLAYER_VERSION "0.6.13"
 
 #endif

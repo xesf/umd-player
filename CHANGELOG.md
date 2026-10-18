@@ -1,10 +1,10 @@
 # Changelog
 
-## Unreleased
+## v0.6.13 (2026-10-18)
 
 - Fixed the missing menu on Little Britain Series 2.
 - Fixed stretched segment numbers in Jackass Volume 1's menu.
-- Disc menus: a held direction repeats, as on a PSP, so Robots' flying cursor reaches its menu items.
+- Disc menus: a held direction repeats, as on a PSP (Robots' flying cursor).
 - Fixed the missing language names in Robots' language menu.
 - Fixed Night Warriors' main menu showing no choices the first time it opens.
 - Austin Powers: the selected item pulses again on return from a submenu, and the scene and bonus previews are no longer covered.
