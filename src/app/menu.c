@@ -690,6 +690,11 @@ NATIVE(w_close)
         }
     if (r->active == rf->index)
         r->active = r->page_count ? r->pages[r->page_count - 1] : -1;
+    /* A lock held by an animation on the closed page ends with it: Jackass locks input on its
+       intro page with a lock step and a delay of 15 days, and opens the menu page after it. */
+    for (int i = 0; i < MAX_RUNS; i++)
+        if (rf->m->runs[i].active && rf->m->runs[i].target >= 0 && page_of(r, rf->m->runs[i].target) == rf->index)
+            rf->m->runs[i].locked = 0;
     rf->m->dirty = 1;
 }
 
