@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased
+## v0.6.12 (2026-10-18)
 
-- Library: disc images in subfolders are found too, up to three levels deep (movies sorted by genre or country).
+- Library: finds disc images in subfolders, up to three levels deep (movies sorted by genre or country).
 
 ## v0.6.11 (2026-10-18)
 
