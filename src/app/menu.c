@@ -728,6 +728,8 @@ static void set_values(ref *rf, int prop, const vs_value *args, int argc, int ti
 
     if (timed && argc > 0) {
         dur = (float)vs_number(args[argc - 1]);
+        if (!(dur > 0))               /* undefined (NaN) or negative: at once. Robots passes an unset variable */
+            dur = 0;
         argc--;
     }
     cur = prop_ptr(&rf->m->res->w[rf->index], prop, &count);

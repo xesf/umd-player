@@ -5,6 +5,7 @@
 - Fixed the missing menu on Little Britain Series 2.
 - Fixed stretched segment numbers in Jackass Volume 1's menu.
 - Disc menus: a held direction repeats, as on a PSP, so Robots' flying cursor reaches its menu items.
+- Fixed the missing language names in Robots' language menu.
 
 ## v0.6.12 (2026-10-18)
 
