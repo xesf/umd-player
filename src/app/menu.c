@@ -605,6 +605,12 @@ static void do_input(menu *m, uint32_t pressed)
             menu_menu_button(m);
         return;
     }
+    /* Square is the PSP's menu key in a menu: Little Britain's first series says "press
+       square for the main menu" and goes back in controller.onMenu. */
+    if (pressed & PLAT_BTN_SQUARE) {
+        menu_menu_button(m);
+        return;
+    }
     if (focus < 0)
         return;
     if (pressed & PLAT_BTN_CROSS) {
