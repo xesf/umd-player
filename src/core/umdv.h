@@ -61,6 +61,8 @@ typedef struct umdv_playlist {
 
 /* Returns 0 on success, negative on a malformed file. */
 int umdv_playlist_parse(const uint8_t *buf, uint32_t size, umdv_playlist *out);
+/* The running time of a title: all its items, in 90 kHz ticks. */
+uint32_t umdv_title_length(const umdv_playlist *pl, const umdv_title *t);
 
 typedef enum umdv_stream_kind {
     UMDV_STREAM_VIDEO,

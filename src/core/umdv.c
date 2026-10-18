@@ -112,6 +112,14 @@ int umdv_playlist_parse(const uint8_t *buf, uint32_t size, umdv_playlist *out)
     return 0;
 }
 
+uint32_t umdv_title_length(const umdv_playlist *pl, const umdv_title *t)
+{
+    uint32_t len = 0;
+    for (int i = 0; i < t->item_count; i++)
+        len += pl->items[t->first_item + i].end_pts - pl->items[t->first_item + i].start_pts;
+    return len;
+}
+
 int umdv_clip_parse(const uint8_t *buf, uint32_t size, umdv_clip *out)
 {
     uint32_t prog, ep, base, i;

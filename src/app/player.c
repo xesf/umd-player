@@ -1760,8 +1760,8 @@ player *player_open(const player_options *opt)
         i = resume.title;
     if (i < 0)
         for (int t = 0; t < p->playlist.title_count; t++)
-            if (p->playlist.titles[t].end_pts - p->playlist.titles[t].start_pts > best) {
-                best = p->playlist.titles[t].end_pts - p->playlist.titles[t].start_pts;
+            if (umdv_title_length(&p->playlist, &p->playlist.titles[t]) > best) {
+                best = umdv_title_length(&p->playlist, &p->playlist.titles[t]);
                 i = t;
             }
     if (i < 0 || i >= p->playlist.title_count) {

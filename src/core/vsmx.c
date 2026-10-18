@@ -1370,6 +1370,11 @@ static int run(vsmx *vm, uint32_t pc, int stop_fp, vs_value *result)
             push_value(vm, v);
             break;
         }
+        case 0x33:            /* object literal: set a property, the object stays (Little Britain) */
+            a = pop_value(vm);
+            if (vm->sp > 0)
+                vs_set(vm, read_slot(vm, &vm->stack[vm->sp - 1]), val < vm->prop_count ? vm->props[val] : "", a);
+            break;
         case 0x38:            /* array literal: append */
             a = pop_value(vm);
             if (vm->sp > 0) {

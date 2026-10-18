@@ -254,7 +254,7 @@ static int is_interactive(disc_file *d)
         return 0;
     if ((pl = malloc(sizeof(umdv_playlist))) != NULL && umdv_playlist_parse(buf, size, pl) == 0) {
         for (int i = 0; i < pl->title_count; i++) {
-            uint32_t len = pl->titles[i].end_pts - pl->titles[i].start_pts;
+            uint32_t len = umdv_title_length(pl, &pl->titles[i]);   /* Jackass plays 96 clips as one */
             if (len > longest)
                 longest = len;
             named += pl->titles[i].name[0] != 0;

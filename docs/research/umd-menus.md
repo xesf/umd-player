@@ -109,6 +109,7 @@ The code is an array of 8-byte instructions: a 32-bit opcode and a 32-bit operan
 | `0x2C`, `0x2D`, `0x2E` | `this`; local slot; variable name |
 | `0x2F`, `0x30`, `0x31` | Property reference; property as a method (keeps the object for `this`); set a property |
 | `0x32` | `delete obj.name` (operand: property name); pushes true |
+| `0x33` | In an object literal after `0x29`: pops a value and sets the named property (operand: property name) on the object below it, which stays (Little Britain: `{PN_INIT_LOGO1: 1, ...}`) |
 | `0x34`, `0x35`, `0x36` | Item reference `a[i]`; item as a method; set an item |
 | `0x37` | `delete a[i]`, by analogy with `0x32` (not seen on a disc) |
 | `0x39`, `0x3A`, `0x3B` | Jump; jump if true; jump if false (operand: instruction index) |

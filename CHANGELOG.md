@@ -4,6 +4,8 @@
 
 - Computers: the mouse wheel scrolls through the disc list.
 - Library: long movie titles wrap onto a second line in the info panel.
+- Fixed a black screen on Little Britain Series 2: its menu script uses an object literal we did not run.
+- Jackass Volume 2 and 3 play, and are no longer taken for interactive (UMD-PG) discs.
 
 ## v0.6.8 (2026-10-17)
 
