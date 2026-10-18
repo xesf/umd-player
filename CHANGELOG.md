@@ -1,8 +1,9 @@
 # Changelog
 
-## Unreleased
+## v0.6.10 (2026-10-18)
 
-- Library: no limit on the number of discs (it stopped at 64); while the discs are read, a screen shows how many are done.
+- Library: shows every disc (it stopped at 64).
+- Library: a loading screen shows how many discs have been read.
 
 ## v0.6.9 (2026-10-18)
 
