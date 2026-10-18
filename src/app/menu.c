@@ -1986,8 +1986,7 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
     if (w->image >= 0 && r->r.objects[i].kind != RCO_PAGE && r->r.objects[i].kind != RCO_GROUP && *count < MAX_SPRITES) {
         int iw, ih;
         const uint8_t *img = image_rgba(r, w->image, &iw, &ih);
-        /* Facing away (the plane's normal points into the screen): not drawn. */
-        if (img && x.l[2][2] > -0.001f) {
+        if (img) {
             sprite *s = &list[*count];
             float sxu = (float)c->w / UNITS_W, syu = (float)c->h / UNITS_H;
             float width = w->size[0] > 0 ? w->size[0] : (float)iw, height = w->size[1] > 0 ? w->size[1] : (float)ih;
@@ -2022,12 +2021,25 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
             s->iw = iw;
             s->ih = ih;
             /* Image axes on screen: x right, and y down (the image's rows go down). */
-            s->ex[0] = x.l[0][0] * width * sxu;
-            s->ex[1] = -x.l[1][0] * width * syu;
-            s->ey[0] = -x.l[0][1] * height * sxu;
-            s->ey[1] = x.l[1][1] * height * syu;
-            s->cx = (UNITS_W / 2 + x.t[0] + x.l[0][0] * shift + x.l[0][1] * vshift) * sxu;
-            s->cy = (UNITS_H / 2 - x.t[1] - x.l[1][0] * shift - x.l[1][1] * vshift) * syu;
+            /* Images are flat sprites facing the viewer: turns about X and Y move them in
+               3D (Batman's carousel, the wheels of Christmas With the Kranks) but do not tilt
+               them; the turn in the screen's plane and each axis's scale remain. */
+            /* A negative scale mirrors the image (Little Britain's left arrow): kept. */
+            float det = x.l[0][0] * (x.l[1][1] * x.l[2][2] - x.l[1][2] * x.l[2][1]) -
+                        x.l[0][1] * (x.l[1][0] * x.l[2][2] - x.l[1][2] * x.l[2][0]) +
+                        x.l[0][2] * (x.l[1][0] * x.l[2][1] - x.l[1][1] * x.l[2][0]);
+            float mx = det < 0 ? -1.0f : 1.0f;
+            float ang = atan2f(mx * x.l[1][0] - x.l[0][1], mx * x.l[0][0] + x.l[1][1]);
+            float lx = sqrtf(x.l[0][0] * x.l[0][0] + x.l[1][0] * x.l[1][0] + x.l[2][0] * x.l[2][0]);
+            float ly = sqrtf(x.l[0][1] * x.l[0][1] + x.l[1][1] * x.l[1][1] + x.l[2][1] * x.l[2][1]);
+            float ca = cosf(ang), sa = sinf(ang);
+            float o00 = mx * ca * lx, o10 = mx * sa * lx, o01 = -sa * ly, o11 = ca * ly;
+            s->ex[0] = o00 * width * sxu;
+            s->ex[1] = -o10 * width * syu;
+            s->ey[0] = -o01 * height * sxu;
+            s->ey[1] = o11 * height * syu;
+            s->cx = (UNITS_W / 2 + x.t[0] + o00 * shift + o01 * vshift) * sxu;
+            s->cy = (UNITS_H / 2 - x.t[1] - o10 * shift - o11 * vshift) * syu;
             memcpy(s->color, x.color, sizeof(s->color));
             s->has_crop = w->has_crop;
             if (w->has_crop)
