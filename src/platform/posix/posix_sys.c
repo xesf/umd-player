@@ -281,6 +281,35 @@ int plat_data_load(const char *name, char *buf, int max)
     return n;
 }
 
+int plat_file_exists(const char *path)
+{
+    struct stat st;
+    return stat(path, &st) == 0;
+}
+
+int plat_write_file(const char *path, const char *buf, int size)
+{
+    char dir[1024], tmp[1040];
+    const char *slash = strrchr(path, '/');
+    FILE *f;
+
+    if (slash && (size_t)(slash - path) < sizeof(dir)) {
+        memcpy(dir, path, (size_t)(slash - path));
+        dir[slash - path] = 0;
+        mkdir(dir, 0755);
+    }
+    snprintf(tmp, sizeof(tmp), "%s.new", path);
+    if (!(f = fopen(tmp, "wb")))
+        return -1;
+    if (fwrite(buf, 1, (size_t)size, f) != (size_t)size) {
+        fclose(f);
+        remove(tmp);
+        return -1;
+    }
+    fclose(f);
+    return rename(tmp, path) == 0 ? 0 : -1;
+}
+
 int plat_data_save(const char *name, const char *buf, int size)
 {
     char path[1024], tmp[1100];

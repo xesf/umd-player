@@ -19,6 +19,7 @@ The screenshots use placeholder discs. With your discs, the library shows each d
 - **Screen modes**: Fit, Zoom (finds black bars inside the picture), Fill and Stretch.
 - **Fast seeking**: hold left or right to rewind or fast-forward, jump by chapter, or drag along the time bar on the touch screen.
 - **Remembers** where you stopped each disc and its settings.
+- **Info sheets** (off by default): a UMD Archive Collective info sheet for each disc, with its title, languages, aspect ratio, size and checksums, in a `metadata` folder beside the images.
 - **Battery-aware**: the screen stays on during a movie, and the CPU runs at 333 MHz while it plays.
 
 ## Install

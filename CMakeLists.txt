@@ -52,6 +52,7 @@ add_executable(umdplayer
   src/app/library.c
   src/app/backdrop.c
   src/app/settings.c
+  src/app/infosheet.c
   src/app/intro.c
   src/app/disc.c
   src/app/menu.c
@@ -75,6 +76,7 @@ add_executable(umdplayer
   src/core/font8x8.c
   src/core/cropdetect.c
   src/core/sfo.c
+  src/core/hash.c
   src/core/icons.c
   src/core/yuv.c
   src/core/h264dec.c

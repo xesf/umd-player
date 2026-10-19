@@ -168,8 +168,9 @@ def main():
     put_half(p.c, os.path.join(shots, 'settings.png'), W - LEFT - 480, p.y)
     p.para('Triangle in the library. Up/Down chooses a row, Left/Right changes it, Circle closes.',
            chars=25)
-    p.rows([('Start', 'Disc (default): logos, warnings, menus. Movie: at once.'),
-            ('Screen', 'Picture size'), ('Audio', 'Language'), ('Subs', 'Off, System or a language')],
+    p.rows([('Start', 'Disc: logos, menus. Movie: at once.'),
+            ('Screen', 'Picture size'), ('Audio', 'Language'), ('Subs', 'Off, System or a language'),
+            ('Sheets', 'Info sheets in metadata/')],
            key_w=116, chars=15)
     p.y = max(p.y, BAND + 74 + 272 + 16)
     p.para('Screen, Audio and Subtitles apply to discs you have not played yet. A disc you watched '

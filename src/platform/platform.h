@@ -30,6 +30,11 @@ int plat_list_dir(const char *dir, plat_dir_fn fn, void *user);
 int plat_data_load(const char *name, char *buf, int max);
 int plat_data_save(const char *name, const char *buf, int size);
 
+/* Files beside the disc images (the info sheets in <folder>/metadata/): whether path exists, and
+   writing it whole, creating the folder it is in. Return 1/0, and 0 or -1. */
+int plat_file_exists(const char *path);
+int plat_write_file(const char *path, const char *buf, int size);
+
 /* ---- Threads and time ---- */
 typedef struct plat_thread plat_thread;
 typedef struct plat_mutex plat_mutex;

@@ -60,8 +60,17 @@ Press △ in the library. Use Up and Down to choose a row, Left and Right to cha
 | Screen | Fit, Zoom, Fill, Stretch | The picture size for discs you have not played yet. |
 | Audio | 16 languages | The audio language for new discs. A disc without it plays its first track. |
 | Subtitles | Off, System, 16 languages | The subtitle language for new discs. System uses the Vita's language. |
+| Info sheets | Off, On | On writes an info sheet for each disc that has none. Off (the default) writes nothing. |
 
 A disc you have watched keeps its own audio, subtitle and screen choices.
+
+### Info sheets
+
+An info sheet is the UMD Archive Collective's submission form, filled in with what the disc image tells: the title, the type (Video, Music or Music Video), the catalog number when the disc has one, the audio and subtitle languages, the aspect ratio, the size, and the CRC32, MD5 and SHA-1 checksums. The rest of the form, such as the dumper, the region and the ring codes, stays empty for you to fill in.
+
+With "Info sheets: On", UMD Player writes the sheets after it reads your movies, one disc at a time, and shows "Writing info sheets 1 of 5" above the hints. Each sheet is a text file in a `metadata` folder beside the disc images, named after the image: `ux0:umd/metadata/Stargate (1994).txt` for `ux0:umd/Stargate (1994).ISO`. A disc that already has a sheet is skipped, so a sheet you edited stays as you left it.
+
+The checksums read the whole image, so each sheet takes a while. Writing stops while a movie plays and starts that disc over afterwards. Turning the setting off stops it at once.
 
 ## Watching a movie
 

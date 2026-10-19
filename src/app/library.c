@@ -19,6 +19,7 @@
 #include "../core/yuv.h"
 #include "../platform/platform.h"
 #include "backdrop.h"
+#include "infosheet.h"
 #include "osd.h"
 #include "resume.h"
 #include "screen.h"
@@ -117,6 +118,14 @@ struct library {
     plat_thread *worker;
     int worker_quit, worker_paused, want_sel;
     uint64_t use_clock;
+
+    /* The info sheet thread writes the missing sheets once the scan is done, while the setting
+       is on: sheet_done of sheet_total, the current one sheet_permille through its checksums.
+       sheet_stop (under cache_lock) is set while a movie plays and to quit; a sheet stopped
+       half-way starts over. */
+    plat_thread *sheeter;
+    int sheet_quit, sheet_ended, sheet_total, sheet_done, sheet_finished, sheet_shown;
+    volatile int sheet_stop, sheet_permille;
 
     const uint8_t *bg;
     const uint8_t *pic0;             /* the shown disc's title image, and its size */
@@ -749,6 +758,7 @@ static void tell_worker(library *l, int paused)
     plat_mutex_lock(l->cache_lock);
     l->want_sel = l->sel;
     l->worker_paused = paused;
+    l->sheet_stop = paused || l->sheet_quit;
     plat_cond_broadcast(l->cache_cond);
     plat_mutex_unlock(l->cache_lock);
 }
@@ -1021,7 +1031,7 @@ static void fill_icon_corners(library *l)
 
 /* ---- the settings panel (△) ---- */
 
-enum { SET_START, SET_SCREEN, SET_AUDIO, SET_SUBS, SET_ROWS };
+enum { SET_START, SET_SCREEN, SET_AUDIO, SET_SUBS, SET_SHEETS, SET_ROWS };
 
 static int lang_index(const char *code)
 {
@@ -1063,6 +1073,9 @@ static void settings_input(library *l, uint32_t pressed)
             i = 1;
         i = (i + dir + n) % n;
         snprintf(s->subs, sizeof(s->subs), "%s", i == 0 ? SUBS_OFF : i == 1 ? SUBS_SYSTEM : lang_choices[i - 2]);
+    } else if (dir && l->settings_row == SET_SHEETS) {
+        s->info_sheets = !s->info_sheets;
+        l->sheet_finished = 0;        /* on again: look for discs added since */
     }
     if (pressed)
         l->ui_dirty = 1;
@@ -1096,6 +1109,9 @@ static void draw_settings(library *l)
     snprintf(v.rows[SET_SUBS].label, sizeof(v.rows[0].label), "Subtitles");
     snprintf(v.rows[SET_SUBS].value, sizeof(v.rows[0].value), "%s",
              strcmp(s->subs, SUBS_OFF) == 0 ? "Off" : strcmp(s->subs, SUBS_SYSTEM) == 0 ? "System" : lang_name(s->subs));
+    v.rows[SET_SHEETS].icon = ICON_CHAPTERS;
+    snprintf(v.rows[SET_SHEETS].label, sizeof(v.rows[0].label), "Info sheets");
+    snprintf(v.rows[SET_SHEETS].value, sizeof(v.rows[0].value), "%s", s->info_sheets ? "On" : "Off");
     osd_draw_menu(&v, &l->ui);
 }
 
@@ -1159,16 +1175,23 @@ static void draw_ui(library *l)
     draw_app_name(c, l->bg ? 18 : 72);
     if (!l->settings_open)
         draw_hints(c, l->bg ? UI_H - 18 : UI_H - 72);
-    if (l->scanning) {
-        /* above the hints: discs still being read, with a bar under the count */
+    if (l->scanning || l->sheet_shown >= 0) {
+        /* above the hints: discs still being read or sheets being written, with a bar under
+           the count */
         char line[48];
-        int y = (l->bg ? UI_H - 18 : UI_H - 72) - 30, w;
-        snprintf(line, sizeof(line), "Reading movies %d of %d", l->count, l->scan_total);
+        int y = (l->bg ? UI_H - 18 : UI_H - 72) - 30, w, fill;
+        if (l->scanning) {
+            snprintf(line, sizeof(line), "Reading movies %d of %d", l->count, l->scan_total);
+            fill = l->scan_total ? l->count * 1000 / l->scan_total : 0;
+        } else {
+            snprintf(line, sizeof(line), "Writing info sheets %d of %d", l->sheet_done + 1, l->sheet_total);
+            fill = l->sheet_shown;
+        }
         w = canvas_text_width(line, 1);
         canvas_round_darken(c, UI_W - 28 - w, y - 6, w + 16, 26, 6, 140);
         canvas_text(c, UI_W - 20 - w, y, 1, TEXT_DIM, line);
         canvas_rect(c, UI_W - 20 - w, y + 12, w, 3, RGBA(70, 80, 100, 255));
-        canvas_rect(c, UI_W - 20 - w, y + 12, l->scan_total ? w * l->count / l->scan_total : 0, 3, RGBA(255, 255, 255, 230));
+        canvas_rect(c, UI_W - 20 - w, y + 12, w * fill / 1000, 3, RGBA(255, 255, 255, 230));
     }
 
     l->info.ui_rgba = c->rgba;
@@ -1291,6 +1314,104 @@ static void scan_main(void *user)
     }
 }
 
+/* The info sheet thread: counts the discs without a sheet, then writes theirs in list order.
+   Runs only after the scan, so the list does not change under it. */
+static void write_sheets(library *l)
+{
+    char sheet[1024];
+    int total = 0;
+
+    for (int i = 0; i < l->count; i++) {
+        infosheet_path(l->discs[i].path, sheet, sizeof(sheet));
+        total += !plat_file_exists(sheet);
+    }
+    plat_mutex_lock(l->cache_lock);
+    l->sheet_total = total;
+    l->sheet_done = 0;
+    plat_mutex_unlock(l->cache_lock);
+    for (int i = 0; i < l->count && total; i++) {
+        infosheet_path(l->discs[i].path, sheet, sizeof(sheet));
+        if (plat_file_exists(sheet))
+            continue;
+        for (;;) {
+            plat_mutex_lock(l->cache_lock);
+            while (l->worker_paused && !l->sheet_quit)
+                plat_cond_wait(l->cache_cond, l->cache_lock);
+            l->sheet_stop = l->sheet_quit;
+            plat_mutex_unlock(l->cache_lock);
+            if (l->sheet_quit)
+                return;
+            if (infosheet_write(l->discs[i].path, &l->sheet_stop, &l->sheet_permille) == 0 || !l->sheet_stop)
+                break;                    /* written, or a disc that cannot be read: skip it */
+        }
+        plat_mutex_lock(l->cache_lock);
+        l->sheet_done++;
+        plat_mutex_unlock(l->cache_lock);
+    }
+}
+
+static void sheet_main(void *user)
+{
+    library *l = user;
+
+    write_sheets(l);
+    plat_mutex_lock(l->cache_lock);
+    l->sheet_ended = 1;
+    plat_mutex_unlock(l->cache_lock);
+}
+
+static void stop_sheets(library *l)
+{
+    if (!l->sheeter)
+        return;
+    plat_mutex_lock(l->cache_lock);
+    l->sheet_quit = 1;
+    l->sheet_stop = 1;
+    plat_cond_broadcast(l->cache_cond);
+    plat_mutex_unlock(l->cache_lock);
+    plat_thread_join(l->sheeter);
+    l->sheeter = NULL;
+    l->ui_dirty = 1;
+}
+
+/* Starts the info sheet thread when the setting turns on after the scan, stops it when the
+   setting turns off, and moves its progress bar. */
+static void sheets_update(library *l)
+{
+    int on = settings_get()->info_sheets, ended, shown;
+
+    if (!on || l->scanning) {
+        stop_sheets(l);
+        return;
+    }
+    if (!l->sheeter && !l->sheet_finished && l->count) {
+        l->sheet_quit = l->sheet_ended = 0;
+        l->sheet_stop = 0;
+        l->sheet_total = l->sheet_done = 0;
+        l->sheet_permille = 0;
+        l->sheeter = plat_thread_start(sheet_main, l, "sheets");
+        l->sheet_finished = 1;        /* once per library, or until turned on again */
+        if (!l->sheeter)
+            plat_log("library: cannot start the info sheet thread\n");
+        return;
+    }
+    if (!l->sheeter)
+        return;
+    plat_mutex_lock(l->cache_lock);
+    ended = l->sheet_ended;
+    shown = l->sheet_done < l->sheet_total ? l->sheet_permille / 10 * 10 : -1;   /* redraw each percent */
+    plat_mutex_unlock(l->cache_lock);
+    if (ended) {
+        plat_thread_join(l->sheeter);
+        l->sheeter = NULL;
+        shown = -1;
+    }
+    if (shown != l->sheet_shown) {
+        l->sheet_shown = shown;
+        l->ui_dirty = 1;
+    }
+}
+
 /* Lists the disc images in every folder and starts the scan thread on them. Only called
    while the library is empty, so the worker has nothing to read. */
 static void start_scan(library *l)
@@ -1380,6 +1501,7 @@ library *library_open(const char *dir)
     }
     at3p_init_tables();
     l->loaded = -1;
+    l->sheet_shown = -1;
     l->ui_dirty = 1;
     l->info.video_w = ICON_W;
     l->info.video_h = ICON_H;
@@ -1569,6 +1691,7 @@ int library_update(library *l, uint32_t pressed)
             return -1;
         }
     }
+    sheets_update(l);
     if (l->marks_stale) {
         load_resume_marks(l);
         l->ui_dirty = 1;
@@ -1655,6 +1778,7 @@ void library_close(library *l)
         plat_mutex_unlock(l->cache_lock);
         plat_thread_join(l->scanner);
     }
+    stop_sheets(l);
     if (l->worker) {
         plat_mutex_lock(l->cache_lock);
         l->worker_quit = 1;

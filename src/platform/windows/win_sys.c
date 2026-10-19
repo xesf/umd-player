@@ -123,6 +123,40 @@ int plat_data_load(const char *name, char *buf, int max)
     return n;
 }
 
+int plat_file_exists(const char *path)
+{
+    wchar_t w[MAX_PATH * 2];
+    return to_wide(path, w, MAX_PATH * 2) == 0 && GetFileAttributesW(w) != INVALID_FILE_ATTRIBUTES;
+}
+
+int plat_write_file(const char *path, const char *buf, int size)
+{
+    char dir[MAX_PATH * 3], tmp[MAX_PATH * 3 + 8];
+    wchar_t wdir[MAX_PATH * 2], wpath[MAX_PATH * 2], wtmp[MAX_PATH * 2];
+    const char *slash = strrchr(path, '/'), *back = strrchr(path, '\\');
+    FILE *f;
+
+    if (back > slash)
+        slash = back;
+    if (slash && (size_t)(slash - path) < sizeof(dir)) {
+        memcpy(dir, path, (size_t)(slash - path));
+        dir[slash - path] = 0;
+        if (to_wide(dir, wdir, MAX_PATH * 2) == 0)
+            CreateDirectoryW(wdir, NULL);
+    }
+    snprintf(tmp, sizeof(tmp), "%s.new", path);
+    if (!(f = open_file(tmp, L"wb")))
+        return -1;
+    if (fwrite(buf, 1, (size_t)size, f) != (size_t)size) {
+        fclose(f);
+        return -1;
+    }
+    fclose(f);
+    if (to_wide(path, wpath, MAX_PATH * 2) < 0 || to_wide(tmp, wtmp, MAX_PATH * 2) < 0)
+        return -1;
+    return MoveFileExW(wtmp, wpath, MOVEFILE_REPLACE_EXISTING) ? 0 : -1;
+}
+
 int plat_data_save(const char *name, const char *buf, int size)
 {
     char path[MAX_PATH * 3], tmp[MAX_PATH * 3 + 8];

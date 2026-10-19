@@ -234,6 +234,35 @@ int plat_data_load(const char *name, char *buf, int max)
     return n;
 }
 
+int plat_file_exists(const char *path)
+{
+    SceIoStat st;
+    return sceIoGetstat(path, &st) >= 0;
+}
+
+int plat_write_file(const char *path, const char *buf, int size)
+{
+    char dir[512], tmp[528];
+    const char *slash = strrchr(path, '/');
+    SceUID fd;
+    int n;
+
+    if (slash && (size_t)(slash - path) < sizeof(dir)) {
+        memcpy(dir, path, (size_t)(slash - path));
+        dir[slash - path] = 0;
+        sceIoMkdir(dir, 0777);
+    }
+    snprintf(tmp, sizeof(tmp), "%s.new", path);
+    if ((fd = sceIoOpen(tmp, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666)) < 0)
+        return -1;
+    n = sceIoWrite(fd, buf, (SceSize)size);
+    sceIoClose(fd);
+    if (n != size)
+        return -1;
+    sceIoRemove(path);
+    return sceIoRename(tmp, path) < 0 ? -1 : 0;
+}
+
 int plat_data_save(const char *name, const char *buf, int size)
 {
     char path[256], tmp[260];
