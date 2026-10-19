@@ -147,8 +147,10 @@ static void d_play(void *user, int playlist, int chapter, int audio, int subtitl
         player_restart(d->pl, chapter);
         d->last_chapter = 0;
         d->first_chapter = 0;
-    d->catching_up = 0;
-        d->opened_us = plat_time_us();
+        d->catching_up = 0;
+        /* A jump within the title playing is no drive seek: its chapters come at once. Monty
+           Python loops a 0.3 s chapter of its menu video by replaying it at the next one. */
+        d->opened_us = plat_time_us() - FIRST_CHAPTER_US;
         d->end_sent = 0;
         return;
     }

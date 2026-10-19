@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fixed Monty Python's Flying Circus dropping back to the main menu video after opening the episode menu (since v0.6.13).
 - Disc menus: the script engine supports `instanceof` and `in`; the opcodes still missing are listed in docs/research/umd-menus.md.
 - Fixed Batman's menu choices disappearing as its carousel turns.
 - Fixed Wildboyz's menu taking no input after Play All or a page change.

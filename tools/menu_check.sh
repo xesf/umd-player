@@ -15,6 +15,7 @@ OUT=$(mktemp)
 ls umd | while IFS= read -r f; do
     case "$f" in *.iso|*.ISO|*.cso|*.CSO|*.zso|*.ZSO) ;; *) continue ;; esac
     log=$("$SIM" -d "umd/$f" 240 </dev/null 2>&1)
+    case "$log" in "cannot read"*) printf '%s\tunreadable\t-\t0\n' "$f"; continue ;; esac
     pages=$(printf '%s\n' "$log" | awk '/ READY page /{print $NF}' | tr '\n' ',' | sed 's/,$//')
     last=$(printf '%s\n' "$log" | awk '/ READY page /{t=$1} END{print t ? int(t) : "-"}')
     errors=$(printf '%s\n' "$log" | grep -c 'vsmx:')
@@ -33,6 +34,7 @@ fi
 awk -F'\t' '
     NR == FNR { pages[$1] = $2; last[$1] = $3; errors[$1] = $4; next }
     {
+        if ($2 == "unreadable") { printf "unread   %s: the image cannot be read (moved or incomplete?)\n", $1; next }
         if (!($1 in pages)) { printf "new      %s: menu pages %s, ready at %s s\n", $1, $2, $3; next }
         n_old = pages[$1] == "-" ? 0 : split(pages[$1], a, ",");
         n_new = $2 == "-" ? 0 : split($2, b, ",");
