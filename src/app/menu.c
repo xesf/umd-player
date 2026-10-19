@@ -2009,10 +2009,11 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
             int strip = thin <= FILL_MAX && (thick <= FILL_MAX || thick >= 4 * thin);   /* not a 55x16 label (Jackass) */
             if (!strip && !r->img_fill[w->image] && width > 0 && height > 0) {
                 float shape = (width / height) / ((float)iw / (float)ih);
-                /* cards and backgrounds match within 3% (Austin Powers' 427x240 mask in 854x490),
-                   and are drawn at most 3 times their size: half-size artwork doubles, while
-                   The Goonies' subtitle labels, 4 times over in their widgets, keep their size */
-                if (shape > 1.03f || shape < 0.97f || width > 3.0f * (float)iw) {
+                /* cards and backgrounds match within 3% (Austin Powers' 427x240 mask in 854x490).
+                   A full-screen background stretches whatever its size (The Matrix's 214x120
+                   scene background); anything smaller at most 3 times: half-size artwork
+                   doubles, while The Goonies' subtitle labels, 4 times over, keep their size */
+                if (shape > 1.03f || shape < 0.97f || (width > 3.0f * (float)iw && width < 0.9f * UNITS_W)) {
                     width = (float)iw;
                     height = (float)ih;
                 }

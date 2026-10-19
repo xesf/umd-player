@@ -4,6 +4,7 @@
 
 - Fixed Batman's menu choices disappearing as its carousel turns.
 - Fixed Wildboyz's menu taking no input after Play All or a page change.
+- Fixed The Matrix's scene background shrinking to a box over the preview (since v0.6.13).
 - Fixed Star Wars: The Clone Wars looping its intro on a black screen instead of opening its menu (since v0.6.13).
 - Disc menus: □ is the PSP's menu key, so "press □ for the main menu" works (Little Britain series 1).
 
