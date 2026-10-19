@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.7.0 (2026-10-19)
 
 - Library: a new "Info sheets" setting writes a UMD Archive Collective info sheet for each disc (title, type, catalog number, languages, aspect ratio, size, CRC32, MD5, SHA-1) to `metadata/` beside the images.
 - Fixed Viva La Bam's and Wildboyz's menus ignoring input for 18 s after a choice, and freezing after returning from the movie.
