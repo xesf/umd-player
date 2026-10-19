@@ -93,6 +93,8 @@ struct menu {
     char pending[16];         /* a resource change asked for during a script call */
     int ended;
     tween tweens[MAX_TWEENS];
+    int poll_widget, poll_prop, poll_count;   /* get_values: one moving value read again and again */
+    uint64_t poll_now;
     anim_run runs[MAX_RUNS];
     mtimer timers[MAX_TIMERS];
     int next_timer;
@@ -525,6 +527,11 @@ static void step_anims(menu *m)
                 call_event(m, s->event, run->target);
                 if (m->res != r)
                     return;   /* the event changed the resource */
+                /* The handler played an animation on this widget again: it starts next frame.
+                   Battlestar Galactica's menu loops this way, an event step whose handler
+                   plays the animation again, and spun inside one frame. */
+                if (run->active && run->step == 0 && run->wait_until <= m->now)
+                    run->wait_until = m->now + 1;
                 break;
             default: break;
             }
@@ -776,10 +783,32 @@ NATIVE(w_anim_scale) { (void)vm; (void)self; (void)ret; set_values(user, P_SCALE
 NATIVE(w_anim_rotate) { (void)vm; (void)self; (void)ret; set_values(user, P_ROT, args, argc, 1, 3); }
 NATIVE(w_anim_crop) { (void)vm; (void)self; (void)ret; set_values(user, P_CROP, args, argc, 1, 4); }
 
+/* A script that waits for a tween by reading the value in a loop sees it arrive at once, as
+   the PSP's clock runs on while a script spins: Austin Powers in Goldmember plays its
+   pictogram with animPos and waits for getPos to reach the end. */
+#define POLL_FINISH 1000
+
 static void get_values(vsmx *vm, ref *rf, int prop, vs_value *ret)
 {
+    menu *m = rf->m;
     int n;
-    float *v = prop_ptr(&rf->m->res->w[rf->index], prop, &n);
+    float *v = prop_ptr(&m->res->w[rf->index], prop, &n);
+
+    if (m->poll_now == m->now && m->poll_widget == rf->index && m->poll_prop == prop) {
+        if (++m->poll_count >= POLL_FINISH) {   /* each tween started since, too: sleep after sleep */
+            for (int i = 0; i < MAX_TWEENS; i++) {
+                tween *t = &m->tweens[i];
+                if (t->active && t->widget == rf->index && t->prop == prop)
+                    t->start = m->now - (uint64_t)(t->dur * 1000.0f) - 1;
+            }
+            step_tweens(m);
+        }
+    } else {
+        m->poll_now = m->now;
+        m->poll_widget = rf->index;
+        m->poll_prop = prop;
+        m->poll_count = 0;
+    }
     *ret = array3(vm, v, n);
 }
 
@@ -1082,7 +1111,9 @@ NATIVE(mp_status)
            vs_int(st.playing ? (st.paused ? 2 : 1) : m->resume_playlist && menu_title_resumable(m, m->resume_playlist) ? 2 : 0));
     vs_set(vm, *ret, vs_intern(vm, "playListNumber"), vs_int(st.playlist));
     vs_set(vm, *ret, vs_intern(vm, "chapterNumber"), vs_int(st.chapter));
-    vs_set(vm, *ret, vs_intern(vm, "menuMode"), vs_int(st.playing && m->menu_mode));
+    /* 1 while the menu has the screen: a menu video, or nothing playing. Pirates of the
+       Caribbean stops the player before changing resource and waits for menuMode 1. */
+    vs_set(vm, *ret, vs_intern(vm, "menuMode"), vs_int(!st.playing || m->menu_mode));
     /* 0 is normal speed, anything else paused or fast play; the scripts only test for 0.
        Summer Days shows its password at normal speed and hides it when that changes. */
     vs_set(vm, *ret, vs_intern(vm, "playSpeed"), vs_int(st.playing && st.paused ? -1 : 0));
@@ -1487,11 +1518,11 @@ static void apply_pending(menu *m)
 
 /* ---- public ---- */
 
-/* The start menus are XX100000.RCO, XX a language: EN on most discs, JA on Japanese ones.
-   Prefers the system language, then English, then whichever the disc has. */
+/* The start menus are XX100000.RCO, XX a language: EN on most discs, JA on Japanese ones (JP
+   on Face Off). Prefers the system language, then English, then whichever the disc has. */
 static const char *start_resource(menu *m)
 {
-    static const char *const langs[] = {"EN", "JA", "FR", "DE", "ES", "IT", "NL", "PT", "RU", "KO", "ZH", "CH", "TW"};
+    static const char *const langs[] = {"EN", "JA", "JP", "FR", "DE", "ES", "IT", "NL", "PT", "RU", "KO", "ZH", "CH", "TW"};
     static char name[16];
     char path[64], first[3] = {(char)(m->language[0] & ~0x20), (char)(m->language[1] & ~0x20), 0};
     uint32_t size;
