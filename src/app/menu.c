@@ -49,8 +49,11 @@ typedef struct anim_run {
     uint64_t wait_until;
 } anim_run;
 
+#define TIMER_ARGS 8
+
 typedef struct mtimer {
     int used, id, fn, self;   /* fn and self: vs_hold handles */
+    int args[TIMER_ARGS], argc;   /* setInterval(fn, ms, ...): what fn is called with, held */
     uint32_t interval;
     uint64_t due;
 } mtimer;
@@ -1292,6 +1295,11 @@ NATIVE(t_set)
             t->self = -1;
             t->interval = (uint32_t)argf(args, argc, 1, 0);
             t->due = m->now + (uint64_t)t->interval * 1000;
+            /* Arguments after the interval go to fn on each call: Breakout's timedCall gets
+               its counter and its own slot this way, and stops itself with them. */
+            t->argc = argc > 2 ? (argc - 2 < TIMER_ARGS ? argc - 2 : TIMER_ARGS) : 0;
+            for (int k = 0; k < t->argc; k++)
+                t->args[k] = vs_hold(vm, args[2 + k]);
             *ret = vs_int(t->id);
             return;
         }
@@ -1306,6 +1314,8 @@ NATIVE(t_clear)
     for (int i = 0; i < MAX_TIMERS; i++)
         if (m->timers[i].used && m->timers[i].id == id) {
             vs_release(vm, m->timers[i].fn);
+            for (int k = 0; k < m->timers[i].argc; k++)
+                vs_release(vm, m->timers[i].args[k]);
             m->timers[i].used = 0;
         }
 }
@@ -1741,10 +1751,13 @@ int menu_update(menu *m, uint32_t pressed, uint32_t held, uint64_t now_us)
     for (int i = 0; i < MAX_TIMERS; i++) {
         mtimer *t = &m->timers[i];
         if (t->used && now_us >= t->due) {
-            vs_value fn = vs_held(m->res->vm, t->fn);
+            vs_value fn = vs_held(m->res->vm, t->fn), targs[TIMER_ARGS];
             res *r = m->res;
+            int targc = t->argc;
+            for (int k = 0; k < targc; k++)
+                targs[k] = vs_held(m->res->vm, t->args[k]);
             t->due = now_us + (uint64_t)(t->interval ? t->interval : 1) * 1000;
-            call_value(m, fn, vs_undef(), NULL, 0);
+            call_value(m, fn, vs_undef(), targs, targc);
             if (m->res != r)
                 break;
         }

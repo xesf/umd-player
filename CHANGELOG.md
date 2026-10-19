@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fixed Breakout's scene selection: the preview now changes scene, with the scene's name.
 - Disc mode: chapter events wait while a menu animation locks input, instead of a fixed 1.5 s after a title opens; menus behave as in v0.6.12 again, with The Goonies' scene frame still fixed.
 - Library: shows each disc's title image (PIC0) beside the selected disc, as the PSP does (Bobbito's Basics to Boogie, Jamie Foxx: I Might Need Security).
 - Fixed Monty Python's Flying Circus dropping back to the main menu video after opening the episode menu (since v0.6.13).
