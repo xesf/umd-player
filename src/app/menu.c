@@ -2031,7 +2031,13 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
                    A full-screen background stretches whatever its size (The Matrix's 214x120
                    scene background); anything smaller at most 3 times: half-size artwork
                    doubles, while The Goonies' subtitle labels, 4 times over, keep their size */
-                if (shape > 1.03f || shape < 0.97f || (width > 3.0f * (float)iw && width < 0.9f * UNITS_W)) {
+                /* Full-width artwork (half or full size across the screen) stretches whatever its
+                   height: Stargate's transition bands put the 427x27 title band in 854x85
+                   widgets. 4:3 warning cards in full-screen widgets keep their shape. */
+                int full = width >= 0.9f * UNITS_W;
+                int band = full && (fabsf(2.0f * (float)iw - width) <= 0.03f * width ||
+                                    fabsf((float)iw - width) <= 0.03f * width);
+                if (!band && (shape > 1.03f || shape < 0.97f || (width > 3.0f * (float)iw && !full))) {
                     width = (float)iw;
                     height = (float)ih;
                 }

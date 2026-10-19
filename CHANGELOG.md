@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fixed Stargate's menu transition: the white bands span the screen and open to the top and bottom bars.
 - Fixed Batman's carousel items tilting or turning upside down as the carousel turns.
 
 ## v0.6.16 (2026-10-19)
