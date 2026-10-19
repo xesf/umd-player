@@ -159,6 +159,7 @@ typedef struct sim {
     int last_chapter;         /* the chapter last reported; 0 after a play, as in src/app/disc.c */
     uint64_t events_done;     /* event marks before this position (us) have been reported */
     int menu_mode;            /* the title playing is a menu video */
+    const menu *m;            /* once open: which titles keep a place to resume */
 } sim;
 
 static uint8_t *sim_read(void *user, const char *path, uint32_t *size)
@@ -225,7 +226,10 @@ static void sim_stop(void *user)
 {
     sim *s = user;
     printf("%8.2f s  STOP\n", s->now / 1e6);
-    if (s->st.playing && !s->menu_mode) {   /* as src/app/disc.c: menu videos and a stop with nothing playing keep the last */
+    /* As src/app/disc.c: only a main video keeps a place; menu videos, short clips and a stop
+       with nothing playing keep the last. Die Hard stops its logo and resumes, expecting
+       resume() to fail so that it plays the movie. */
+    if (s->st.playing && !s->menu_mode && (!s->m || menu_title_resumable(s->m, s->st.playlist))) {
         s->saved_playlist = s->st.playlist;
         s->saved_chapter = s->st.chapter;
     }
@@ -362,6 +366,7 @@ static int run_disc(int argc, char **argv)
         printf("no menus\n");
         return 1;
     }
+    s.m = m;
     if (state && (sf = fopen(state, "r")) != NULL) {
         int n = 0;
         if (fgets(text, sizeof(text), sf) && sscanf(text, "%d %d %n", &s.saved_playlist, &s.saved_chapter, &n) >= 2) {
