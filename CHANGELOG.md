@@ -1,17 +1,15 @@
 # Changelog
 
-## Unreleased
+## v0.6.15 (2026-10-19)
 
-- Fixed Breakout's scene selection: the preview now changes scene, with the scene's name.
-- Disc mode: chapter events wait while a menu animation locks input, instead of a fixed 1.5 s after a title opens; menus behave as in v0.6.12 again, with The Goonies' scene frame still fixed.
-- Library: shows each disc's title image (PIC0) beside the selected disc, as the PSP does (Bobbito's Basics to Boogie, Jamie Foxx: I Might Need Security).
-- Fixed Monty Python's Flying Circus dropping back to the main menu video after opening the episode menu (since v0.6.13).
-- Disc menus: the script engine supports `instanceof` and `in`; the opcodes still missing are listed in docs/research/umd-menus.md.
-- Fixed Batman's menu choices disappearing as its carousel turns.
-- Fixed Wildboyz's menu taking no input after Play All or a page change.
+- Fixed black screens and wrong menus from v0.6.13's chapter timing (Star Wars: The Clone Wars, Monty Python's Flying Circus); chapter events now wait only while a menu animation locks input.
 - Fixed The Matrix's scene background shrinking to a box over the preview (since v0.6.13).
-- Fixed Star Wars: The Clone Wars looping its intro on a black screen instead of opening its menu (since v0.6.13).
+- Fixed Batman's menu choices disappearing as its carousel turns.
+- Fixed Breakout's scene preview not changing scene or name.
+- Fixed menus taking no input after Play All (Wildboyz, Viva La Bam, Beavis & Butt-Head).
 - Disc menus: □ is the PSP's menu key, so "press □ for the main menu" works (Little Britain series 1).
+- Disc menus: the script engine supports `instanceof` and `in`.
+- Library: shows each disc's title image (PIC0) beside the selected disc (Bobbito's Basics to Boogie, Jamie Foxx).
 
 ## v0.6.14 (2026-10-18)
 
