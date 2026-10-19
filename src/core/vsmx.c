@@ -682,7 +682,13 @@ static void native_math(vsmx *vm, void *user, vs_value self, const vs_value *arg
     else if (strcmp(fn, "cos") == 0) *ret = vs_num(cos(a));
     else if (strcmp(fn, "sqrt") == 0) *ret = vs_num(sqrt(a));
     else if (strcmp(fn, "pow") == 0) *ret = vs_num(pow(a, b));
+    else if (strcmp(fn, "tan") == 0) *ret = vs_num(tan(a));
+    else if (strcmp(fn, "asin") == 0) *ret = vs_num(asin(a));
+    else if (strcmp(fn, "acos") == 0) *ret = vs_num(acos(a));
+    else if (strcmp(fn, "atan") == 0) *ret = vs_num(atan(a));
     else if (strcmp(fn, "atan2") == 0) *ret = vs_num(atan2(a, b));
+    else if (strcmp(fn, "exp") == 0) *ret = vs_num(exp(a));
+    else if (strcmp(fn, "log") == 0) *ret = vs_num(log(a));
     else if (strcmp(fn, "random") == 0) *ret = vs_num((double)rand() / ((double)RAND_MAX + 1));
 }
 
@@ -715,15 +721,20 @@ static void native_convert(vsmx *vm, void *user, vs_value self, const vs_value *
 static void add_builtins(vsmx *vm)
 {
     static const char *const convert[] = {"Int", "Float", "Number", "String", "parseInt", "parseFloat", "isNaN"};
-    static const char *const math[] = {"abs", "ceil", "floor", "round", "min", "max", "sin", "cos", "sqrt", "pow",
-                                       "atan2", "random"};
+    static const char *const math[] = {"abs", "ceil", "floor", "round", "min", "max", "sin", "cos", "tan", "asin",
+                                       "acos", "atan", "atan2", "sqrt", "pow", "exp", "log", "random"};
+    static const struct { const char *name; double value; } constants[] = {
+        {"PI", 3.14159265358979323846}, {"E", 2.71828182845904523536}, {"LN2", 0.69314718055994530942},
+        {"LN10", 2.30258509299404568402}, {"LOG2E", 1.44269504088896340736}, {"LOG10E", 0.43429448190325182765},
+        {"SQRT2", 1.41421356237309504880}, {"SQRT1_2", 0.70710678118654752440}};
     vs_value m = vs_new_object(vm);
 
     vs_set_global(vm, "Array", vs_new_native(vm, native_array, NULL));
     vs_set_global(vm, "Object", vs_new_native(vm, native_object, NULL));
     for (unsigned i = 0; i < sizeof(math) / sizeof(math[0]); i++)
         vs_set(vm, m, vs_intern(vm, math[i]), vs_new_native(vm, native_math, (void *)math[i]));
-    vs_set(vm, m, vs_intern(vm, "PI"), vs_num(3.14159265358979323846));
+    for (unsigned i = 0; i < sizeof(constants) / sizeof(constants[0]); i++)
+        vs_set(vm, m, vs_intern(vm, constants[i].name), vs_num(constants[i].value));
     vs_set_global(vm, "Math", m);
     for (unsigned i = 0; i < sizeof(convert) / sizeof(convert[0]); i++)
         vs_set_global(vm, convert[i], vs_new_native(vm, native_convert, (void *)convert[i]));
@@ -1438,6 +1449,13 @@ static int run(vsmx *vm, uint32_t pc, int stop_fp, vs_value *result)
             push_value(vm, a);
             break;
         }
+        /* try { body } catch (e) { handler } (X-Men, Corpse Bride, Ice Age 2): 0x41 starts the
+           body, its operand the 0x43 after it; 0x42 ends the body and falls into 0x43, whose
+           operand is past the handler. The handler starts with the error on the stack. This
+           interpreter logs an error and goes on instead of throwing, so the body always ends
+           normally and the handler never runs. */
+        case 0x41: case 0x42: case 0x44: break;
+        case 0x43: pc = val; break;
         case 0x45:            /* end of the script */
             return 0;
         case 0x46:            /* source line markers, from a compiler's debug build (Alien): */

@@ -119,6 +119,8 @@ The code is an array of 8-byte instructions: a 32-bit opcode and a 32-bit operan
 | `0x45` | End of the script |
 | `0x46`, `0x47` | Source line markers: `0x46`, then `0x47` with the line number, before each statement. Only Alien's main script has them, from a debug build of the script compiler; they do nothing. |
 
+`0x41` to `0x44` (`TRYBLK_IN`, `TRYBLK_OUT`, `CATCH_FINALLYBLK_IN`, `CATCH_FINALLYBLK_OUT`) are `try { } catch (e) { }`, used by X-Men, Corpse Bride, Ice Age 2 and Phone Booth. `0x41` starts the body and its operand is the `0x43` after it. `0x42` ends the body and falls into `0x43`, whose operand is past the handler. The handler starts with the error on the stack; X-Men's assigns it with `0x21` (swap) and `=`. The interpreter logs errors and continues instead of throwing, so it runs the body and jumps over the handler.
+
 #### Opcodes not implemented
 
 The [PS3 developer wiki's VSMX page](https://www.psdevwiki.com/ps3/VSMX) lists these too. None appears in the scripts of the 30 discs we test or in 42 menu files kept from earlier tests (checked 2026-10-19), so the interpreter stops a script at them with `unknown opcode`:
@@ -126,7 +128,6 @@ The [PS3 developer wiki's VSMX page](https://www.psdevwiki.com/ps3/VSMX) lists t
 | Opcode | Wiki name | Why not |
 |---|---|---|
 | `0x40` | `THROW` | No disc throws. |
-| `0x41` to `0x44` | `TRYBLK_IN`, `TRYBLK_OUT`, `CATCH_FINALLYBLK_IN`, `CATCH_FINALLYBLK_OUT` | The wiki does not say how a block's operands give its end or its handler, so an implementation would be a guess. |
 | `0x48` to `0x4E` | `GETITEM_KEEPOBJNAME`, `PUSH_VECTOR`, `GET_VECTOR_ELEMENT`, `GET_VECTOR_ELEMENT_KEEPVECTOR`, `ASSGN_VECTOR_ELEMENT`, `SETATTR_VECTOR_ELEMENT`, `SETITEM_VECTOR_ELEMENT` | Version 2 of the format, for the PS3. UMD Video scripts are version 1. |
 
 A disc that needs one logs `vsmx: unknown opcode 0x.. at <instruction>`, and `tools/menu_check.sh` likely flags it.
