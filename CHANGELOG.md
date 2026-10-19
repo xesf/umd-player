@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.6.16 (2026-10-19)
+
+- Fixed the Vita build, which failed for v0.6.15 (no v0.6.15 packages were published).
+
 ## v0.6.15 (2026-10-19)
 
 - Fixed black screens and wrong menus from v0.6.13's chapter timing (Star Wars: The Clone Wars, Monty Python's Flying Circus); chapter events now wait only while a menu animation locks input.

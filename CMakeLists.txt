@@ -108,6 +108,8 @@ target_link_libraries(umdplayer
   SceAppUtil_stub
   ScePgf_stub
 )
+# Room after the code segment for vita-elf-create's module data (see the file).
+target_link_options(umdplayer PRIVATE "-Wl,-T,${CMAKE_SOURCE_DIR}/src/platform/vita/sce_gap.ld")
 
 # UNSAFE: safe homebrew cannot open ux0:pspemu, where Adrenaline users keep their ISOs.
 vita_create_self(umdplayer.self umdplayer UNSAFE)
