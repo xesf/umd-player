@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.7.1 (2026-10-20)
+
+- Fixed Battlestar Galactica freezing on its main menu.
+- Fixed Pirates of the Caribbean never reaching its menu.
+- Fixed Face Off's menus not loading (its only menus are Japanese-coded, JP).
+- Fixed Austin Powers in Goldmember's menu script stopping on its pictogram animation.
+- Fixed menu scripts stopping on try/catch (X-Men, X-Men 2, Corpse Bride, Ice Age 2, Phone Booth).
+- Fixed menu scripts stopping on Math.acos (Alone in the Dark, Assault on Precinct 13); the script engine has the rest of Math too.
+
 ## v0.7.0 (2026-10-19)
 
 - Library: a new "Info sheets" setting writes a UMD Archive Collective info sheet for each disc (title, type, catalog number, languages, aspect ratio, size, CRC32, MD5, SHA-1) to `metadata/` beside the images.
