@@ -151,6 +151,7 @@ typedef struct sim {
     menu_status st;
     uint64_t now, title_end, title_start;  /* virtual time, us */
     int start_chapter;
+    int ready_page;           /* the active page with buttons last reported as READY, or -1 */
     uint64_t chapter_at[64];
     int chapter_count;
     int ended_pending;
@@ -327,6 +328,8 @@ static int run_disc(int argc, char **argv)
     char text[4096];
     FILE *sf;
     canvas c = {NULL, 960, 544, 960 * 4};
+
+    s.ready_page = -1;
     int unsaved = 0;
     uint64_t last_save = 0;
 
@@ -446,6 +449,13 @@ static int run_disc(int argc, char **argv)
         if (!menu_update(m, pressed, held, s.now)) {
             printf("%8.2f s  menus ended\n", s.now / 1e6);
             break;
+        }
+        {
+            /* A page that takes input became active: tools/menu_check.sh looks for the first. */
+            int ready = menu_has_focus(m) ? menu_active_page(m) : -1;
+            if (ready != s.ready_page && ready >= 0)
+                printf("%8.2f s  READY page %d\n", s.now / 1e6, ready);
+            s.ready_page = ready;
         }
         if (menu_dirty(m)) {
             menu_draw(m, &c);

@@ -2,3 +2,4 @@ umd/
 build/
 .DS_Store
 __pycache__/
+tests/menu_baseline.txt
