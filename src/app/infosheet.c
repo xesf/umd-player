@@ -338,6 +338,7 @@ int infosheet_write(const char *image, volatile int *stop, volatile int *permill
         else
             len += snprintf(text + len, (size_t)(8192 - len), "%s%s", i ? "\n" : "", sheet[i].text);
     }
+    len += snprintf(text + len, (size_t)(8192 - len), "\n");
     infosheet_path(image, path, sizeof(path));
     rc = plat_write_file(path, text, len);
     free(text);
