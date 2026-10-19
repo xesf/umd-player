@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Fixed Batman's carousel items tilting or turning upside down as the carousel turns.
+
 ## v0.6.16 (2026-10-19)
 
 - Fixed the Vita build, which failed for v0.6.15 (no v0.6.15 packages were published).

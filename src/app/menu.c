@@ -2055,7 +2055,11 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
                         x.l[0][1] * (x.l[1][0] * x.l[2][2] - x.l[1][2] * x.l[2][0]) +
                         x.l[0][2] * (x.l[1][0] * x.l[2][1] - x.l[1][1] * x.l[2][0]);
             float mx = det < 0 ? -1.0f : 1.0f;
-            float ang = atan2f(mx * x.l[1][0] - x.l[0][1], mx * x.l[0][0] + x.l[1][1]);
+            /* The angle in the screen's plane from the image's up axis as projected (its x axis
+               when the up axis is end-on): Batman tilts its carousel back by 0.1, and the two
+               axes together read that as a turn of 6 degrees, or 180 at the back. */
+            float ang = fabsf(x.l[0][1]) + fabsf(x.l[1][1]) > 0.001f ? atan2f(-x.l[0][1], x.l[1][1])
+                                                                     : atan2f(mx * x.l[1][0], mx * x.l[0][0]);
             float lx = sqrtf(x.l[0][0] * x.l[0][0] + x.l[1][0] * x.l[1][0] + x.l[2][0] * x.l[2][0]);
             float ly = sqrtf(x.l[0][1] * x.l[0][1] + x.l[1][1] * x.l[1][1] + x.l[2][1] * x.l[2][1]);
             float ca = cosf(ang), sa = sinf(ang);
