@@ -36,7 +36,9 @@ OPS = {
     0x2f: 'property', 0x30: 'method', 0x31: 'set property', 0x34: 'get item', 0x35: 'get item for call',
     0x36: 'set item', 0x38: 'array push', 0x39: 'jump', 0x3a: 'jump if true', 0x3b: 'jump if false',
     0x3c: 'call function', 0x3d: 'call method', 0x3e: 'new', 0x3f: 'return', 0x45: 'end of script',
-    0x29: 'object', 0x33: 'object property', 0x32: 'delete property', 0x37: 'delete item', 0x46: 'line marker', 0x47: 'line'}
+    0x29: 'object', 0x33: 'object property', 0x32: 'delete property', 0x37: 'delete item', 0x46: 'line marker', 0x47: 'line',
+    0x16: 'instanceof', 0x17: 'in', 0x40: 'throw', 0x41: 'try in', 0x42: 'try out', 0x43: 'catch/finally in',
+    0x44: 'catch/finally out'}
 
 # The objects the PSP's UMD Video player gives the scripts.
 HOST_OBJECTS = ('movieplayer', 'controller', 'resource', 'timer', 'sound', 'Array', 'Math', 'Date', 'String')

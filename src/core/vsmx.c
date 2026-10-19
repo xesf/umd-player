@@ -1275,6 +1275,27 @@ static int run(vsmx *vm, uint32_t pc, int stop_fp, vs_value *result)
         case 0x11: b = pop_value(vm); a = pop_value(vm); push_value(vm, vs_bool(!strict_equal(a, b))); break;
         case 0x12: case 0x13: case 0x14: case 0x15:
             b = pop_value(vm); a = pop_value(vm); push_value(vm, vs_bool(compare(a, b, (int)op))); break;
+        case 0x16: {          /* a instanceof F: F.prototype on a's prototype chain (no disc uses it yet) */
+            int found = 0;
+            b = pop_value(vm);
+            a = pop_value(vm);
+            if (a.type == VS_OBJ && b.type == VS_OBJ) {
+                prop *pp = find_prop(b.u.o, vm->k_prototype);
+                for (vs_obj *o = a.u.o->proto; o && pp && pp->value.type == VS_OBJ && !found; o = o->proto)
+                    found = o == pp->value.u.o;
+            }
+            push_value(vm, vs_bool(found));
+            break;
+        }
+        case 0x17: {          /* key in obj: a property there or up its prototype chain (no disc uses it yet) */
+            char buf[32];
+            const char *key;
+            b = pop_value(vm);
+            a = pop_value(vm);
+            key = vs_intern(vm, vs_text(a, buf, sizeof(buf)));
+            push_value(vm, vs_bool(b.type == VS_OBJ && vs_get(vm, b, key).type != VS_UNDEF));
+            break;
+        }
         case 0x18: a = pop_value(vm); push_value(vm, vs_string(vm, type_name(a))); break;
         case 0x19: b = pop_value(vm); a = pop_value(vm); push_value(vm, vs_int(to_int32(a) & to_int32(b))); break;
         case 0x1A: b = pop_value(vm); a = pop_value(vm); push_value(vm, vs_int(to_int32(a) ^ to_int32(b))); break;

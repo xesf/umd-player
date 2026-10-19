@@ -98,6 +98,7 @@ The code is an array of 8-byte instructions: a 32-bit opcode and a 32-bit operan
 | `0x0A` to `0x0D` | `++x`, `--x`, `x++`, `x--` |
 | `0x0E` to `0x11` | `==`, `!=`, `===`, `!==` |
 | `0x12` to `0x15` | `<`, `<=`, `>=`, `>` |
+| `0x16`, `0x17` | `a instanceof F` (is `F.prototype` on `a`'s prototype chain); `key in obj` (not seen on a disc) |
 | `0x18` | `typeof` |
 | `0x19` to `0x1F` | `&`, `^`, `\|`, `~`, `<<`, `>>`, `>>>` |
 | `0x20`, `0x22` | Duplicate the top entry; pop it (ends a statement) |
@@ -117,6 +118,18 @@ The code is an array of 8-byte instructions: a 32-bit opcode and a 32-bit operan
 | `0x3F` | Return |
 | `0x45` | End of the script |
 | `0x46`, `0x47` | Source line markers: `0x46`, then `0x47` with the line number, before each statement. Only Alien's main script has them, from a debug build of the script compiler; they do nothing. |
+
+#### Opcodes not implemented
+
+The [PS3 developer wiki's VSMX page](https://www.psdevwiki.com/ps3/VSMX) lists these too. None appears in the scripts of the 30 discs we test or in 42 menu files kept from earlier tests (checked 2026-10-19), so the interpreter stops a script at them with `unknown opcode`:
+
+| Opcode | Wiki name | Why not |
+|---|---|---|
+| `0x40` | `THROW` | No disc throws. |
+| `0x41` to `0x44` | `TRYBLK_IN`, `TRYBLK_OUT`, `CATCH_FINALLYBLK_IN`, `CATCH_FINALLYBLK_OUT` | The wiki does not say how a block's operands give its end or its handler, so an implementation would be a guess. |
+| `0x48` to `0x4E` | `GETITEM_KEEPOBJNAME`, `PUSH_VECTOR`, `GET_VECTOR_ELEMENT`, `GET_VECTOR_ELEMENT_KEEPVECTOR`, `ASSGN_VECTOR_ELEMENT`, `SETATTR_VECTOR_ELEMENT`, `SETITEM_VECTOR_ELEMENT` | Version 2 of the format, for the PS3. UMD Video scripts are version 1. |
+
+A disc that needs one logs `vsmx: unknown opcode 0x.. at <instruction>`, and `tools/menu_check.sh` likely flags it.
 
 Objects made with `new F()` inherit from `F.prototype`. The scripts also use `Int`, `Float`, `parseInt`, `isNaN`, `Math`, `Array`, `NULL`, `writeln` and `write`.
 
