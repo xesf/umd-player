@@ -16,7 +16,6 @@
 #define UNITS_W     854.0f
 #define UNITS_H     480.0f
 #define QUIT_HOLD   1500000          /* us Circle is held to leave the disc */
-#define FIRST_CHAPTER_US 1500000     /* us from opening a title to its first onChapter */
 #define STATE_MAX   4096
 
 struct disc {
@@ -27,7 +26,6 @@ struct disc {
     player *pl;
     int title;                /* 1-based, of pl */
     int last_chapter;
-    uint64_t opened_us;       /* when the title was opened or restarted */
     int first_chapter;        /* the chapter playback started in, 0 until it started */
     int catching_up;          /* reporting the chapters passed during the first event's delay */
     int end_sent;             /* menu_playlist_ended was called for pl */
@@ -94,7 +92,6 @@ static void start(disc *d, int title, int chapter, uint64_t pos)
     d->last_chapter = 0;
     d->first_chapter = 0;
     d->catching_up = 0;
-    d->opened_us = plat_time_us();
     d->end_sent = 0;
     if (!d->pl) {
         plat_log("disc: cannot play title %d\n", title);
@@ -148,9 +145,6 @@ static void d_play(void *user, int playlist, int chapter, int audio, int subtitl
         d->last_chapter = 0;
         d->first_chapter = 0;
         d->catching_up = 0;
-        /* A jump within the title playing is no drive seek: its chapters come at once. Monty
-           Python loops a 0.3 s chapter of its menu video by replaying it at the next one. */
-        d->opened_us = plat_time_us() - FIRST_CHAPTER_US;
         d->end_sent = 0;
         return;
     }
@@ -425,22 +419,24 @@ int disc_update(disc *d, uint32_t pressed)
     /* Playback events, before the menus run this frame. */
     if (d->pl) {
         int ch = player_chapter(d->pl), ended = player_title_ended(d->pl), first = d->last_chapter == 0;
-        /* Once playback is under way, and the first chapter of a title no sooner than a UMD
-           drive would get there (or just before a shorter title ends): Austin Powers and The
-           Goonies cover their scene preview when they start one and uncover it in onChapter,
-           which The Goonies ignores until its page has finished opening, 1.2 s later. */
-        int due = !first || ended || plat_time_us() - d->opened_us >= FIRST_CHAPTER_US;
+        /* Once a picture is out, and not while an animation locks the menus (or just before the
+           title ends): Austin Powers covers its scene preview as it starts one and uncovers it
+           in onChapter; The Goonies ignores onChapter until its scene page has finished
+           opening, under a lock. A PSP's drive is still seeking by then. */
+        int due = ended || !menu_locked(d->m);
         if (!d->first_chapter && player_started(d->pl))
             d->first_chapter = ch;
-        /* The delayed first event is the chapter playback started in, and the ones passed
-           since follow in later frames: Night Warriors opens its menu at chapter 1 of a video
-           whose chapter 2 starts at 1 s. */
+        if (ch != d->last_chapter && !due)
+            d->catching_up = 1;
+        /* A held first event is the chapter playback started in, and the ones passed since
+           follow one a frame: Night Warriors opens its menu at chapter 1 of a video whose
+           chapter 2 starts at 1 s. */
         if (first && d->first_chapter)
             ch = d->first_chapter;
         else if (d->catching_up && ch > d->last_chapter + 1)
             ch = d->last_chapter + 1;
         if (ch != d->last_chapter && player_started(d->pl) && due) {
-            d->catching_up = first;
+            d->catching_up |= first;
             d->last_chapter = ch;
             menu_chapter_changed(d->m, ch);
         } else if (ch == d->last_chapter) {

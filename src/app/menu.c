@@ -1789,6 +1789,11 @@ int menu_active_page(const menu *m)
     return m->res->active;
 }
 
+int menu_locked(const menu *m)
+{
+    return m->lock > 0;
+}
+
 int menu_has_focus(const menu *m)
 {
     /* A page without buttons takes no input: Saw leaves pageWaitDummy, a lone picture, active

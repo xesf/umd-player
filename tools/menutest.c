@@ -197,8 +197,6 @@ static void sim_play(void *user, int playlist, int chapter, int audio, int subti
     if (chapter > 1 && chapter <= t->chapter_count)
         from = (uint64_t)(s->pl.chapters[t->first_chapter + chapter - 1].pts - t->start_pts) * 100 / 9;
     printf("  \"%s\", %.1f s\n", t->name, (len - from) / 1e6);
-    /* replaying the title that plays is a jump within it: no first-chapter delay (src/app/disc.c) */
-    s->title_start = s->st.playing && s->st.playlist == playlist ? s->now - 1500000 : s->now;
     s->st.playing = 1;
     s->st.paused = 0;
     s->st.playlist = playlist;
@@ -206,6 +204,7 @@ static void sim_play(void *user, int playlist, int chapter, int audio, int subti
     s->st.audio = audio;
     s->st.subtitle = subtitle;
     s->title_end = s->now + (len > from ? len - from : 0);
+    s->title_start = s->now;
     s->start_chapter = chapter > 1 && chapter <= t->chapter_count ? chapter : 1;
     s->last_chapter = 0;
     s->events_done = from;
@@ -421,7 +420,7 @@ static int run_disc(int argc, char **argv)
                 }
             }
             if (fired) {
-            } else if (ch != s.last_chapter && (s.last_chapter || s.now >= s.title_start + 1500000 || s.now >= s.title_end)) {   /* as src/app/disc.c: FIRST_CHAPTER_US */
+            } else if (ch != s.last_chapter && s.now >= s.title_start + 100000 && (!menu_locked(m) || s.now >= s.title_end)) {   /* as src/app/disc.c: after the first picture, not while locked */
                 if (!s.last_chapter)
                     ch = s.start_chapter;    /* the first event is the chapter it started in */
                 else if (ch > s.last_chapter + 1)
