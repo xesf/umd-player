@@ -92,6 +92,8 @@ typedef struct media {
     int disc, state;
     uint64_t used;
     uint8_t *bg;                     /* UI_W x UI_H RGBA, darkened and opaque, or NULL */
+    uint8_t *pic0;                   /* PIC0.PNG, RGBA pic0_w x pic0_h, or NULL */
+    int pic0_w, pic0_h;
     icon_video *icon;                /* or NULL */
     uint8_t *snd;
     uint32_t snd_size;
@@ -117,6 +119,8 @@ struct library {
     uint64_t use_clock;
 
     const uint8_t *bg;
+    const uint8_t *pic0;             /* the shown disc's title image, and its size */
+    int pic0_w, pic0_h;
     const icon_video *icon;
 
     /* The icon decoder stays open while browsing; a switch only flushes it. */
@@ -655,6 +659,7 @@ static media *find_media(library *l, int disc)
 static void free_media(media *m)
 {
     free(m->bg);
+    free(m->pic0);
     free_icon(m->icon);
     free(m->snd);
     memset(m, 0, sizeof(*m));
@@ -672,6 +677,12 @@ static void read_media(const lib_disc *disc, media *m)
         return;
     if ((buf = disc_read(&d, "UMD_VIDEO/PIC1.PNG", &size, 2 * 1024 * 1024)) != NULL) {
         m->bg = make_background(buf, size);
+        free(buf);
+    }
+    /* The title image the PSP draws over PIC1 beside the selected disc: Bobbito's Basics to
+       Boogie and Jamie Foxx keep their titles out of PIC1 and put them here. */
+    if ((buf = disc_read(&d, "UMD_VIDEO/PIC0.PNG", &size, 512 * 1024)) != NULL) {
+        m->pic0 = decode_png(buf, size, &m->pic0_w, &m->pic0_h, 512, 512);
         free(buf);
     }
     if ((buf = disc_read(&d, "UMD_VIDEO/ICON1.PMF", &size, PMF_MAX)) != NULL) {
@@ -883,6 +894,7 @@ static void clear_media(library *l)
     drop_frames(l);
     l->icon = NULL;
     l->bg = NULL;
+    l->pic0 = NULL;
     plat_mutex_lock(l->lock);
     l->snd = NULL;
     plat_mutex_unlock(l->lock);
@@ -925,6 +937,9 @@ static int load_media(library *l)
 
     l->ui_dirty = 1;
     l->bg = m->bg;
+    l->pic0 = m->pic0;
+    l->pic0_w = m->pic0_w;
+    l->pic0_h = m->pic0_h;
     icon = m->icon;
     if (icon && l->video && (l->video_w != icon->sps.width || l->video_h != icon->sps.height)) {
         plat_video_close(l->video);
@@ -1108,6 +1123,11 @@ static void draw_ui(library *l)
     canvas *c = &l->ui;
 
     draw_background(l);
+    /* PIC0 at twice its size (the PSP's 480x272 screen doubled), right of the icon; the info
+       panel and the settings take its place when open. */
+    if (l->pic0 && !l->show_info && !l->settings_open)
+        canvas_blit(c, l->pic0, l->pic0_w, l->pic0_h, l->pic0_w * 4, UI_W - 2 * l->pic0_w - 10,
+                    (UI_H - 2 * l->pic0_h) / 2, 2 * l->pic0_w, 2 * l->pic0_h);
 
     /* Neighbours: icons only, one above and two below. */
     for (int k = -1; k <= 2; k++) {
