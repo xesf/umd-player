@@ -149,7 +149,7 @@ typedef struct sim {
     iso_volume vol;
     umdv_playlist pl;
     menu_status st;
-    uint64_t now, title_end, title_start;  /* virtual time, us */
+    uint64_t now, title_end, title_start, seek_until;  /* virtual time, us */
     int start_chapter;
     int ready_page;           /* the active page with buttons last reported as READY, or -1 */
     uint64_t chapter_at[64];
@@ -197,6 +197,16 @@ static void sim_play(void *user, int playlist, int chapter, int audio, int subti
     if (chapter > 1 && chapter <= t->chapter_count)
         from = (uint64_t)(s->pl.chapters[t->first_chapter + chapter - 1].pts - t->start_pts) * 100 / 9;
     printf("  \"%s\", %.1f s\n", t->name, (len - from) / 1e6);
+    {
+        /* as src/app/disc.c: a new title or a jump over 10 s waits 1 s for the drive's seek */
+        uint64_t seek = 1000000;
+        if (s->st.playing && s->st.playlist == playlist) {
+            uint64_t cur = s->title_end > s->now ? len - (s->title_end - s->now) : len;
+            if ((cur > from ? cur - from : from - cur) <= 10000000)
+                seek = 0;
+        }
+        s->seek_until = s->now + seek;
+    }
     s->st.playing = 1;
     s->st.paused = 0;
     s->st.playlist = playlist;
@@ -420,7 +430,8 @@ static int run_disc(int argc, char **argv)
                 }
             }
             if (fired) {
-            } else if (ch != s.last_chapter && s.now >= s.title_start + 100000 && (!menu_locked(m) || s.now >= s.title_end)) {   /* as src/app/disc.c: after the first picture, not while locked */
+            } else if (ch != s.last_chapter && s.now >= s.title_start + 100000 &&
+                       ((!menu_locked(m) && (s.last_chapter || s.now >= s.seek_until)) || s.now >= s.title_end)) {   /* as src/app/disc.c */
                 if (!s.last_chapter)
                     ch = s.start_chapter;    /* the first event is the chapter it started in */
                 else if (ch > s.last_chapter + 1)

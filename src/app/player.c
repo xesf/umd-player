@@ -1400,14 +1400,14 @@ const char *player_next_event(player *p, uint32_t *data)
     return NULL;
 }
 
-void player_restart(player *p, int chapter)
+uint64_t player_restart(player *p, int chapter)
 {
-    uint64_t start;
+    uint64_t start, from = player_position(p);
 
     if (chapter <= 1 && p->item != 0) {
         stop_reader(p);
         if (load_item(p, 0) < 0 || alloc_audio_queues(p) < 0)
-            return;
+            return UINT64_MAX;
     }
     start = p->title->start_pts;
 
@@ -1415,6 +1415,7 @@ void player_restart(player *p, int chapter)
         start = p->playlist.chapters[p->title->first_chapter + chapter - 1].pts;
     p->ended = 0;
     restart_reader(p, start, p->want_audio, p->sub_sub);
+    return start > from ? start - from : from - start;
 }
 
 void player_set_audio(player *p, int audio)

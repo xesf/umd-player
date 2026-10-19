@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fixed The Goonies' scene preview staying covered after moving to another scene.
 - Fixed Stargate's menu transition: the white bands span the screen and open to the top and bottom bars.
 - Fixed Batman's carousel items tilting or turning upside down as the carousel turns.
 

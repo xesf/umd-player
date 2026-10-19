@@ -16,6 +16,8 @@
 #define UNITS_W     854.0f
 #define UNITS_H     480.0f
 #define QUIT_HOLD   1500000          /* us Circle is held to leave the disc */
+#define SEEK_US     1000000          /* a UMD drive's seek to another place: first onChapter waits */
+#define SEEK_NEAR   (10 * 90000)     /* a jump this short (90 kHz) is no seek */
 #define STATE_MAX   4096
 
 struct disc {
@@ -28,6 +30,7 @@ struct disc {
     int last_chapter;
     int first_chapter;        /* the chapter playback started in, 0 until it started */
     int catching_up;          /* reporting the chapters passed during the first event's delay */
+    uint64_t seek_until;      /* the first chapter event of a title waits until then */
     int end_sent;             /* menu_playlist_ended was called for pl */
     /* what stop() left, for resume() */
     int stopped_title, stopped_audio, stopped_sub;
@@ -93,6 +96,7 @@ static void start(disc *d, int title, int chapter, uint64_t pos)
     d->first_chapter = 0;
     d->catching_up = 0;
     d->end_sent = 0;
+    d->seek_until = plat_time_us() + SEEK_US;
     if (!d->pl) {
         plat_log("disc: cannot play title %d\n", title);
         return;
@@ -141,11 +145,14 @@ static void d_play(void *user, int playlist, int chapter, int audio, int subtitl
     d->menu_video = menu_mode;
     /* The same title again (a looping menu video): restart it in place, which is quick. */
     if (d->pl && d->title == playlist && audio == d->audio && subtitle == d->subtitle) {
-        player_restart(d->pl, chapter);
+        /* A jump far into the title is a seek; a short one (Monty Python loops a 0.3 s chapter
+           of its menu video) is not, and its chapters come at once. */
+        uint64_t jump = player_restart(d->pl, chapter);
         d->last_chapter = 0;
         d->first_chapter = 0;
         d->catching_up = 0;
         d->end_sent = 0;
+        d->seek_until = jump > SEEK_NEAR ? plat_time_us() + SEEK_US : 0;
         return;
     }
     d->audio = audio;
@@ -419,11 +426,12 @@ int disc_update(disc *d, uint32_t pressed)
     /* Playback events, before the menus run this frame. */
     if (d->pl) {
         int ch = player_chapter(d->pl), ended = player_title_ended(d->pl), first = d->last_chapter == 0;
-        /* Once a picture is out, and not while an animation locks the menus (or just before the
-           title ends): Austin Powers covers its scene preview as it starts one and uncovers it
-           in onChapter; The Goonies ignores onChapter until its scene page has finished
-           opening, under a lock. A PSP's drive is still seeking by then. */
-        int due = ended || !menu_locked(d->m);
+        /* Once a picture is out, after the drive's seek to a new title or a far chapter, and
+           not while an animation locks the menus (or just before the title ends): Austin
+           Powers covers its scene preview as it starts one and uncovers it in onChapter; The
+           Goonies ignores onChapter until its scene page has finished opening, under a lock,
+           and until a new scene's 0.5 s animation has ended. */
+        int due = ended || (!menu_locked(d->m) && (!first || plat_time_us() >= d->seek_until));
         if (!d->first_chapter && player_started(d->pl))
             d->first_chapter = ch;
         if (ch != d->last_chapter && !due)
