@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fixed Viva La Bam's and Wildboyz's menus ignoring input for 18 s after a choice, and freezing after returning from the movie.
 - Fixed The Goonies' scene preview staying covered after moving to another scene.
 - Fixed Stargate's menu transition: the white bands span the screen and open to the top and bottom bars.
 - Fixed Batman's carousel items tilting or turning upside down as the carousel turns.

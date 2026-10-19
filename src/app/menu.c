@@ -1769,7 +1769,9 @@ int menu_update(menu *m, uint32_t pressed, uint32_t held, uint64_t now_us)
     m->lock = 0;
     for (int i = 0; i < MAX_RUNS; i++) {
         const anim_run *run = &m->runs[i];
-        int page = run->target >= 0 ? page_of(m->res, run->target) : -1, open = run->target < 0;
+        /* An animation played on no widget locks nothing: Viva La Bam and Wildboyz call
+           slowPSP.play(this) from a plain function, which would stop input for 18 s. */
+        int page = run->target >= 0 ? page_of(m->res, run->target) : -1, open = 0;
         for (int p = 0; p < m->res->page_count && !open; p++)
             open = m->res->pages[p] == page;
         m->lock += run->active && run->locked && open;
@@ -1804,7 +1806,17 @@ int menu_active_page(const menu *m)
 
 int menu_locked(const menu *m)
 {
-    return m->lock > 0;
+    /* Only a lock that is about to end: Jackass, Wildboyz and Viva La Bam park input behind a
+       15-day delay that the script ends when onChapter opens the next page, so holding chapter
+       events for it would wait for ever. */
+    if (m->lock <= 0)
+        return 0;
+    for (int i = 0; i < MAX_RUNS; i++) {
+        const anim_run *run = &m->runs[i];
+        if (run->active && run->locked && run->target >= 0 && run->wait_until < m->now + 5000000)
+            return 1;
+    }
+    return 0;
 }
 
 int menu_has_focus(const menu *m)
