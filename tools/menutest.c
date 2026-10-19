@@ -400,10 +400,11 @@ static int run_disc(int argc, char **argv)
             const umdv_title *t = &s.pl.titles[s.st.playlist - 1];
             uint64_t left = s.title_end > s.now ? s.title_end - s.now : 0;
             uint64_t pos = (uint64_t)(t->end_pts - t->start_pts) * 100 / 9 - left;
-            int ch = 1, fired = 0;
+            int ch = 1, fired = 0, real_ch;
             for (int k = 1; k < t->chapter_count; k++)
                 if ((uint64_t)(s.pl.chapters[t->first_chapter + k].pts - t->start_pts) * 100 / 9 <= pos)
                     ch = k + 1;
+            real_ch = ch;
             for (int k = 0; k < t->event_count; k++) {
                 const umdv_chapter *ev = &s.pl.events[t->first_event + k];
                 uint64_t at = (uint64_t)(ev->pts - t->start_pts) * 100 / 9;
@@ -419,14 +420,17 @@ static int run_disc(int argc, char **argv)
             } else if (ch != s.last_chapter && (s.last_chapter || s.now >= s.title_start + 1500000 || s.now >= s.title_end)) {   /* as src/app/disc.c: FIRST_CHAPTER_US */
                 if (!s.last_chapter)
                     ch = s.start_chapter;    /* the first event is the chapter it started in */
+                else if (ch > s.last_chapter + 1)
+                    ch = s.last_chapter + 1; /* then each chapter passed since, in order */
                 const umdv_chapter *mk = &s.pl.chapters[t->first_chapter + ch - 1];
                 s.last_chapter = ch;
                 s.st.chapter = ch;
                 snprintf(s.st.mark_name, sizeof(s.st.mark_name), "%s", mk->name);
                 s.st.mark_data = mk->data;
                 menu_chapter_changed(m, ch);
+                fired = 1;                   /* the handler may have stopped the title */
             }
-            if (!fired && s.now >= s.title_end) {
+            if (!fired && s.now >= s.title_end && real_ch == s.last_chapter) {   /* every chapter reported first */
                 int pl = s.st.playlist;
                 printf("%8.2f s  END title %d\n", s.now / 1e6, pl);
                 s.st.playing = 0;            /* playlist stays: the scripts ask which one ended */

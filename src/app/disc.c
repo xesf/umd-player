@@ -29,6 +29,7 @@ struct disc {
     int last_chapter;
     uint64_t opened_us;       /* when the title was opened or restarted */
     int first_chapter;        /* the chapter playback started in, 0 until it started */
+    int catching_up;          /* reporting the chapters passed during the first event's delay */
     int end_sent;             /* menu_playlist_ended was called for pl */
     /* what stop() left, for resume() */
     int stopped_title, stopped_audio, stopped_sub;
@@ -92,6 +93,7 @@ static void start(disc *d, int title, int chapter, uint64_t pos)
     d->title = title;
     d->last_chapter = 0;
     d->first_chapter = 0;
+    d->catching_up = 0;
     d->opened_us = plat_time_us();
     d->end_sent = 0;
     if (!d->pl) {
@@ -145,6 +147,7 @@ static void d_play(void *user, int playlist, int chapter, int audio, int subtitl
         player_restart(d->pl, chapter);
         d->last_chapter = 0;
         d->first_chapter = 0;
+    d->catching_up = 0;
         d->opened_us = plat_time_us();
         d->end_sent = 0;
         return;
@@ -432,9 +435,14 @@ int disc_update(disc *d, uint32_t pressed)
            whose chapter 2 starts at 1 s. */
         if (first && d->first_chapter)
             ch = d->first_chapter;
-        if (ch != d->last_chapter && (!ended || first) && player_started(d->pl) && due) {
+        else if (d->catching_up && ch > d->last_chapter + 1)
+            ch = d->last_chapter + 1;
+        if (ch != d->last_chapter && player_started(d->pl) && due) {
+            d->catching_up = first;
             d->last_chapter = ch;
             menu_chapter_changed(d->m, ch);
+        } else if (ch == d->last_chapter) {
+            d->catching_up = 0;
         }
     }
     if (d->pl && !player_title_ended(d->pl)) {
@@ -446,7 +454,9 @@ int disc_update(disc *d, uint32_t pressed)
             menu_mark_reached(d->m, name, data);
         }
     }
-    if (d->pl && player_title_ended(d->pl) && !d->end_sent) {
+    /* The end once every chapter passed has been reported: The Clone Wars opens its menu at
+       chapter 2 of a one-second black title. */
+    if (d->pl && player_title_ended(d->pl) && !d->end_sent && player_chapter(d->pl) == d->last_chapter) {
         d->end_sent = 1;
         menu_playlist_ended(d->m, d->title);
     }
