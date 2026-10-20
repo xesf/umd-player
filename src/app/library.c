@@ -837,9 +837,20 @@ static void draw_info(library *l)
     int x = PANEL_X + 16, y = BIG_Y, tx = x + 2 * ICON_SIZE + 8, w = 300;
     char title[96], title2[96], at[16], total[16], line[48];
     int bw = osd_button_width(ICON_BUTTON_CROSS, 2), lines;
+    /* A disc with no icon and no PIC0 (Monster Hunter Portable Rookie's Guide) would show only
+       the backdrop: its title stands beside the icon, as the Select panel shows it. */
+    int bare = !d->icon0 && !l->icon && !l->pic0 && !l->settings_open;
 
-    if (!l->show_info)
+    if (!l->show_info && !bare)
         return;
+    if (!l->show_info) {
+        lines = wrap_title(d->title, title, title2, sizeof(title), PANEL_W - 32);
+        canvas_round_darken(c, PANEL_X, BIG_Y, PANEL_W, 2 * ICON_H, BIG_R, 90);
+        canvas_text(c, x, y + ICON_H - 8 - (lines - 1) * 11, 2, RGBA(255, 255, 255, 255), title);
+        if (lines > 1)
+            canvas_text(c, x, y + ICON_H - 8 - (lines - 1) * 11 + 22, 2, RGBA(255, 255, 255, 255), title2);
+        return;
+    }
     if (d->incomplete)
         canvas_text(&l->ui, x, y + 2 * ICON_H - 16, 1, RGBA(255, 120, 100, 255),
                     "Incomplete image: some videos are missing");

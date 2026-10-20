@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Library: a disc without an icon or title image shows its title beside the icon, as the Select panel does (Monster Hunter Portable Rookie's Guide).
+
 ## v0.7.2 (2026-10-20)
 
 - Fixed The Goonies' spoken languages drawing twice the size of its subtitles.
