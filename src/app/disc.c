@@ -154,8 +154,18 @@ static void d_play(void *user, int playlist, int chapter, int audio, int subtitl
         }
     }
     d->menu_video = menu_mode;
-    /* The same title again (a looping menu video): restart it in place, which is quick. */
-    if (d->pl && d->title == playlist && audio == d->audio && subtitle == d->subtitle) {
+    /* The same title again (a looping menu video): restart it in place, which is quick, with
+       its new audio and subtitles. Reopening it took a few frames on the Vita: The Transporter
+       loops its menu video with the second audio track. */
+    if (d->pl && d->title == playlist) {
+        if (audio != d->audio) {
+            d->audio = audio;
+            player_set_audio(d->pl, audio);
+        }
+        if (subtitle != d->subtitle) {
+            d->subtitle = subtitle;
+            player_set_subtitle(d->pl, to_substream(subtitle));
+        }
         /* A jump far into the title is a seek; a short one (Monty Python loops a 0.3 s chapter
            of its menu video) is not, and its chapters come at once. */
         uint64_t jump = player_restart(d->pl, chapter);
@@ -542,6 +552,10 @@ int disc_update(disc *d, uint32_t pressed)
     d->perf.draw += t2 - t1;
     d->perf.scan += t3 - t2;
     d->perf.player += plat_time_us() - t4;
+    /* A frame over 40 ms (two refreshes and more): what it was spent on. */
+    if (plat_time_us() - t0 > 40000)
+        plat_log("perf: slow frame %.0f ms: %.0f ms scripts, %.0f ms drawing, %.0f ms player\n",
+                 (plat_time_us() - t0) / 1000.0, (t1 - t0) / 1000.0, (t2 - t1) / 1000.0, (plat_time_us() - t4) / 1000.0);
     if (++d->perf.frames, plat_time_us() - d->perf.since >= 5000000) {
         double secs = (double)(plat_time_us() - d->perf.since) / 1e6, n = d->perf.frames;
         plat_log("perf: %.1f frames/s, %d menu draws; per frame %.1f ms scripts, %.1f ms drawing, %.1f ms layer check, "
