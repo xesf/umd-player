@@ -31,6 +31,12 @@ struct disc {
     int first_chapter;        /* the chapter playback started in, 0 until it started */
     int catching_up;          /* reporting the chapters passed during the first event's delay */
     int reporting;            /* the chapter whose onChapter runs: what getPlayerStatus says */
+    /* Where a frame's time goes, logged every 5 s: the menus' scripts and animations, their
+       drawing, the check for a drawn layer, and the player (decoding and presenting). */
+    struct {
+        uint64_t since, script, draw, scan, player;
+        int frames, draws;
+    } perf;
     uint64_t seek_until;      /* the first chapter event of a title waits until then */
     int end_sent;             /* menu_playlist_ended was called for pl */
     /* what stop() left, for resume() */
@@ -484,16 +490,23 @@ int disc_update(disc *d, uint32_t pressed)
         pressed &= over_movie ? ~(uint32_t)(PLAT_BTN_CIRCLE | PLAT_BTN_TRIANGLE) : ~(uint32_t)PLAT_BTN_TRIANGLE;
     }
 
-    if (!menu_update(d->m, menu_focus ? pressed : 0, menu_focus ? held : 0, plat_time_us())) {
+    uint64_t t0 = plat_time_us(), t1, t2, t3, t4;
+    if (!d->perf.since)
+        d->perf.since = t0;
+    if (!menu_update(d->m, menu_focus ? pressed : 0, menu_focus ? held : 0, t0)) {
         d->menus_ended = 1;
         return 0;
     }
+    t1 = t2 = t3 = plat_time_us();
     /* The menu layer before the player draws, so a frame never shows with the last frame's
        layer (it decides between Fit and the user's screen mode). */
     if (menu_dirty(d->m)) {
         menu_draw(d->m, &d->layer);
+        t2 = plat_time_us();
         d->layer_shown = layer_has_pixels(&d->layer);
+        t3 = plat_time_us();
         d->layer_id++;
+        d->perf.draws++;
     }
     if (d->pl)
         player_set_layer(d->pl, d->layer_shown ? d->layer.rgba : NULL, d->layer.w, d->layer.h, d->layer.stride,
@@ -508,10 +521,22 @@ int disc_update(disc *d, uint32_t pressed)
         player_set_touch(d->pl, !(menu_focus || menus_take_input(d)));
     /* A press the menus took this frame is theirs, even if it closed their page: the Cross
        that picks a scene would otherwise also pause the movie it starts. */
+    t4 = plat_time_us();
     if (d->pl && !player_update(d->pl, menu_focus || menus_take_input(d) ? 0 : pressed)) {
         /* The player only stops by itself on an error. */
         player_close(d->pl);
         d->pl = NULL;
+    }
+    d->perf.script += t1 - t0;
+    d->perf.draw += t2 - t1;
+    d->perf.scan += t3 - t2;
+    d->perf.player += plat_time_us() - t4;
+    if (++d->perf.frames, plat_time_us() - d->perf.since >= 5000000) {
+        double secs = (double)(plat_time_us() - d->perf.since) / 1e6, n = d->perf.frames;
+        plat_log("perf: %.1f frames/s, %d menu draws; per frame %.1f ms scripts, %.1f ms drawing, %.1f ms layer check, "
+                 "%.1f ms player\n", n / secs, d->perf.draws, d->perf.script / n / 1000, d->perf.draw / n / 1000,
+                 d->perf.scan / n / 1000, d->perf.player / n / 1000);
+        memset(&d->perf, 0, sizeof(d->perf));
     }
     if (d->pl) {
         /* nothing more: the player presents the layer */
