@@ -221,10 +221,26 @@ static void composite(uint8_t *out, const plat_present_info *info)
                     d[q] = (uint8_t)((p[q] * s->color[q] * al + d[q] * (255 - al)) / 255);
             }
     }
+    /* the ui layer as the Vita keeps it: only the changed rows copied when it has the version
+       they changed from */
+    static uint8_t copy[960 * 544 * 4];
+    static uint32_t copy_id;
+    static int copy_valid;
+    if (info->ui_rgba && (!copy_valid || copy_id != info->ui_id)) {
+        int from = 0, to = 544;
+        if (copy_valid && copy_id == info->ui_prev_id && info->ui_rows_to > info->ui_rows_from) {
+            from = info->ui_rows_from;
+            to = info->ui_rows_to;
+        }
+        for (int y = from; y < to; y++)
+            memcpy(copy + (size_t)y * 960 * 4, info->ui_rgba + (size_t)y * info->ui_stride, 960 * 4);
+        copy_id = info->ui_id;
+        copy_valid = 1;
+    }
     if (info->ui_rgba)
         for (int y = 0; y < 544; y++)
             for (int x = 0; x < 960; x++) {
-                const uint8_t *p = info->ui_rgba + (size_t)y * info->ui_stride + (size_t)x * 4;
+                const uint8_t *p = copy + ((size_t)y * 960 + x) * 4;
                 uint8_t *d = out + ((size_t)y * 960 + x) * 4;
                 for (int q = 0; q < 3; q++)
                     d[q] = (uint8_t)((p[q] * p[3] + d[q] * (255 - p[3])) / 255);

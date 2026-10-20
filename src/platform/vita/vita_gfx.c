@@ -26,7 +26,8 @@
 #define VERTICES       12             /* 4 per layer: video, subtitle, UI */
 #define SPRITES_MAX    512            /* menu pictures drawn in one frame */
 #define TEX_CACHE      384            /* menu pictures kept in GPU memory */
-#define TEX_IDLE       300            /* frames unused before a picture's copy is freed */
+#define TEX_IDLE       300            /* frames unused before a picture's copy is dropped */
+#define TEX_SPARE      8              /* dropped copies whose memory is kept for the next */
 
 typedef struct vertex {
     float x, y, z;
@@ -44,7 +45,7 @@ static vertex *sprite_vertices;
 
 /* A menu picture in GPU memory. */
 typedef struct sprite_tex {
-    uint32_t id;              /* 0: free */
+    uint32_t id;              /* 0: free; mem, if set, is kept for the next picture that fits */
     SceUID uid;
     void *mem;
     SceSize size;
@@ -261,7 +262,8 @@ int vita_gfx_init(void)
 
 /* Copies an RGBA image into GPU memory with rows 8-pixel aligned, as linear textures need.
    Only when its id changed. */
-static int upload(layer_tex *t, const uint8_t *rgba, int w, int h, int stride, uint32_t id)
+static int upload(layer_tex *t, const uint8_t *rgba, int w, int h, int stride, uint32_t id, uint32_t prev_id, int from,
+                  int to)
 {
     int row;
 
@@ -269,8 +271,14 @@ static int upload(layer_tex *t, const uint8_t *rgba, int w, int h, int stride, u
         return 0;
     if (w > t->max_w || h > t->max_h)
         return -1;
+    /* Only the rows that changed, when the copy here is the version they changed from: the
+       library's front layer, 2 MB, took 16 ms to copy whole. */
+    if (!(t->valid && t->id == prev_id && t->w == w && t->h == h && to > from)) {
+        from = 0;
+        to = h;
+    }
     row = ALIGN(w, 8) * 4;
-    for (int y = 0; y < h; y++)
+    for (int y = from < 0 ? 0 : from; y < h && y < to; y++)
         memcpy(t->mem + (size_t)y * row, rgba + (size_t)y * stride, (size_t)w * 4);
     t->w = w;
     t->h = h;
@@ -324,7 +332,7 @@ static void free_tex(sprite_tex *t)
    longest. Returns NULL if there is no room. */
 static sprite_tex *sprite_texture(const plat_sprite *s)
 {
-    sprite_tex *slot = NULL;
+    sprite_tex *slot = NULL, *spare = NULL;
     SceSize size = ALIGN((SceSize)ALIGN(s->w, 8) * (SceSize)s->h * 4, 4096);
     void *base = NULL;
     SceUID uid;
@@ -336,29 +344,40 @@ static sprite_tex *sprite_texture(const plat_sprite *s)
         }
     if (s->w <= 0 || s->h <= 0 || s->w > 4096 || s->h > 4096)
         return NULL;
+    /* Kept memory that fits, the smallest; else an empty slot; else the copy unused longest.
+       Allocating and mapping a block for each new background took longer than the copy. */
     for (int i = 0; i < TEX_CACHE; i++)
-        if (!texes[i].id || texes[i].used != frame_no) {
-            if (!texes[i].id) {
-                slot = &texes[i];
-                break;
+        if (!texes[i].id && texes[i].mem && texes[i].size >= size && (!spare || texes[i].size < spare->size))
+            spare = &texes[i];
+    if (spare) {
+        slot = spare;
+        base = slot->mem;
+        uid = slot->uid;
+    } else {
+        for (int i = 0; i < TEX_CACHE; i++)
+            if (!texes[i].id || texes[i].used != frame_no) {
+                if (!texes[i].id && !texes[i].mem) {
+                    slot = &texes[i];
+                    break;
+                }
+                if (!slot || (texes[i].id ? texes[i].used : 0) < (slot->id ? slot->used : 0))
+                    slot = &texes[i];
             }
-            if (!slot || texes[i].used < slot->used)
-                slot = &texes[i];
+        if (!slot)
+            return NULL;
+        if (slot->mem)
+            free_tex(slot);
+        uid = sceKernelAllocMemBlock("menu", SCE_KERNEL_MEMBLOCK_TYPE_USER_RW_UNCACHE, size, NULL);
+        if (uid < 0 || sceKernelGetMemBlockBase(uid, &base) < 0) {
+            static int told;
+            if (!told++)
+                plat_log("gfx: no memory for a %dx%d menu picture\n", s->w, s->h);
+            return NULL;
         }
-    if (!slot)
-        return NULL;
-    if (slot->id)
-        free_tex(slot);
-    uid = sceKernelAllocMemBlock("menu", SCE_KERNEL_MEMBLOCK_TYPE_USER_RW_UNCACHE, size, NULL);
-    if (uid < 0 || sceKernelGetMemBlockBase(uid, &base) < 0) {
-        static int told;
-        if (!told++)
-            plat_log("gfx: no memory for a %dx%d menu picture\n", s->w, s->h);
-        return NULL;
-    }
-    if (sceGxmMapMemory(base, size, SCE_GXM_MEMORY_ATTRIB_READ) < 0) {
-        sceKernelFreeMemBlock(uid);
-        return NULL;
+        if (sceGxmMapMemory(base, size, SCE_GXM_MEMORY_ATTRIB_READ) < 0) {
+            sceKernelFreeMemBlock(uid);
+            return NULL;
+        }
     }
     {
         uint64_t t0 = plat_time_us(), took;
@@ -370,7 +389,8 @@ static sprite_tex *sprite_texture(const plat_sprite *s)
     slot->id = s->id;
     slot->uid = uid;
     slot->mem = base;
-    slot->size = size;
+    if (!spare)
+        slot->size = size;
     slot->used = frame_no;
     return slot;
 }
@@ -439,7 +459,8 @@ int vita_gfx_present(const uint8_t *image, int image_w, int image_h, int pic_x, 
         draw(fprog, &tex, &vertices[0]);
     }
     if (image && info->overlay_rgba &&
-        upload(&sub_tex, info->overlay_rgba, info->overlay_w, info->overlay_h, info->overlay_stride, info->overlay_id) == 0 &&
+        upload(&sub_tex, info->overlay_rgba, info->overlay_w, info->overlay_h, info->overlay_stride, info->overlay_id, 0, 0,
+               0) == 0 &&
         layer_texture(&tex, &sub_tex) == 0) {
         quad(&vertices[4], info->overlay_dst, 0, 0, 1, 1);
         draw(fprog_blend, &tex, &vertices[4]);
@@ -447,17 +468,25 @@ int vita_gfx_present(const uint8_t *image, int image_w, int image_h, int pic_x, 
     if (info->ui_sprites && info->ui_sprite_count > info->ui_sprites_below)
         draw_sprites(info->ui_sprites + info->ui_sprites_below, info->ui_sprite_count - info->ui_sprites_below,
                      info->ui_sprites_below);
-    if (info->ui_rgba && upload(&ui_tex, info->ui_rgba, info->ui_w, info->ui_h, info->ui_stride, info->ui_id) == 0 &&
+    if (info->ui_rgba && upload(&ui_tex, info->ui_rgba, info->ui_w, info->ui_h, info->ui_stride, info->ui_id, info->ui_prev_id,
+                                 info->ui_rows_from, info->ui_rows_to) == 0 &&
         layer_texture(&tex, &ui_tex) == 0) {
         quad(&vertices[8], (plat_rect){0, 0, 1, 1}, 0, 0, 1, 1);
         draw(fprog_blend, &tex, &vertices[8]);
     }
     sceGxmEndScene(context, NULL, NULL);
     sceGxmFinish(context);
-    /* The GPU is done with this frame: free the copies of pictures no longer drawn. */
-    for (int i = 0; i < TEX_CACHE; i++)
-        if (texes[i].id && frame_no - texes[i].used > TEX_IDLE)
-            free_tex(&texes[i]);
+    /* The GPU is done with this frame: drop the copies of pictures no longer drawn, keeping a
+       few blocks of memory for the next pictures. */
+    {
+        int spares = 0;
+        for (int i = 0; i < TEX_CACHE; i++) {
+            if (texes[i].id && frame_no - texes[i].used > TEX_IDLE)
+                texes[i].id = 0;
+            if (!texes[i].id && texes[i].mem && ++spares > TEX_SPARE)
+                free_tex(&texes[i]);
+        }
+    }
 
     memset(&fb, 0, sizeof(fb));
     fb.size = sizeof(fb);

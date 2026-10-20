@@ -132,6 +132,11 @@ typedef struct plat_present_info {
        over it; ui_rgba, if any, goes over them all. */
     const plat_sprite *ui_sprites;
     int ui_sprite_count, ui_sprites_below;
+    /* When ui_rgba changed only in rows ui_rows_from to ui_rows_to - 1 since the version with
+       id ui_prev_id: a platform that still has that version may copy just those rows. 0 and 0
+       for no such promise. */
+    uint32_t ui_prev_id;
+    int ui_rows_from, ui_rows_to;
 } plat_present_info;
 
 /* Draws the layers, or a black screen with only the UI when frame is NULL. The app calls it

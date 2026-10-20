@@ -98,6 +98,7 @@ typedef struct media {
     uint8_t *pic0;                   /* PIC0.PNG, RGBA pic0_w x pic0_h, or NULL */
     int pic0_w, pic0_h;
     icon_video *icon;                /* or NULL */
+    uint32_t bg_id, pic0_id;         /* the pictures' ids for the GPU while this entry lives */
     uint8_t *snd;
     uint32_t snd_size;
 } media;
@@ -141,6 +142,8 @@ struct library {
     plat_sprite sprites[8];
     uint32_t bg_id, pic0_id;
     unsigned char front_key[2048];
+    uint8_t *front_prev;             /* the front layer as last handed over, for its changed rows */
+    int front_valid;                 /* front_prev is what the platform was last given */
     /* Where a browsing frame's time goes, logged every 5 s (see library_update). */
     struct {
         uint64_t since, draw, media, icon, present;
@@ -680,6 +683,8 @@ static media *find_media(library *l, int disc)
     return NULL;
 }
 
+static uint32_t lib_id(void);
+
 static void free_media(media *m)
 {
     free(m->bg);
@@ -974,7 +979,13 @@ static int load_media(library *l)
     l->ui_dirty = 1;
     l->bg = m->bg;
     l->pic0 = m->pic0;
-    l->bg_id = l->pic0_id = 0;       /* new pictures: new GPU copies */
+    /* The GPU's copies stay with the cache entry: back on a disc, nothing is copied again. */
+    if (m->bg && !m->bg_id)
+        m->bg_id = lib_id();
+    if (m->pic0 && !m->pic0_id)
+        m->pic0_id = lib_id();
+    l->bg_id = m->bg_id;
+    l->pic0_id = m->pic0_id;
     l->pic0_w = m->pic0_w;
     l->pic0_h = m->pic0_h;
     icon = m->icon;
@@ -1313,19 +1324,43 @@ static void draw_ui_sprites(library *l)
         if (k != 0 && i >= 0 && i < l->count)
             add_icon(l, &l->discs[i], SMALL_X, y, ICON_W, ICON_H);
     }
-    if (!l->icon)
+    if (!l->icon || !l->shown)
         add_icon(l, &l->discs[l->sel], BIG_X, BIG_Y, 2 * ICON_W, 2 * ICON_H);
 
     front_key(l, key, sizeof(key));
     if (memcmp(key, l->front_key, sizeof(key)) != 0 || !l->info.ui_rgba) {
+        size_t row = (size_t)l->ui.stride;
+        int from = 0, to = 0;
         memcpy(l->front_key, key, sizeof(key));
-        memset(l->ui.rgba, 0, (size_t)l->ui.stride * l->ui.h);
+        memset(l->ui.rgba, 0, row * l->ui.h);
         draw_front(l);
-        l->info.ui_rgba = l->ui.rgba;
-        l->info.ui_w = l->ui.w;
-        l->info.ui_h = l->ui.h;
-        l->info.ui_stride = l->ui.stride;
-        l->info.ui_id++;
+        /* the rows that changed since the last version handed over */
+        if (!l->front_prev)
+            l->front_prev = calloc(row, (size_t)l->ui.h);
+        if (l->front_prev && l->front_valid) {
+            from = l->ui.h;
+            for (int y = 0; y < l->ui.h; y++)
+                if (memcmp(l->ui.rgba + y * row, l->front_prev + y * row, row) != 0) {
+                    if (from > y)
+                        from = y;
+                    to = y + 1;
+                }
+        } else {
+            to = l->ui.h;
+        }
+        if (to > from) {
+            if (l->front_prev)
+                memcpy(l->front_prev + from * row, l->ui.rgba + from * row, (size_t)(to - from) * row);
+            l->info.ui_prev_id = l->front_valid ? l->info.ui_id : 0;
+            l->front_valid = l->front_prev != NULL;
+            l->info.ui_rows_from = from;
+            l->info.ui_rows_to = to;
+            l->info.ui_rgba = l->ui.rgba;
+            l->info.ui_w = l->ui.w;
+            l->info.ui_h = l->ui.h;
+            l->info.ui_stride = l->ui.stride;
+            l->info.ui_id++;
+        }
     }
     l->ui_dirty = 0;
 }
@@ -1339,6 +1374,7 @@ static void draw_ui(library *l)
         return;
     }
     l->info.ui_sprites = NULL;
+    l->info.ui_prev_id = 0;
     draw_background(l);
     /* PIC0 at twice its size (the PSP's 480x272 screen doubled), right of the icon; the info
        panel and the settings take its place when open. */
@@ -1428,10 +1464,10 @@ static int advance_icon(library *l)
         t = 0;
     }
     l->last_t = t;
-    /* Up to the first picture at once, then two access units an update (a field-coded icon
-       needs two a picture): decoding them all ahead took 50 ms on the Vita in the frame that
-       showed the icon. */
-    for (int budget = l->shown ? 2 : 8; budget > 0 && l->frame_count < FRAMES_AHEAD && l->au_next < v->au_count;
+    /* Two access units an update (a field-coded icon needs two a picture), the first picture
+       too: decoding up to it at once took 50 ms on the Vita. Until it comes, the library shows
+       the still icon. */
+    for (int budget = 2; budget > 0 && l->frame_count < FRAMES_AHEAD && l->au_next < v->au_count;
          budget--) {
         const icon_au *a = &v->aus[l->au_next++];
         plat_frame *f;
@@ -1456,6 +1492,8 @@ static int advance_icon(library *l)
         for (int i = 0; i < best; i++)
             plat_frame_release(l->frames[i].frame);
         plat_frame_release(l->shown);
+        if (!l->shown)
+            l->ui_dirty = 1;           /* the still icon makes way for the video */
         l->shown = l->frames[best].frame;
         memmove(&l->frames[0], &l->frames[best + 1], (size_t)(l->frame_count - best - 1) * sizeof(l->frames[0]));
         l->frame_count -= best + 1;
@@ -1721,6 +1759,8 @@ static void draw_loading(library *l)
     l->info.ui_stride = c->stride;
     l->info.ui_id++;
     l->info.ui_sprites = NULL;                /* the whole screen, drawn here */
+    l->info.ui_prev_id = 0;
+    l->front_valid = 0;
     memset(l->front_key, 0xFF, sizeof(l->front_key));
     plat_present(NULL, &l->info);
 }
@@ -1767,6 +1807,8 @@ static void draw_empty(library *l)
     l->info.ui_stride = c->stride;
     l->info.ui_id++;
     l->info.ui_sprites = NULL;                /* the whole screen, drawn here */
+    l->info.ui_prev_id = 0;
+    l->front_valid = 0;
     memset(l->front_key, 0xFF, sizeof(l->front_key));
     l->ui_dirty = 0;
 }
@@ -2009,6 +2051,7 @@ void library_close(library *l)
     plat_mutex_destroy(l->lock);
     free(l->at3p);
     free(l->ui.rgba);
+    free(l->front_prev);
     free(l);
 }
 
