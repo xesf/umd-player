@@ -82,6 +82,7 @@ typedef struct res {
     int *img_w, *img_h;
     uint8_t *img_fill;        /* the image is one colour: a fill that stretches to its widget */
     uint8_t *own_size;        /* per widget: draw the image at its own size (same_size_labels) */
+    uint8_t **occ;            /* per image: its 8x8 blocks with a visible pixel (see blit) */
     int pages[MAX_PAGES], page_count;   /* open pages, in drawing order */
     int active;               /* page that takes input, or -1 */
     int *focus;               /* per page: the focused button, or -1 */
@@ -1402,6 +1403,9 @@ static void free_res(res *r)
     vs_destroy(r->vm);
     for (int i = 0; r->rgba && i < r->r.image_count; i++)
         free(r->rgba[i]);
+    for (int i = 0; r->occ && i < r->r.image_count; i++)
+        free(r->occ[i]);
+    free(r->occ);
     free(r->rgba);
     free(r->img_w);
     free(r->img_h);
@@ -1446,9 +1450,10 @@ static res *load_res(menu *m, const char *name)
     r->img_h = calloc((size_t)r->r.image_count + 1, sizeof(int));
     r->img_fill = calloc((size_t)r->r.image_count + 1, 1);
     r->own_size = calloc((size_t)r->r.object_count + 1, 1);
+    r->occ = calloc((size_t)r->r.image_count + 1, sizeof(uint8_t *));
     r->vm = vs_create(r->r.script, r->r.script_size, vm_log, m);
     if (!r->w || !r->wref || !r->focus || !r->aref || !r->iref || !r->rgba || !r->img_w || !r->img_h || !r->img_fill ||
-        !r->own_size || !r->vm) {
+        !r->own_size || !r->occ || !r->vm) {
         free_res(r);
         return NULL;
     }
@@ -1891,6 +1896,14 @@ static const uint8_t *image_rgba(res *r, int i, int *w, int *h)
             r->img_fill[i] = (uint8_t)same;
             r->img_w[i] = iw;
             r->img_h[i] = ih;
+            /* Which 8x8 blocks have a visible pixel: the rings of The Transporter's dial are
+               500x500 images with 3% of them visible, and turning, reading them all missed the
+               Vita's caches at every pixel. */
+            if ((r->occ[i] = calloc((size_t)((iw + 7) / 8) * ((ih + 7) / 8), 1)) != NULL)
+                for (int y = 0; y < ih; y++)
+                    for (int x = 0; x < iw; x++)
+                        if (r->rgba[i][((size_t)y * iw + x) * 4 + 3])
+                            r->occ[i][(y / 8) * ((iw + 7) / 8) + x / 8] = 1;
         } else {
             free(r->rgba[i]);
             r->rgba[i] = NULL;
@@ -1943,6 +1956,7 @@ static void local_matrix(float out[3][3], const float *rot, const float *scale)
 typedef struct sprite {
     int widget;
     const uint8_t *img;
+    const uint8_t *occ;       /* the image's visible 8x8 blocks, or NULL */
     int iw, ih;
     float cx, cy, ex[2], ey[2], color[4], crop[4];
     int has_crop;
@@ -1980,6 +1994,31 @@ static inline uint32_t div_small(uint32_t n, uint32_t d)
     return d == 1 ? n : (uint32_t)(((uint64_t)n * recip[d]) >> 32);
 }
 
+/* Narrows [*k0, *k1) to the steps k where lo <= start + k * step < hi, give or take one: a
+   row of a turned image only crosses the image on part of its bounding box. The pixel loop
+   still tests each step. Returns 0 when no step is left. */
+static int row_span(int32_t start, int32_t step, int32_t lo, int32_t hi, int *k0, int *k1)
+{
+    double a, b;
+
+    if (step == 0)
+        return start >= lo && start < hi && *k0 < *k1;
+    a = ((double)lo - start) / step;
+    b = ((double)hi - start) / step;
+    if (step < 0) {
+        double t = a;
+        a = b;
+        b = t;
+    }
+    a = floor(a) - 1;
+    b = ceil(b) + 1;
+    if (a > *k0)
+        *k0 = a < *k1 ? (int)a : *k1;
+    if (b < *k1)
+        *k1 = b > *k0 ? (int)b : *k0;
+    return *k0 < *k1;
+}
+
 /* Draws s inside the clip rectangle: the image as the parallelogram centre + u * ex + v * ey
    (u, v in -0.5..0.5), multiplied by its colour, over what is there (straight alpha). The
    texture coordinates step in 16.16 fixed point along each row. */
@@ -1993,6 +2032,8 @@ static void blit(canvas *c, const sprite *s, const int *clip)
     float u1 = s->has_crop ? s->crop[0] + s->crop[2] : 1, v1 = s->has_crop ? s->crop[1] + s->crop[3] : 1;
     int32_t umin, umax, vmin, vmax, dudx, dvdx;
     int cr, cg, cb, ca;
+    const uint8_t *occ = s->occ;
+    int occ_w = (s->iw + 7) / 8;
 
     /* A script can compute a colour that is not a number (24: Redemption): nothing to draw. */
     if (isnan(s->color[0]) || isnan(s->color[1]) || isnan(s->color[2]) || !(s->color[3] > 0))
@@ -2019,11 +2060,19 @@ static void blit(canvas *c, const sprite *s, const int *clip)
         float dx = (float)x0 + 0.5f - s->cx, dy = (float)y + 0.5f - s->cy;
         int32_t u = (int32_t)(((dx * s->ey[1] - dy * s->ey[0]) / det + 0.5f) * (float)s->iw * 65536);
         int32_t v = (int32_t)(((s->ex[0] * dy - s->ex[1] * dx) / det + 0.5f) * (float)s->ih * 65536);
-        for (int x = x0; x < x1; x++, d += 4, u += dudx, v += dvdx) {
+        int k0 = 0, k1 = x1 - x0;
+        if (!row_span(u, dudx, umin, umax, &k0, &k1) || !row_span(v, dvdx, vmin, vmax, &k0, &k1))
+            continue;
+        d += (size_t)k0 * 4;
+        u = (int32_t)((uint32_t)u + (uint32_t)k0 * (uint32_t)dudx);
+        v = (int32_t)((uint32_t)v + (uint32_t)k0 * (uint32_t)dvdx);
+        for (int x = x0 + k0; x < x0 + k1; x++, d += 4, u += dudx, v += dvdx) {
             const uint8_t *p;
             int a, da, oa;
             if (u < umin || u >= umax || v < vmin || v >= vmax)
                 continue;
+            if (occ && !occ[(v >> 19) * occ_w + (u >> 19)])
+                continue;             /* an empty 8x8 block: no need to read the image */
             p = s->img + ((size_t)(v >> 16) * s->iw + (size_t)(u >> 16)) * 4;
             a = p[3] * ca >> 8;
             if (a <= 0)
@@ -2166,6 +2215,7 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
             memset(s, 0, sizeof(*s));
             s->widget = i;
             s->img = img;
+            s->occ = r->occ[w->image];
             s->iw = iw;
             s->ih = ih;
             /* Image axes on screen: x right, and y down (the image's rows go down). */
