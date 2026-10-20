@@ -44,6 +44,9 @@
 /* Exported by SceVideodec_stub but missing from psp2/videodec.h. Needed before
    sceVideodecInitLibrary for field-coded streams; returns 0 (checked on hardware). */
 int sceAvcdecSetInterlacedStreamMode(SceVideodecType codec, int mode);
+/* Also exported but undeclared: drops the pictures the decoder holds and returns it to its
+   starting state, for a seek. */
+int sceAvcdecDecodeFlush(const SceAvcdecCtrl *decoder);
 
 struct plat_frame {
     uint8_t *pixels;          /* the framebuffer */
@@ -390,18 +393,29 @@ void plat_frame_release(plat_frame *f)
         f->app_ref = 0;
 }
 
-/* sceAvcdec has no documented flush, and pictures left in its reorder buffer would come out
-   after a seek, so start a new decoder instead. Its memory is kept: freeing and allocating
-   physically contiguous memory on every seek fails after a few seeks. */
+/* Drops the pictures in the decoder's reorder buffer, which would otherwise come out after a
+   seek: sceAvcdecDecodeFlush, or if it fails a new decoder. The decoder's memory is kept:
+   freeing and allocating physically contiguous memory on every seek fails after a few. */
 void plat_video_flush(plat_video *v)
 {
+    static int logs;
     SceAvcdecQueryDecoderInfo query;
+    uint64_t t0 = plat_time_us();
     int r;
 
     while (v->out_count > 0)
         v->out[--v->out_count].frame->app_ref = 0;
     if (!v->ready)
         return;
+    /* The decoder's own flush. A new decoder took 56 ms, a pause at every seek, at every loop of
+       a menu video and at every animated icon in the library. */
+    if ((r = sceAvcdecDecodeFlush(&v->ctrl)) >= 0) {
+        if (logs++ < 5)
+            plat_log("flush: %.1f ms\n", (plat_time_us() - t0) / 1000.0);
+        return;
+    }
+    if (logs++ < 5)
+        plat_log("flush: sceAvcdecDecodeFlush 0x%08x, starting a new decoder\n", r);
     sceAvcdecDeleteDecoder(&v->ctrl);
     memset(&query, 0, sizeof(query));
     query.horizontal = 720;
