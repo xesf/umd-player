@@ -2067,6 +2067,11 @@ static int stretch_rule(int iw, int ih, float width, float height, int fill)
     band = full && (fabsf(2.0f * (float)iw - width) <= 0.03f * width || fabsf((float)iw - width) <= 0.03f * width);
     if (band)
         return STRETCH;
+    /* A widget larger than the screen is artwork that sweeps across or covers it, never a
+       label or a card: The Goonies' 256x48 blur fills its 1700x480 widget as it slides between
+       menus, as on a PSP (Batman Begins' gradient, The Fifth Element's black line too). */
+    if (width > 1.05f * UNITS_W || height > 1.05f * UNITS_H)
+        return STRETCH;
     if (shape > 1.03f || shape < 0.97f)
         return OWN;
     return width > 3.0f * (float)iw && !full ? OVER : STRETCH;
