@@ -349,8 +349,8 @@ static int find_start_menu(void *user, const char *path, const iso_entry *e)
     char *found = user;
     size_t n = strlen(path);
 
-    if (!e->is_dir && !found[0] && n > 10 && n < 64 && strcmp(path + n - 10, "100000.RCO") == 0)
-        memcpy(found, path, n + 1);
+    if (!e->is_dir && !found[0] && n > 10 && strcmp(path + n - 10, "100000.RCO") == 0)
+        snprintf(found, 64, "%s", path);
     return 0;
 }
 
