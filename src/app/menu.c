@@ -1964,6 +1964,22 @@ static void sprite_box(sprite *s, int cw, int ch)
     if (s->box[3] > ch) s->box[3] = ch;
 }
 
+/* n / d for d in 1..255 without a division, which the Vita's CPU does in software, slowly:
+   a multiply by ceil(2^32 / d). Exact for n * (ceil(2^32 / d) * d - 2^32) < 2^32, so for every
+   n up to 16 million, more than the blend below needs (255^3). */
+static uint32_t recip[256];
+
+static void init_recip(void)
+{
+    for (uint32_t d = 2; d < 256; d++)
+        recip[d] = (uint32_t)((((uint64_t)1 << 32) + d - 1) / d);
+}
+
+static inline uint32_t div_small(uint32_t n, uint32_t d)
+{
+    return d == 1 ? n : (uint32_t)(((uint64_t)n * recip[d]) >> 32);
+}
+
 /* Draws s inside the clip rectangle: the image as the parallelogram centre + u * ex + v * ey
    (u, v in -0.5..0.5), multiplied by its colour, over what is there (straight alpha). The
    texture coordinates step in 16.16 fixed point along each row. */
@@ -2022,12 +2038,12 @@ static void blit(canvas *c, const sprite *s, const int *clip)
                 continue;
             }
             /* out = src * a + dst * da * (1 - a), over oa = a + da * (1 - a); in 0..255 */
-            oa = a + da * (255 - a) / 255;
+            oa = a + (int)div_small((uint32_t)(da * (255 - a)), 255);
             /* Rounding can reach 256 (white over a white 141-alpha band in Tenjho Tenge), which
                would wrap to black: clamp. */
             for (int k = 0; k < 3; k++) {
                 int src = p[k] * (k == 0 ? cr : k == 1 ? cg : cb) >> 8;
-                int v = (src * a + d[k] * da * (255 - a) / 255) / oa;
+                int v = (int)div_small((uint32_t)(src * a) + div_small((uint32_t)(d[k] * da * (255 - a)), 255), (uint32_t)oa);
                 d[k] = (uint8_t)(v > 255 ? 255 : v);
             }
             d[3] = (uint8_t)oa;
@@ -2220,6 +2236,9 @@ void menu_draw(menu *m, canvas *c)
     sprite *now = lists[cur ^ 1], *before = lists[cur];
     int n = 0, dirty[4] = {0, 0, 0, 0};
     xform root;
+
+    if (!recip[2])
+        init_recip();
 
     memset(&root, 0, sizeof(root));
     for (int k = 0; k < 3; k++)

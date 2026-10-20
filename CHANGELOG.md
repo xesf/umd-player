@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Library: □ forgets a disc's resume point instead of playing it from the start; ✕ then plays it from the start.
+- Disc menus draw faster on the Vita: blending over translucent pixels no longer divides, which the Vita's CPU does in software (The Transporter, Spider-Man 2).
 
 ## v0.7.3 (2026-10-20)
 
