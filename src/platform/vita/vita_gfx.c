@@ -360,8 +360,13 @@ static sprite_tex *sprite_texture(const plat_sprite *s)
         sceKernelFreeMemBlock(uid);
         return NULL;
     }
-    for (int y = 0; y < s->h; y++)
-        memcpy((uint8_t *)base + (size_t)y * ALIGN(s->w, 8) * 4, s->rgba + (size_t)y * s->w * 4, (size_t)s->w * 4);
+    {
+        uint64_t t0 = plat_time_us(), took;
+        for (int y = 0; y < s->h; y++)
+            memcpy((uint8_t *)base + (size_t)y * ALIGN(s->w, 8) * 4, s->rgba + (size_t)y * s->w * 4, (size_t)s->w * 4);
+        if ((took = plat_time_us() - t0) > 2000)
+            plat_log("gfx: copied a %dx%d menu picture in %.1f ms\n", s->w, s->h, took / 1000.0);
+    }
     slot->id = s->id;
     slot->uid = uid;
     slot->mem = base;

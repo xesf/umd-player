@@ -132,6 +132,12 @@ struct library {
     int pic0_w, pic0_h;
     const icon_video *icon;
 
+    /* Where a browsing frame's time goes, logged every 5 s (see library_update). */
+    struct {
+        uint64_t since, draw, media, icon, present;
+        int frames, draws;
+    } perf;
+
     /* The icon decoder stays open while browsing; a switch only flushes it. */
     plat_video *video;
     int video_w, video_h;
@@ -1755,8 +1761,12 @@ int library_update(library *l, uint32_t pressed)
     }
     if (pressed || l->worker_paused)
         tell_worker(l, 0);
+    uint64_t t0 = plat_time_us(), t1, t2, t3, t4;
+    if (!l->perf.since)
+        l->perf.since = t0;
     if (l->loaded != l->sel)
         load_media(l);
+    t1 = plat_time_us();
     if (l->icon) {
         present |= advance_icon(l);
         l->info.src_w = l->icon->sps.width;
@@ -1764,12 +1774,30 @@ int library_update(library *l, uint32_t pressed)
         l->info.video_w = l->icon->sps.width;
         l->info.video_h = l->icon->sps.height;
     }
+    t2 = plat_time_us();
     if (l->ui_dirty) {
         draw_ui(l);
         present = 1;
+        l->perf.draws++;
     }
+    t3 = plat_time_us();
     if (present)
         plat_present(l->icon ? l->shown : NULL, &l->info);
+    t4 = plat_time_us();
+    l->perf.media += t1 - t0;
+    l->perf.icon += t2 - t1;
+    l->perf.draw += t3 - t2;
+    l->perf.present += t4 - t3;
+    if (t4 - t0 > 40000)
+        plat_log("perf: slow library frame %.0f ms: %.0f ms media, %.0f ms icon, %.0f ms drawing, %.0f ms present\n",
+                 (t4 - t0) / 1000.0, (t1 - t0) / 1000.0, (t2 - t1) / 1000.0, (t3 - t2) / 1000.0, (t4 - t3) / 1000.0);
+    if (++l->perf.frames, t4 - l->perf.since >= 5000000) {
+        double n = l->perf.frames;
+        plat_log("perf: library %.1f frames/s, %d redraws; per frame %.1f ms media, %.1f ms icon, %.1f ms drawing, "
+                 "%.1f ms present\n", n / ((t4 - l->perf.since) / 1e6), l->perf.draws, l->perf.media / n / 1000,
+                 l->perf.icon / n / 1000, l->perf.draw / n / 1000, l->perf.present / n / 1000);
+        memset(&l->perf, 0, sizeof(l->perf));
+    }
     return -1;
 }
 
