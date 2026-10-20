@@ -42,6 +42,7 @@
 #define SMALL_X        (BIG_X + ICON_W / 2)   /* the other discs, centred under the selected one */
 #define CACHE_N        6               /* discs whose art and sound are kept in memory */
 #define FRAMES_AHEAD   3
+#define SETTLE_US      150000          /* a selection shows its media once it rests this long */
 #define AU_MAX         4096
 #define PMF_MAX        (2 * 1024 * 1024)
 #define SND_MAX        (4 * 1024 * 1024)
@@ -132,6 +133,7 @@ struct library {
     int pic0_w, pic0_h;
     const icon_video *icon;
 
+    uint64_t moved_us;               /* when the selection last moved */
     /* Where a browsing frame's time goes, logged every 5 s (see library_update). */
     struct {
         uint64_t since, draw, media, icon, present;
@@ -1280,7 +1282,11 @@ static int advance_icon(library *l)
         t = 0;
     }
     l->last_t = t;
-    while (l->frame_count < FRAMES_AHEAD && l->au_next < v->au_count) {
+    /* Up to the first picture at once, then two access units an update (a field-coded icon
+       needs two a picture): decoding them all ahead took 50 ms on the Vita in the frame that
+       showed the icon. */
+    for (int budget = l->shown ? 2 : 8; budget > 0 && l->frame_count < FRAMES_AHEAD && l->au_next < v->au_count;
+         budget--) {
         const icon_au *a = &v->aus[l->au_next++];
         plat_frame *f;
         uint64_t pts;
@@ -1758,13 +1764,16 @@ int library_update(library *l, uint32_t pressed)
     if (pressed) {
         clear_media(l);
         l->ui_dirty = 1;
+        l->moved_us = plat_time_us();
     }
     if (pressed || l->worker_paused)
         tell_worker(l, 0);
     uint64_t t0 = plat_time_us(), t1, t2, t3, t4;
     if (!l->perf.since)
         l->perf.since = t0;
-    if (l->loaded != l->sel)
+    /* Scrolling through the list, each disc's background, icon video and sound wait until the
+       selection rests: starting them took a frame or more each, on the Vita. */
+    if (l->loaded != l->sel && t0 - l->moved_us >= SETTLE_US)
         load_media(l);
     t1 = plat_time_us();
     if (l->icon) {
