@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.7.2 (2026-10-20)
 
 - Fixed The Goonies' spoken languages drawing twice the size of its subtitles.
 - Fixed The Goonies' menu transitions: the blur that slides between menus covers the whole screen. Batman Begins' menu gradient now spans the screen too.
