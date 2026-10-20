@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Fixed The Goonies' spoken languages drawing twice the size of its subtitles.
+
 ## v0.7.1 (2026-10-20)
 
 - Fixed Battlestar Galactica freezing on its main menu.

@@ -81,6 +81,7 @@ typedef struct res {
     uint8_t **rgba;           /* decoded images, on first use */
     int *img_w, *img_h;
     uint8_t *img_fill;        /* the image is one colour: a fill that stretches to its widget */
+    uint8_t *own_size;        /* per widget: draw the image at its own size (same_size_labels) */
     int pages[MAX_PAGES], page_count;   /* open pages, in drawing order */
     int active;               /* page that takes input, or -1 */
     int *focus;               /* per page: the focused button, or -1 */
@@ -1405,6 +1406,7 @@ static void free_res(res *r)
     free(r->img_w);
     free(r->img_h);
     free(r->img_fill);
+    free(r->own_size);
     free(r->w);
     free(r->wref);
     free(r->aref);
@@ -1414,6 +1416,8 @@ static void free_res(res *r)
     free(r->file);
     free(r);
 }
+
+static void same_size_labels(menu *m, res *r);
 
 static res *load_res(menu *m, const char *name)
 {
@@ -1441,12 +1445,15 @@ static res *load_res(menu *m, const char *name)
     r->img_w = calloc((size_t)r->r.image_count + 1, sizeof(int));
     r->img_h = calloc((size_t)r->r.image_count + 1, sizeof(int));
     r->img_fill = calloc((size_t)r->r.image_count + 1, 1);
+    r->own_size = calloc((size_t)r->r.object_count + 1, 1);
     r->vm = vs_create(r->r.script, r->r.script_size, vm_log, m);
-    if (!r->w || !r->wref || !r->focus || !r->aref || !r->iref || !r->rgba || !r->img_w || !r->img_h || !r->img_fill || !r->vm) {
+    if (!r->w || !r->wref || !r->focus || !r->aref || !r->iref || !r->rgba || !r->img_w || !r->img_h || !r->img_fill ||
+        !r->own_size || !r->vm) {
         free_res(r);
         return NULL;
     }
     r->active = -1;
+    same_size_labels(m, r);
     widgets = vs_new_array(r->vm, r->r.object_count);
     for (int i = 0; i < r->r.object_count; i++) {
         r->wref[i].m = m;
@@ -2028,6 +2035,74 @@ static void blit(canvas *c, const sprite *s, const int *clip)
     }
 }
 
+/* Whether an iw x ih image draws at its widget's width x height (STRETCH) or at its own size:
+   OWN when the shapes differ, OVER when it has the widget's shape but is more than 3 times
+   smaller. An image stretches to its widget's size only when the two have the same shape
+   (16:9 cards and backgrounds), the image is a fill or a strip at most FILL_MAX across in one
+   direction and four times as long (a 1x1 black fade; Tenjho Tenge's 10x64 band behind its
+   buttons; not Jackass's 55x16 labels), or it is all one colour (12 Monkeys' 28x28 black fade
+   over the whole screen). Otherwise it is drawn at its own size: 2Fast2Furious and The Bourne
+   Supremacy size their label buttons for the longest translation, and on a PSP each label
+   keeps its own size. */
+enum { STRETCH, OWN, OVER };
+
+static int stretch_rule(int iw, int ih, float width, float height, int fill)
+{
+    int thin = iw < ih ? iw : ih, thick = iw < ih ? ih : iw;
+    int strip = thin <= FILL_MAX && (thick <= FILL_MAX || thick >= 4 * thin);   /* not a 55x16 label (Jackass) */
+    float shape;
+    int full, band;
+
+    if (strip || fill || width <= 0 || height <= 0)
+        return STRETCH;
+    shape = (width / height) / ((float)iw / (float)ih);
+    /* cards and backgrounds match within 3% (Austin Powers' 427x240 mask in 854x490).
+       A full-screen background stretches whatever its size (The Matrix's 214x120 scene
+       background); anything smaller at most 3 times: half-size artwork doubles, while The
+       Goonies' subtitle labels, 4 times over, keep their size */
+    /* Full-width artwork (half or full size across the screen) stretches whatever its height:
+       Stargate's transition bands put the 427x27 title band in 854x85 widgets. 4:3 warning
+       cards in full-screen widgets keep their shape. */
+    full = width >= 0.9f * UNITS_W;
+    band = full && (fabsf(2.0f * (float)iw - width) <= 0.03f * width || fabsf((float)iw - width) <= 0.03f * width);
+    if (band)
+        return STRETCH;
+    if (shape > 1.03f || shape < 0.97f)
+        return OWN;
+    return width > 3.0f * (float)iw && !full ? OVER : STRETCH;
+}
+
+/* Buttons side by side at one scale show their labels at one size: when one of them keeps its
+   image's size (over 3 times smaller than its widget), the others under the same parent with
+   the same scale do too. The Goonies' language page has its spoken languages in widgets twice
+   their images and its subtitles in widgets four times theirs, both at scale 1.8 and drawn in
+   one font; stretching the first drew them twice the size of the second. */
+static void same_size_labels(menu *m, res *r)
+{
+    const rco *rc = &r->r;
+
+    for (int i = 0; i < rc->object_count; i++) {
+        const rco_object *o = &rc->objects[i];
+        int iw, ih;
+        if (o->kind != RCO_BUTTON || o->image < 0 || r->own_size[i] ||
+            png_info(rc->images[o->image].data, rc->images[o->image].size, &iw, &ih) < 0)
+            continue;
+        if (stretch_rule(iw, ih, o->size[0], o->size[1], 0) != OVER)
+            continue;
+        for (int j = 0; j < rc->object_count; j++) {
+            const rco_object *b = &rc->objects[j];
+            int bw, bh;
+            if (j == i || r->own_size[j] || b->kind != RCO_BUTTON || b->parent != o->parent || b->scale[0] != o->scale[0] ||
+                b->image < 0 || png_info(rc->images[b->image].data, rc->images[b->image].size, &bw, &bh) < 0)
+                continue;
+            if (stretch_rule(bw, bh, b->size[0], b->size[1], 0) == STRETCH && b->size[0] > 1.03f * (float)bw) {
+                r->own_size[j] = 1;
+                mlog(m, "menu: %s keeps its image size, as %s does", b->name ? b->name : "?", o->name ? o->name : "?");
+            }
+        }
+    }
+}
+
 static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list, int *count)
 {
     const wstate *w = &r->w[i];
@@ -2058,32 +2133,9 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
             sprite *s = &list[*count];
             float sxu = (float)c->w / UNITS_W, syu = (float)c->h / UNITS_H;
             float width = w->size[0] > 0 ? w->size[0] : (float)iw, height = w->size[1] > 0 ? w->size[1] : (float)ih;
-            /* An image stretches to its widget's size only when the two have the same shape
-               (16:9 cards and backgrounds), the image is a fill or a strip at most FILL_MAX
-               across in one direction and four times as long (a 1x1 black fade; Tenjho Tenge's
-               10x64 band behind its buttons; not Jackass's 55x16 labels),
-               or it is all one colour (12 Monkeys' 28x28 black fade over the whole screen).
-               Otherwise it is drawn at its own size: 2Fast2Furious and The Bourne Supremacy
-               size their label buttons for the longest translation, and on a PSP each label
-               keeps its own size. */
-            int thin = iw < ih ? iw : ih, thick = iw < ih ? ih : iw;
-            int strip = thin <= FILL_MAX && (thick <= FILL_MAX || thick >= 4 * thin);   /* not a 55x16 label (Jackass) */
-            if (!strip && !r->img_fill[w->image] && width > 0 && height > 0) {
-                float shape = (width / height) / ((float)iw / (float)ih);
-                /* cards and backgrounds match within 3% (Austin Powers' 427x240 mask in 854x490).
-                   A full-screen background stretches whatever its size (The Matrix's 214x120
-                   scene background); anything smaller at most 3 times: half-size artwork
-                   doubles, while The Goonies' subtitle labels, 4 times over, keep their size */
-                /* Full-width artwork (half or full size across the screen) stretches whatever its
-                   height: Stargate's transition bands put the 427x27 title band in 854x85
-                   widgets. 4:3 warning cards in full-screen widgets keep their shape. */
-                int full = width >= 0.9f * UNITS_W;
-                int band = full && (fabsf(2.0f * (float)iw - width) <= 0.03f * width ||
-                                    fabsf((float)iw - width) <= 0.03f * width);
-                if (!band && (shape > 1.03f || shape < 0.97f || (width > 3.0f * (float)iw && !full))) {
-                    width = (float)iw;
-                    height = (float)ih;
-                }
+            if (r->own_size[i] || stretch_rule(iw, ih, width, height, r->img_fill[w->image]) != STRETCH) {
+                width = (float)iw;
+                height = (float)ih;
             }
             /* Anchored images: pos is an edge or a corner (Toy Story places its backgrounds by
                their top-left corners), so move the centre half a width or height from it. */

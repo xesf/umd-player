@@ -527,8 +527,12 @@ static int run_rco(int argc, char **argv)
     }
     for (int i = 0; i < r.object_count; i++) {
         const rco_object *o = &r.objects[i];
-        printf("widget %3d kind %02x %-22s parent %3d pos %g,%g scale %g alpha %g image %s", i, o->kind, nm(o->name),
-               o->parent, o->pos[0], o->pos[1], o->scale[0], o->color[3], o->image >= 0 ? nm(r.images[o->image].name) : "-");
+        int iw = 0, ih = 0;
+        if (o->image >= 0)
+            png_info(r.images[o->image].data, r.images[o->image].size, &iw, &ih);
+        printf("widget %3d kind %02x %-22s parent %3d pos %g,%g size %gx%g scale %g alpha %g image %s %dx%d", i, o->kind,
+               nm(o->name), o->parent, o->pos[0], o->pos[1], o->size[0], o->size[1], o->scale[0], o->color[3],
+               o->image >= 0 ? nm(r.images[o->image].name) : "-", iw, ih);
         for (int a = 0; a < RCO_BTN_ACTIONS; a++)
             if (o->action[a].event || o->action[a].object >= 0)
                 printf(" [%d %s]", a, o->action[a].event ? o->action[a].event : nm(r.objects[o->action[a].object].name));
