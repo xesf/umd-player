@@ -376,15 +376,17 @@ static sprite_tex *sprite_texture(const plat_sprite *s)
 }
 
 /* Each sprite as a tinted quad. Nearest texels, as the software drawing samples them. */
-static void draw_sprites(const plat_sprite *list, int count)
+static void draw_sprites(const plat_sprite *list, int count, int slot)
 {
     static const float identity[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
 
     sceGxmSetFragmentProgram(context, fprog_tint);
-    for (int k = 0; k < count && k < SPRITES_MAX; k++) {
+    /* slot: the first of this frame's vertex quads to use, as the GPU reads them only when the
+       scene ends */
+    for (int k = 0; k < count && slot + k < SPRITES_MAX; k++) {
         const plat_sprite *s = &list[k];
         sprite_tex *t = sprite_texture(s);
-        vertex *v = &sprite_vertices[k * 4];
+        vertex *v = &sprite_vertices[(slot + k) * 4];
         SceGxmTexture tex;
         void *uniforms;
         if (!t || sceGxmTextureInitLinear(&tex, t->mem, SCE_GXM_TEXTURE_FORMAT_A8B8G8R8, (unsigned)s->w,
@@ -425,6 +427,9 @@ int vita_gfx_present(const uint8_t *image, int image_w, int image_h, int pic_x, 
     sceGxmSetCullMode(context, SCE_GXM_CULL_NONE);
     sceGxmSetVertexProgram(context, vprog);
 
+    frame_no++;
+    if (info->ui_sprites)
+        draw_sprites(info->ui_sprites, info->ui_sprites_below, 0);
     if (image && sceGxmTextureInitLinear(&tex, image, SCE_GXM_TEXTURE_FORMAT_A8B8G8R8, (unsigned)image_w,
                                          (unsigned)image_h, 0) == 0) {
         sceGxmTextureSetMinFilter(&tex, SCE_GXM_TEXTURE_FILTER_LINEAR);
@@ -439,10 +444,10 @@ int vita_gfx_present(const uint8_t *image, int image_w, int image_h, int pic_x, 
         quad(&vertices[4], info->overlay_dst, 0, 0, 1, 1);
         draw(fprog_blend, &tex, &vertices[4]);
     }
-    frame_no++;
-    if (info->ui_sprites) {
-        draw_sprites(info->ui_sprites, info->ui_sprite_count);
-    } else if (info->ui_rgba && upload(&ui_tex, info->ui_rgba, info->ui_w, info->ui_h, info->ui_stride, info->ui_id) == 0 &&
+    if (info->ui_sprites && info->ui_sprite_count > info->ui_sprites_below)
+        draw_sprites(info->ui_sprites + info->ui_sprites_below, info->ui_sprite_count - info->ui_sprites_below,
+                     info->ui_sprites_below);
+    if (info->ui_rgba && upload(&ui_tex, info->ui_rgba, info->ui_w, info->ui_h, info->ui_stride, info->ui_id) == 0 &&
         layer_texture(&tex, &ui_tex) == 0) {
         quad(&vertices[8], (plat_rect){0, 0, 1, 1}, 0, 0, 1, 1);
         draw(fprog_blend, &tex, &vertices[8]);

@@ -576,6 +576,7 @@ int disc_update(disc *d, uint32_t pressed)
             info.ui_stride = d->layer.stride;
             info.ui_id = 0x20000000u | d->layer_id;
             if (plat_draws_sprites()) {
+                info.ui_rgba = NULL;
                 info.ui_sprites = d->sprites;
                 info.ui_sprite_count = d->sprite_count;
             }

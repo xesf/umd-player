@@ -192,13 +192,60 @@ void plat_frame_unlock(plat_frame *f) { (void)f; }
 uint32_t null_presents;
 /* With NULL_DUMP_UI=<file> set, saves the UI layer of every present as raw RGBA, for checking
    what the app drew. */
+/* The sprites over an opaque black screen, nearest texel, then the ui layer: what the Vita's
+   GPU shows, for checking the sprite path against the software drawing. */
+static void composite(uint8_t *out, const plat_present_info *info)
+{
+    memset(out, 0, (size_t)960 * 544 * 4);
+    for (int i = 0; i < 960 * 544; i++)
+        out[i * 4 + 3] = 255;
+    for (int k = 0; k < info->ui_sprite_count; k++) {
+        const plat_sprite *s = &info->ui_sprites[k];
+        float ox = s->x[0], oy = s->y[0], ax = s->x[1] - ox, ay = s->y[1] - oy, bx = s->x[2] - ox, by = s->y[2] - oy;
+        float det = ax * by - ay * bx;
+        if (det == 0)
+            continue;
+        for (int y = 0; y < 544; y++)
+            for (int x = 0; x < 960; x++) {
+                float px = x + 0.5f - ox, py = y + 0.5f - oy, a = (px * by - py * bx) / det, b = (ax * py - ay * px) / det;
+                int tu, tv, al;
+                const uint8_t *p;
+                uint8_t *d = out + ((size_t)y * 960 + x) * 4;
+                if (a < 0 || a >= 1 || b < 0 || b >= 1)
+                    continue;
+                tu = (int)((s->u0 + a * (s->u1 - s->u0)) * s->w);
+                tv = (int)((s->v0 + b * (s->v1 - s->v0)) * s->h);
+                p = s->rgba + ((size_t)tv * s->w + tu) * 4;
+                al = (int)(p[3] * s->color[3]);
+                for (int q = 0; q < 3; q++)
+                    d[q] = (uint8_t)((p[q] * s->color[q] * al + d[q] * (255 - al)) / 255);
+            }
+    }
+    if (info->ui_rgba)
+        for (int y = 0; y < 544; y++)
+            for (int x = 0; x < 960; x++) {
+                const uint8_t *p = info->ui_rgba + (size_t)y * info->ui_stride + (size_t)x * 4;
+                uint8_t *d = out + ((size_t)y * 960 + x) * 4;
+                for (int q = 0; q < 3; q++)
+                    d[q] = (uint8_t)((p[q] * p[3] + d[q] * (255 - p[3])) / 255);
+            }
+}
+
 void plat_present(plat_frame *frame, const plat_present_info *info)
 {
     const char *dump = getenv("NULL_DUMP_UI");
 
     (void)frame;
     null_presents++;
-    if (dump && info->ui_rgba) {
+    if (dump && info->ui_sprites) {
+        static uint8_t out[960 * 544 * 4];
+        FILE *f = fopen(dump, "wb");
+        composite(out, info);
+        if (f) {
+            fwrite(out, 1, sizeof(out), f);
+            fclose(f);
+        }
+    } else if (dump && info->ui_rgba) {
         FILE *f = fopen(dump, "wb");
         if (f) {
             for (int y = 0; y < info->ui_h; y++)

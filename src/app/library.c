@@ -63,6 +63,7 @@ typedef struct lib_disc {
     int interactive;                 /* UMD-PG: an interactive movie, played through its menus */
     int incomplete;                  /* the image ends before the disc's files do */
     uint64_t resume_pos, resume_start, resume_end;   /* 90 kHz; start and end are 0 for 0.1.0 entries */
+    uint32_t icon_id;                /* icon0's id for the GPU (plat_sprite), 0 until drawn */
 } lib_disc;
 
 typedef struct icon_au {
@@ -134,6 +135,12 @@ struct library {
     const icon_video *icon;
 
     uint64_t moved_us;               /* when the selection last moved */
+    /* Where the GPU draws (plat_draws_sprites): the pictures as sprites, the background first
+       and under the icon video, and the text, panels and icon corners on the transparent ui
+       layer, redrawn only when what it shows changes (front_key). */
+    plat_sprite sprites[8];
+    uint32_t bg_id, pic0_id;
+    unsigned char front_key[2048];
     /* Where a browsing frame's time goes, logged every 5 s (see library_update). */
     struct {
         uint64_t since, draw, media, icon, present;
@@ -967,6 +974,7 @@ static int load_media(library *l)
     l->ui_dirty = 1;
     l->bg = m->bg;
     l->pic0 = m->pic0;
+    l->bg_id = l->pic0_id = 0;       /* new pictures: new GPU copies */
     l->pic0_w = m->pic0_w;
     l->pic0_h = m->pic0_h;
     icon = m->icon;
@@ -1165,10 +1173,172 @@ static void draw_no_icon(canvas *c, int x, int y, int w, int h)
         canvas_rect(c, x, y, w, h, RGBA(60, 70, 90, 255));
 }
 
+/* Everything over the pictures: the selected icon's corners, the panels, the name, the hints
+   and the progress. */
+static void draw_front(library *l)
+{
+    canvas *c = &l->ui;
+
+    fill_icon_corners(l);
+    draw_info(l);
+    draw_settings(l);
+    /* On the backdrop (a disc without PIC1), keep clear of its film strips. */
+    draw_app_name(c, l->bg ? 18 : 72);
+    if (!l->settings_open)
+        draw_hints(c, l->bg ? UI_H - 18 : UI_H - 72);
+    if (l->scanning || l->sheet_shown >= 0) {
+        /* above the hints: discs still being read or sheets being written, with a bar under
+           the count */
+        char line[48];
+        int y = (l->bg ? UI_H - 18 : UI_H - 72) - 30, w, fill;
+        if (l->scanning) {
+            snprintf(line, sizeof(line), "Reading movies %d of %d", l->count, l->scan_total);
+            fill = l->scan_total ? l->count * 1000 / l->scan_total : 0;
+        } else {
+            snprintf(line, sizeof(line), "Writing info sheets %d of %d", l->sheet_done + 1, l->sheet_total);
+            fill = l->sheet_shown;
+        }
+        w = canvas_text_width(line, 1);
+        canvas_round_darken(c, UI_W - 28 - w, y - 6, w + 16, 26, 6, 140);
+        canvas_text(c, UI_W - 20 - w, y, 1, TEXT_DIM, line);
+        canvas_rect(c, UI_W - 20 - w, y + 12, w, 3, RGBA(70, 80, 100, 255));
+        canvas_rect(c, UI_W - 20 - w, y + 12, w * fill / 1000, 3, RGBA(255, 255, 255, 230));
+    }
+}
+
+/* Ids of the library's pictures for the GPU, above those of the disc menus. */
+static uint32_t lib_id(void)
+{
+    static uint32_t next = 0x80000000u;
+    return ++next;
+}
+
+static void add_sprite(library *l, const uint8_t *rgba, int w, int h, uint32_t id, int x, int y, int dw, int dh)
+{
+    plat_sprite *s = &l->sprites[l->info.ui_sprite_count++];
+
+    s->rgba = rgba;
+    s->w = w;
+    s->h = h;
+    s->id = id;
+    s->x[0] = s->x[2] = (float)x;
+    s->x[1] = s->x[3] = (float)(x + dw);
+    s->y[0] = s->y[1] = (float)y;
+    s->y[2] = s->y[3] = (float)(y + dh);
+    s->u0 = s->v0 = 0;
+    s->u1 = s->v1 = 1;
+    for (int k = 0; k < 4; k++)
+        s->color[k] = 1;
+}
+
+static void add_icon(library *l, lib_disc *d, int x, int y, int w, int h)
+{
+    static uint32_t backdrop_id;
+
+    if (d && d->icon0) {
+        if (!d->icon_id)
+            d->icon_id = lib_id();
+        add_sprite(l, d->icon0, d->icon_w, d->icon_h, d->icon_id, x, y, w, h);
+    } else if (backdrop_rgba()) {
+        if (!backdrop_id)
+            backdrop_id = lib_id();
+        add_sprite(l, backdrop_rgba(), BACKDROP_W, BACKDROP_H, backdrop_id, x, y, w, h);
+    }
+}
+
+/* What draw_front shows depends on: a copy of each, compared to redraw only on a change. */
+static void front_key(library *l, unsigned char *key, size_t size)
+{
+    struct {
+        const void *bg;
+        int show_info, bare, settings_open, settings_row, keys, scanning, count, scan_total;
+        int sheet_shown, sheet_done, sheet_total;
+        app_settings settings;
+        const lib_disc *disc;
+        lib_disc shown;
+    } k;
+    const lib_disc *d = &l->discs[l->sel];
+    typedef char fits[sizeof(k) <= sizeof(l->front_key) ? 1 : -1];
+
+    (void)sizeof(fits);
+    memset(&k, 0, sizeof(k));
+    k.bg = l->bg;
+    k.show_info = l->show_info;
+    k.bare = !d->icon0 && !l->icon && !l->pic0 && !l->settings_open;
+    k.settings_open = l->settings_open;
+    k.settings_row = l->settings_row;
+    k.keys = plat_keyboard_ui();
+    k.scanning = l->scanning;
+    k.count = l->count;
+    k.scan_total = l->scan_total;
+    k.sheet_shown = l->sheet_shown;
+    k.sheet_done = l->sheet_done;
+    k.sheet_total = l->sheet_total;
+    k.settings = *settings_get();
+    if (k.show_info || k.bare) {
+        k.disc = d;
+        k.shown = *d;
+    }
+    memset(key, 0, size);
+    memcpy(key, &k, sizeof(k) < size ? sizeof(k) : size);
+}
+
+/* The library on the GPU: pictures as sprites, and the front layer only when it changed.
+   Drawing and uploading the whole screen took about 40 ms a step on the Vita. */
+static void draw_ui_sprites(library *l)
+{
+    static uint32_t backdrop_bg_id;
+    unsigned char key[sizeof(l->front_key)];
+
+    l->info.ui_sprites = l->sprites;
+    l->info.ui_sprite_count = 0;
+    if (l->bg) {
+        if (!l->bg_id)
+            l->bg_id = lib_id();
+        add_sprite(l, l->bg, UI_W, UI_H, l->bg_id, 0, 0, UI_W, UI_H);
+    } else if (backdrop_rgba()) {
+        if (!backdrop_bg_id)
+            backdrop_bg_id = lib_id();
+        add_sprite(l, backdrop_rgba(), BACKDROP_W, BACKDROP_H, backdrop_bg_id, 0, 0, UI_W, UI_H);
+    }
+    l->info.ui_sprites_below = l->info.ui_sprite_count;
+    if (l->pic0 && !l->show_info && !l->settings_open) {
+        if (!l->pic0_id)
+            l->pic0_id = lib_id();
+        add_sprite(l, l->pic0, l->pic0_w, l->pic0_h, l->pic0_id, UI_W - 2 * l->pic0_w - 10, (UI_H - 2 * l->pic0_h) / 2,
+                   2 * l->pic0_w, 2 * l->pic0_h);
+    }
+    for (int k = -1; k <= 2; k++) {
+        int i = l->sel + k, y = k < 0 ? BIG_Y - 100 : BIG_Y + 2 * ICON_H + 20 + (k - 1) * 90;
+        if (k != 0 && i >= 0 && i < l->count)
+            add_icon(l, &l->discs[i], SMALL_X, y, ICON_W, ICON_H);
+    }
+    if (!l->icon)
+        add_icon(l, &l->discs[l->sel], BIG_X, BIG_Y, 2 * ICON_W, 2 * ICON_H);
+
+    front_key(l, key, sizeof(key));
+    if (memcmp(key, l->front_key, sizeof(key)) != 0 || !l->info.ui_rgba) {
+        memcpy(l->front_key, key, sizeof(key));
+        memset(l->ui.rgba, 0, (size_t)l->ui.stride * l->ui.h);
+        draw_front(l);
+        l->info.ui_rgba = l->ui.rgba;
+        l->info.ui_w = l->ui.w;
+        l->info.ui_h = l->ui.h;
+        l->info.ui_stride = l->ui.stride;
+        l->info.ui_id++;
+    }
+    l->ui_dirty = 0;
+}
+
 static void draw_ui(library *l)
 {
     canvas *c = &l->ui;
 
+    if (plat_draws_sprites()) {
+        draw_ui_sprites(l);
+        return;
+    }
+    l->info.ui_sprites = NULL;
     draw_background(l);
     /* PIC0 at twice its size (the PSP's 480x272 screen doubled), right of the icon; the info
        panel and the settings take its place when open. */
@@ -1199,31 +1369,7 @@ static void draw_ui(library *l)
     } else {
         draw_no_icon(c, BIG_X, BIG_Y, 2 * ICON_W, 2 * ICON_H);
     }
-    fill_icon_corners(l);
-    draw_info(l);
-    draw_settings(l);
-    /* On the backdrop (a disc without PIC1), keep clear of its film strips. */
-    draw_app_name(c, l->bg ? 18 : 72);
-    if (!l->settings_open)
-        draw_hints(c, l->bg ? UI_H - 18 : UI_H - 72);
-    if (l->scanning || l->sheet_shown >= 0) {
-        /* above the hints: discs still being read or sheets being written, with a bar under
-           the count */
-        char line[48];
-        int y = (l->bg ? UI_H - 18 : UI_H - 72) - 30, w, fill;
-        if (l->scanning) {
-            snprintf(line, sizeof(line), "Reading movies %d of %d", l->count, l->scan_total);
-            fill = l->scan_total ? l->count * 1000 / l->scan_total : 0;
-        } else {
-            snprintf(line, sizeof(line), "Writing info sheets %d of %d", l->sheet_done + 1, l->sheet_total);
-            fill = l->sheet_shown;
-        }
-        w = canvas_text_width(line, 1);
-        canvas_round_darken(c, UI_W - 28 - w, y - 6, w + 16, 26, 6, 140);
-        canvas_text(c, UI_W - 20 - w, y, 1, TEXT_DIM, line);
-        canvas_rect(c, UI_W - 20 - w, y + 12, w, 3, RGBA(70, 80, 100, 255));
-        canvas_rect(c, UI_W - 20 - w, y + 12, w * fill / 1000, 3, RGBA(255, 255, 255, 230));
-    }
+    draw_front(l);
 
     l->info.ui_rgba = c->rgba;
     l->info.ui_w = c->w;
@@ -1574,6 +1720,8 @@ static void draw_loading(library *l)
     l->info.ui_h = c->h;
     l->info.ui_stride = c->stride;
     l->info.ui_id++;
+    l->info.ui_sprites = NULL;                /* the whole screen, drawn here */
+    memset(l->front_key, 0xFF, sizeof(l->front_key));
     plat_present(NULL, &l->info);
 }
 
@@ -1618,6 +1766,8 @@ static void draw_empty(library *l)
     l->info.ui_h = c->h;
     l->info.ui_stride = c->stride;
     l->info.ui_id++;
+    l->info.ui_sprites = NULL;                /* the whole screen, drawn here */
+    memset(l->front_key, 0xFF, sizeof(l->front_key));
     l->ui_dirty = 0;
 }
 

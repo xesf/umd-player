@@ -1151,8 +1151,9 @@ static int update_osd(player *p)
     osd_view v;
 
     if (p->layer) {           /* the disc menus draw instead */
-        int changed = p->present.ui_rgba != p->layer || p->present.ui_id != (p->layer_id | 0x40000000u);
-        p->present.ui_rgba = p->layer;
+        int changed = p->present.ui_id != (p->layer_id | 0x40000000u) || p->present.ui_sprites != p->layer_sprites ||
+                      p->present.ui_rgba != (p->layer_sprites ? NULL : p->layer);
+        p->present.ui_rgba = p->layer_sprites ? NULL : p->layer;   /* the sprites draw the menus */
         p->present.ui_w = p->layer_w;
         p->present.ui_h = p->layer_h;
         p->present.ui_stride = p->layer_stride;

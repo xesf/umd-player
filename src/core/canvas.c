@@ -259,11 +259,26 @@ void canvas_darken(canvas *c, int x, int y, int w, int h, int level)
     int x0 = x < 0 ? 0 : x, y0 = y < 0 ? 0 : y;
     int x1 = x + w > c->w ? c->w : x + w, y1 = y + h > c->h ? c->h : y + h;
 
+    /* Black at alpha 1 - level/256 over each pixel: on an opaque one, its colour times level;
+       on a transparent one (a layer the GPU puts over the background), translucent black. */
+    int a = 256 - level;
+
     for (int yy = y0; yy < y1; yy++) {
         uint8_t *row = c->rgba + (size_t)yy * c->stride;
-        for (int xx = x0; xx < x1; xx++)
-            for (int k = 0; k < 3; k++)
-                row[xx * 4 + k] = (uint8_t)(row[xx * 4 + k] * level >> 8);
+        for (int xx = x0; xx < x1; xx++) {
+            uint8_t *p = row + xx * 4;
+            if (p[3] == 255) {
+                for (int k = 0; k < 3; k++)
+                    p[k] = (uint8_t)(p[k] * level >> 8);
+                continue;
+            }
+            {
+                int da = p[3], oa = a * 255 / 256 + da * level / 256;
+                for (int k = 0; k < 3; k++)
+                    p[k] = (uint8_t)(oa ? p[k] * da * level / 256 / oa : 0);
+                p[3] = (uint8_t)(oa > 255 ? 255 : oa);
+            }
+        }
     }
 }
 

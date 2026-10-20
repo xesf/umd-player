@@ -127,9 +127,11 @@ typedef struct plat_present_info {
     const uint8_t *ui_rgba;
     int ui_w, ui_h, ui_stride;
     uint32_t ui_id;
-    /* Instead of ui_rgba where plat_draws_sprites(): the disc menus' pictures, in drawing order. */
+    /* Where plat_draws_sprites(): pictures in drawing order, the first ui_sprites_below of them
+       under the video picture (the library's background, around its icon video) and the rest
+       over it; ui_rgba, if any, goes over them all. */
     const plat_sprite *ui_sprites;
-    int ui_sprite_count;
+    int ui_sprite_count, ui_sprites_below;
 } plat_present_info;
 
 /* Draws the layers, or a black screen with only the UI when frame is NULL. The app calls it
