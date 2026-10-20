@@ -1,9 +1,14 @@
 # Changelog
 
-## Unreleased
+## v0.8.0 (2026-10-20)
 
+- Vita: the GPU draws the disc menus and the library, at 60 frames a second where the CPU managed 4 (The Transporter's turning dial).
+- Vita: seeks, menu video loops and animated icons no longer pause for 56 ms; the video decoder is flushed instead of re-created.
+- Vita: writing the log no longer costs a frame per line.
+- Library: the left stick scrolls the list, faster the further it is pushed.
+- Library: scrolling quickly stays smooth; a disc's background, icon video and sound start once the selection rests.
 - Library: □ forgets a disc's resume point instead of playing it from the start; ✕ then plays it from the start.
-- Disc menus draw faster on the Vita: blending over translucent pixels no longer divides, which the Vita's CPU does in software (The Transporter, Spider-Man 2).
+- Disc menus: a looping menu video that changes its audio or subtitles restarts in place instead of reopening.
 
 ## v0.7.3 (2026-10-20)
 
