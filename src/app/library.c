@@ -13,6 +13,7 @@
 #include "../core/icons.h"
 #include "../core/iso9660.h"
 #include "../core/png.h"
+#include "../core/rco.h"
 #include "../core/sfo.h"
 #include "../core/umdv.h"
 #include "../core/vtiming.h"
@@ -342,6 +343,64 @@ static int file_end(void *user, const char *path, const iso_entry *e)
     return 0;
 }
 
+/* The start menu's file, XX100000.RCO for a language XX, the first one found. */
+static int find_start_menu(void *user, const char *path, const iso_entry *e)
+{
+    char *found = user;
+    size_t n = strlen(path);
+
+    if (!e->is_dir && !found[0] && n > 10 && strcmp(path + n - 10, "100000.RCO") == 0)
+        snprintf(found, 64, "%s", path);
+    return 0;
+}
+
+/* For a disc without ICON0 and ICON1 (Monster Hunter Portable Rookie's Guide): the largest
+   picture of its start menu, usually the background with the title, fitted into an icon-shaped
+   tile 2 * ICON_W x 2 * ICON_H without changing its shape. */
+static uint8_t *menu_picture_icon(disc_file *d, int *w, int *h)
+{
+    char path[64] = "";
+    uint32_t size;
+    uint8_t *buf, *pic = NULL, *tile = NULL;
+    rco r;
+    int best = -1, bw = 0, bh = 0, tw = 2 * ICON_W, th = 2 * ICON_H;
+
+    iso_walk(&d->vol, "UMD_VIDEO/RESOURCE", find_start_menu, path);
+    if (!path[0] || !(buf = disc_read(d, path, &size, 8 * 1024 * 1024)))
+        return NULL;
+    if (rco_parse(&r, buf, size) == 0) {
+        for (int i = 0; i < r.image_count; i++) {
+            int iw, ih;
+            if (r.images[i].data && png_info(r.images[i].data, r.images[i].size, &iw, &ih) == 0 && iw * ih > bw * bh &&
+                iw <= 1024 && ih <= 1024) {
+                best = i;
+                bw = iw;
+                bh = ih;
+            }
+        }
+        if (best >= 0 && bw * bh >= 64 * 64)
+            pic = decode_png(r.images[best].data, r.images[best].size, &bw, &bh, 1024, 1024);
+        rco_free(&r);
+    }
+    free(buf);
+    if (pic && (tile = calloc((size_t)tw * th, 4)) != NULL) {
+        /* the largest size that fits, centred; each tile pixel takes the nearest picture pixel */
+        int dw = tw, dh = bh * tw / bw;
+        if (dh > th) {
+            dh = th;
+            dw = bw * th / bh;
+        }
+        for (int y = 0; y < dh; y++)
+            for (int x = 0; x < dw; x++)
+                memcpy(tile + ((size_t)(y + (th - dh) / 2) * tw + (size_t)(x + (tw - dw) / 2)) * 4,
+                       pic + ((size_t)(y * bh / dh) * bw + (size_t)(x * bw / dw)) * 4, 4);
+        *w = tw;
+        *h = th;
+    }
+    free(pic);
+    return tile;
+}
+
 static void read_disc_info(lib_disc *disc)
 {
     disc_file d;
@@ -367,6 +426,8 @@ static void read_disc_info(lib_disc *disc)
         disc->icon0 = first_icon_frame(buf, size, &disc->icon_w, &disc->icon_h);
         free(buf);
     }
+    if (!disc->icon0)
+        disc->icon0 = menu_picture_icon(&d, &disc->icon_w, &disc->icon_h);
     {
         /* A cut-short image (a bad dump or download) plays until the missing part, then
            waits for pictures that never come: say so in the library. */
