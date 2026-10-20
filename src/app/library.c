@@ -895,7 +895,7 @@ static void draw_info(library *l)
     }
     canvas_text(c, tx, y + 54, 2, RGBA(255, 255, 255, 255), line);
     osd_button(c, x, y + 106, 2, ICON_BUTTON_SQUARE);
-    canvas_text(c, tx, y + 114, 2, TEXT_DIM, "Play from the start");
+    canvas_text(c, tx, y + 114, 2, TEXT_DIM, "Forget the resume point");
 }
 
 /* ---- the disc on screen ---- */
@@ -1739,8 +1739,9 @@ int library_update(library *l, uint32_t pressed)
     if ((pressed & PLAT_BTN_SQUARE) && l->discs[l->sel].has_resume) {
         resume_forget_position(file_name(l->discs[l->sel].path));
         disc_state_save(file_name(l->discs[l->sel].path), NULL);
-        l->discs[l->sel].has_resume = 0;
-        return l->sel;
+        l->discs[l->sel].has_resume = 0;   /* forgotten only: Cross then plays from the start */
+        l->marks_stale = 1;
+        l->ui_dirty = 1;
     }
     if ((pressed & PLAT_BTN_UP) && l->sel > 0)
         l->sel--;

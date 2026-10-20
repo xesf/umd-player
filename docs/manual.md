@@ -37,7 +37,7 @@ The selected disc is the large icon on the left. On a PSP-authored disc, the bac
 |---|---|
 | Up, Down | Choose a disc |
 | ✕ | Play the disc (from where you left it, if you watched it before) |
-| □ | Play the disc from the start, keeping its settings. With disc menus, the disc starts as if inserted for the first time. |
+| □ | Forget where you stopped the disc, keeping its settings. ✕ then plays it from the start; with disc menus, as if inserted for the first time. |
 | Select | Show or hide the disc's name and resume point |
 | △ | Open the settings |
 | Start (F1 on a computer) | Open this manual. Left and Right turn the pages; ○ closes it. |
@@ -122,7 +122,7 @@ During the movie, ○ goes to the disc's main menu. Some discs answer the PSP's 
 
 Holding ○ for 1.5 seconds also goes back to the library.
 
-When you leave a disc, it saves its own place, as on a PSP. The next time, the disc continues from there. Some discs ask first. In the library, the Select panel says "Continue where you left off", and □ starts the disc from the beginning instead.
+When you leave a disc, it saves its own place, as on a PSP. The next time, the disc continues from there. Some discs ask first. In the library, the Select panel says "Continue where you left off", and □ forgets that place, so ✕ starts the disc from the beginning.
 
 ## Interactive movies (UMD-PG)
 

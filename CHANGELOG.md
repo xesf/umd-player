@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Library: □ forgets a disc's resume point instead of playing it from the start; ✕ then plays it from the start.
+
 ## v0.7.3 (2026-10-20)
 
 - Library: a disc without an icon or title image shows its title beside the icon, as the Select panel does (Monster Hunter Portable Rookie's Guide).
