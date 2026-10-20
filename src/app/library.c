@@ -1134,6 +1134,18 @@ static void draw_hints(canvas *c, int y)
     osd_draw_key_hint(c, x - 24 - mw, y - 4, key, "Manual");
 }
 
+/* A disc without ICON0 or ICON1 (Monster Hunter Portable Rookie's Guide, which shows none on a
+   PSP either): the app's backdrop as its icon, or a plain box if that cannot be decoded. */
+static void draw_no_icon(canvas *c, int x, int y, int w, int h)
+{
+    const uint8_t *bg = backdrop_rgba();
+
+    if (bg)
+        canvas_blit(c, bg, BACKDROP_W, BACKDROP_H, BACKDROP_W * 4, x, y, w, h);
+    else
+        canvas_rect(c, x, y, w, h, RGBA(60, 70, 90, 255));
+}
+
 static void draw_ui(library *l)
 {
     canvas *c = &l->ui;
@@ -1155,7 +1167,7 @@ static void draw_ui(library *l)
         if (d->icon0)
             canvas_blit(c, d->icon0, d->icon_w, d->icon_h, d->icon_w * 4, SMALL_X, y, ICON_W, ICON_H);
         else
-            canvas_rect(c, SMALL_X, y, ICON_W, ICON_H, RGBA(60, 70, 90, 255));
+            draw_no_icon(c, SMALL_X, y, ICON_W, ICON_H);
     }
 
     /* The selected disc: its ICON1 animation shows through a transparent hole, else ICON0, with
@@ -1166,7 +1178,7 @@ static void draw_ui(library *l)
         const lib_disc *d = &l->discs[l->sel];
         canvas_blit(c, d->icon0, d->icon_w, d->icon_h, d->icon_w * 4, BIG_X, BIG_Y, 2 * ICON_W, 2 * ICON_H);
     } else {
-        canvas_round_rect(c, BIG_X, BIG_Y, 2 * ICON_W, 2 * ICON_H, BIG_R, RGBA(60, 70, 90, 255));
+        draw_no_icon(c, BIG_X, BIG_Y, 2 * ICON_W, 2 * ICON_H);
     }
     fill_icon_corners(l);
     draw_info(l);

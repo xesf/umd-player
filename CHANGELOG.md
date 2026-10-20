@@ -3,6 +3,8 @@
 ## Unreleased
 
 - Fixed The Goonies' spoken languages drawing twice the size of its subtitles.
+- Fixed menus taking no input after skipping ahead in a menu video's opening (The Island): a skip now reports the chapters and marks it passed.
+- Library: a disc without an icon shows the app's backdrop instead of a grey box (Monster Hunter Portable Rookie's Guide).
 
 ## v0.7.1 (2026-10-20)
 
