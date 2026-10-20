@@ -102,10 +102,12 @@ static void scan_pads(void)
             if (ioctl(fd, EVIOCGABS(ABS_X), &ax) == 0) {
                 p->min_x = ax.minimum;
                 p->max_x = ax.maximum;
+                p->stick_x = ax.value;     /* where it is now: a 0..255 axis at rest is not "left" */
             }
             if (ioctl(fd, EVIOCGABS(ABS_Y), &ay) == 0) {
                 p->min_y = ay.minimum;
                 p->max_y = ay.maximum;
+                p->stick_y = ay.value;
             }
             ioctl(fd, EVIOCGNAME(sizeof(name)), name);
             plat_log("gamepad: %s (%s)\n", name, path);
@@ -186,6 +188,21 @@ static void poll_pads(void)
 /* The last input came from the keyboard; -1 before any. Steam sets SteamDeck on the Deck
    and SteamGamepadUI in Gaming Mode, where the controls are a gamepad. */
 static int keys_last = -1;
+
+int plat_stick_y(void)
+{
+    int best = 0;
+    for (int i = 0; i < pad_count; i++) {
+        const pad *p = &pads[i];
+        int c = (p->min_y + p->max_y) / 2, r = (p->max_y - p->min_y) / 2, v;
+        if (r <= 0)
+            continue;
+        v = (int)((long)(p->stick_y - c) * 127 / r);
+        if (abs(v) > abs(best))
+            best = v < -127 ? -127 : v > 127 ? 127 : v;
+    }
+    return best;
+}
 
 uint32_t plat_buttons(void)
 {

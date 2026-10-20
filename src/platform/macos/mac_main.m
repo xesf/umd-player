@@ -136,6 +136,11 @@ int plat_keyboard_ui(void)
     return 1;                 /* no gamepads on macOS yet */
 }
 
+int plat_stick_y(void)
+{
+    return 0;
+}
+
 int plat_touch(int *x, int *y)
 {
     if (!touch_down)

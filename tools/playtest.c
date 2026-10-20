@@ -1,7 +1,8 @@
 /* playtest: drives the app headlessly on the null platform and checks that it keeps showing
    frames. playtest <iso | folder> <seconds> [<time>:<button>[:<hold seconds>]]...
-   Buttons: up down left right cross circle square triangle l r start select, or touch=x,y for
-   a finger on the screen at (x, y) in 960x544 pixels.
+   Buttons: up down left right cross circle square triangle l r start select, touch=x,y for
+   a finger on the screen at (x, y) in 960x544 pixels, or stick=y for the left stick (-127 up
+   to 127 down).
    Example: playtest umd/movie.iso 30 5:triangle 6:right 8:circle 10:up 12:right:3
    Exits with 1 if the player stops showing frames for more than 2 s (a hang). */
 #include <stdio.h>
@@ -12,7 +13,7 @@
 #include "../src/platform/platform.h"
 
 extern uint32_t null_buttons, null_presents;
-extern int null_touch_down, null_touch_x, null_touch_y;
+extern int null_touch_down, null_touch_x, null_touch_y, null_stick_y;
 
 static uint32_t button(const char *name)
 {
@@ -48,7 +49,7 @@ int main(int argc, char **argv)
     while (plat_time_us() - start < (uint64_t)(seconds * 1e6)) {
         double t = (plat_time_us() - start) / 1e6;
         uint32_t held = 0;
-        int touch = 0;
+        int touch = 0, stick = 0;
         for (int i = 3; i < argc; i++) {
             double at = atof(argv[i]);
             const char *b = strchr(argv[i], ':'), *h;
@@ -64,12 +65,15 @@ int main(int argc, char **argv)
             if (t >= at && t < at + hold) {
                 if (strncmp(name, "touch=", 6) == 0 && sscanf(name + 6, "%d,%d", &null_touch_x, &null_touch_y) == 2)
                     touch = 1;
+                else if (strncmp(name, "stick=", 6) == 0)
+                    stick = atoi(name + 6);
                 else
                     held |= button(name);
             }
         }
         null_buttons = held;
         null_touch_down = touch;
+        null_stick_y = stick;
         if (!app_frame())
             break;
         if (null_presents != last_presents) {

@@ -67,6 +67,17 @@ static uint32_t read_buttons(void)
     return b;
 }
 
+int plat_stick_y(void)
+{
+    SceCtrlData pad;
+    int y;
+
+    memset(&pad, 0, sizeof(pad));
+    sceCtrlPeekBufferPositive(0, &pad, 1);
+    y = (int)pad.ly - 128;
+    return y < -127 ? -127 : y;
+}
+
 int main(int argc, char **argv)
 {
     char *args[2] = {"umdplayer", ISO_DIR};
@@ -76,7 +87,7 @@ int main(int argc, char **argv)
     sceIoMkdir(LOG_DIR, 0777);
     sceIoRemove(LOG_DIR "/log.txt");
     plat_set_power(PLAT_POWER_FULL);
-    sceCtrlSetSamplingMode(SCE_CTRL_MODE_DIGITAL);
+    sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG);   /* the left stick scrolls the library */
     sceTouchSetSamplingState(SCE_TOUCH_PORT_FRONT, SCE_TOUCH_SAMPLING_STATE_START);
 
     if (vita_video_init() < 0) {

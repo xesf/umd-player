@@ -48,9 +48,12 @@ static void load_xinput(void)
         xinput_get_state = (xinput_get_state_fn)(void (*)(void))GetProcAddress(m, "XInputGetState");
 }
 
+static int stick_y_raw;          /* the left stick, XInput units, up positive */
+
 static uint32_t pad_buttons(void)
 {
     uint32_t b = 0;
+    stick_y_raw = 0;
     if (!xinput_get_state)
         return 0;
     for (DWORD i = 0; i < 4; i++) {
@@ -71,7 +74,9 @@ static uint32_t pad_buttons(void)
         if (w & XINPUT_GAMEPAD_RIGHT_SHOULDER) b |= PLAT_BTN_R;
         if (w & XINPUT_GAMEPAD_START) b |= PLAT_BTN_START;
         if (w & XINPUT_GAMEPAD_BACK) b |= PLAT_BTN_SELECT;
-        /* the left stick counts as the D-pad past half way */
+        /* the left stick counts as the D-pad past half way; its position is kept too */
+        if (abs(s.Gamepad.sThumbLY) > abs(stick_y_raw))
+            stick_y_raw = s.Gamepad.sThumbLY;
         if (s.Gamepad.sThumbLX < -16384) b |= PLAT_BTN_LEFT;
         if (s.Gamepad.sThumbLX > 16384) b |= PLAT_BTN_RIGHT;
         if (s.Gamepad.sThumbLY > 16384) b |= PLAT_BTN_UP;
@@ -90,6 +95,11 @@ uint32_t plat_buttons(void)
     else if (keys)
         keys_last = 1;
     return keys | pad;
+}
+
+int plat_stick_y(void)
+{
+    return -stick_y_raw * 127 / 32767;    /* XInput's up is positive */
 }
 
 int plat_keyboard_ui(void)

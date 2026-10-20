@@ -43,6 +43,9 @@
 #define CACHE_N        6               /* discs whose art and sound are kept in memory */
 #define FRAMES_AHEAD   3
 #define SETTLE_US      150000          /* a selection shows its media once it rests this long */
+#define STICK_DEAD     40              /* left stick travel (of 127) that does nothing */
+#define STICK_SLOW     3.0f            /* discs a second just past the dead zone */
+#define STICK_FAST     25.0f           /* and with the stick pushed all the way */
 #define AU_MAX         4096
 #define PMF_MAX        (2 * 1024 * 1024)
 #define SND_MAX        (4 * 1024 * 1024)
@@ -136,6 +139,9 @@ struct library {
     const icon_video *icon;
 
     uint64_t moved_us;               /* when the selection last moved */
+    int stick_on;                    /* the left stick is pushed past its dead zone */
+    float stick_acc;                 /* discs owed to the stick, a fraction of one */
+    uint64_t stick_us;
     /* Where the GPU draws (plat_draws_sprites): the pictures as sprites, the background first
        and under the icon video, and the text, panels and icon corners on the transparent ui
        layer, redrawn only when what it shows changes (front_key). */
@@ -1886,6 +1892,33 @@ static uint32_t scroll_buttons(library *l)
     return 0;
 }
 
+/* Discs to move for the left stick this frame: one as it is pushed, then a rate that grows
+   with how far, from STICK_SLOW to STICK_FAST a second. Negative is up. */
+static int stick_steps(library *l)
+{
+    int y = plat_stick_y(), a = y < 0 ? -y : y, n;
+    uint64_t now = plat_time_us();
+    float f, rate;
+
+    if (a <= STICK_DEAD) {
+        l->stick_on = 0;
+        return 0;
+    }
+    if (!l->stick_on) {
+        l->stick_on = 1;
+        l->stick_acc = 0;
+        l->stick_us = now;
+        return y < 0 ? -1 : 1;
+    }
+    f = (float)(a - STICK_DEAD) / (127 - STICK_DEAD);
+    rate = STICK_SLOW + (STICK_FAST - STICK_SLOW) * f * f;
+    l->stick_acc += rate * (float)(now - l->stick_us) / 1e6f;
+    l->stick_us = now;
+    n = (int)l->stick_acc;
+    l->stick_acc -= (float)n;
+    return y < 0 ? -n : n;
+}
+
 int library_update(library *l, uint32_t pressed)
 {
     int present = 0;
@@ -1947,12 +1980,23 @@ int library_update(library *l, uint32_t pressed)
         l->marks_stale = 1;
         l->ui_dirty = 1;
     }
-    if ((pressed & PLAT_BTN_UP) && l->sel > 0)
-        l->sel--;
-    else if ((pressed & PLAT_BTN_DOWN) && l->sel < l->count - 1)
-        l->sel++;
-    else
-        pressed = 0;
+    {
+        /* Up and Down a disc each, and the left stick as many as stick_steps says; on Windows
+           and Linux the stick is the D-pad too, so its presses are left out. */
+        int to = l->sel + (l->settings_open ? 0 : stick_steps(l));
+        if (l->stick_on)
+            pressed &= ~(uint32_t)(PLAT_BTN_UP | PLAT_BTN_DOWN);
+        if (pressed & PLAT_BTN_UP)
+            to--;
+        else if (pressed & PLAT_BTN_DOWN)
+            to++;
+        if (to > l->count - 1)
+            to = l->count - 1;
+        if (to < 0)
+            to = 0;
+        pressed = to != l->sel;
+        l->sel = to;
+    }
     if (pressed) {
         clear_media(l);
         l->ui_dirty = 1;

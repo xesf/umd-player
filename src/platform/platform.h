@@ -185,6 +185,9 @@ enum {
     PLAT_BTN_HELP = 1 << 12               /* F1 on a computer: the manual */
 };
 uint32_t plat_buttons(void);            /* buttons held now */
+/* The left stick's vertical position: -127 pushed fully up to 127 fully down, 0 at rest or
+   without a stick. The library scrolls with it, faster the further it is pushed. */
+int plat_stick_y(void);
 /* The front touch screen: 1 while a finger is on it, with its position in 960x544 screen
    pixels. 0 on platforms without one. */
 int plat_touch(int *x, int *y);
