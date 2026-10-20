@@ -868,7 +868,7 @@ static uint64_t now_or_shown(player *p)
 
 static void seek_to(player *p, int64_t target, const char *why)
 {
-    int64_t first = p->title->start_pts, last = (int64_t)p->title->end_pts - 90000;
+    int64_t first = p->title->start_pts, last = (int64_t)p->title->end_pts - 90000, done = p->events_done;
 
     if (target < first)
         target = first;
@@ -876,6 +876,11 @@ static void seek_to(player *p, int64_t target, const char *why)
         target = last;
     plat_log("%s: seek to %.1f s\n", why, (double)(target - first) / 90000.0);
     restart_reader(p, (uint64_t)target, p->audio_sub, p->sub_sub);
+    /* A skip forward still reports the marks it passed, one a frame, as playing through would:
+       The Island enables its main menu at a mark 8.9 s into the menu video, and a skip over
+       it left the menu without input. */
+    if ((int64_t)target - 1 > done)
+        p->events_done = done;
 }
 
 static void seek_chapter(player *p, int step)

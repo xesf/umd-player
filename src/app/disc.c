@@ -30,6 +30,7 @@ struct disc {
     int last_chapter;
     int first_chapter;        /* the chapter playback started in, 0 until it started */
     int catching_up;          /* reporting the chapters passed during the first event's delay */
+    int reporting;            /* the chapter whose onChapter runs: what getPlayerStatus says */
     uint64_t seek_until;      /* the first chapter event of a title waits until then */
     int end_sent;             /* menu_playlist_ended was called for pl */
     /* what stop() left, for resume() */
@@ -206,7 +207,7 @@ static void d_status(void *user, menu_status *st)
     st->playing = !player_title_ended(d->pl);
     st->paused = player_paused(d->pl);
     st->playlist = d->title;  /* still the title that ended, while onPlayListEnd runs */
-    st->chapter = player_chapter(d->pl);
+    st->chapter = d->reporting ? d->reporting : player_chapter(d->pl);
     st->audio = player_audio(d->pl);
     st->subtitle = from_substream(player_subtitle(d->pl));
     snprintf(st->mark_name, sizeof(st->mark_name), "%s", player_chapter_mark(d->pl, &st->mark_data));
@@ -439,14 +440,18 @@ int disc_update(disc *d, uint32_t pressed)
         /* A held first event is the chapter playback started in, and the ones passed since
            follow one a frame: Night Warriors opens its menu at chapter 1 of a video whose
            chapter 2 starts at 1 s. */
+        /* So do the chapters a skip forward passed: The Island enables its main menu at
+           chapter 2 of its menu video, and a skip into chapter 3 left the menu without input. */
         if (first && d->first_chapter)
             ch = d->first_chapter;
-        else if (d->catching_up && ch > d->last_chapter + 1)
+        else if ((d->catching_up || d->last_chapter) && ch > d->last_chapter + 1)
             ch = d->last_chapter + 1;
         if (ch != d->last_chapter && player_started(d->pl) && due) {
             d->catching_up |= first;
             d->last_chapter = ch;
+            d->reporting = ch;
             menu_chapter_changed(d->m, ch);
+            d->reporting = 0;
         } else if (ch == d->last_chapter) {
             d->catching_up = 0;
         }
