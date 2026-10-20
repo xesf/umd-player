@@ -1,6 +1,9 @@
 /* Vita: GPU presentation with one textured quad. Uses the precompiled texture shaders in
    vita_shaders.c. Each present renders into one of two display buffers, waits for the GPU,
-   and hands the buffer to sceDisplay; the main loop waits for vblank between presents. */
+   and hands the buffer to sceDisplay; the main loop waits for vblank between presents.
+   The disc menus come as sprites (plat_present_info.ui_sprites): one tinted quad each, their
+   pictures copied to GPU memory once and kept while in use. Drawing them on the CPU took
+   200 ms a frame for The Transporter's turning dial. */
 #include "vita_gfx.h"
 #include "vita_shaders.h"
 #include "../platform.h"
@@ -21,6 +24,9 @@
 #define OVERLAY_MAX_W  720
 #define OVERLAY_MAX_H  480
 #define VERTICES       12             /* 4 per layer: video, subtitle, UI */
+#define SPRITES_MAX    512            /* menu pictures drawn in one frame */
+#define TEX_CACHE      384            /* menu pictures kept in GPU memory */
+#define TEX_IDLE       300            /* frames unused before a picture's copy is freed */
 
 typedef struct vertex {
     float x, y, z;
@@ -32,7 +38,21 @@ static SceGxmContext *context;
 static SceGxmRenderTarget *target;
 static SceGxmShaderPatcher *patcher;
 static SceGxmVertexProgram *vprog;
-static SceGxmFragmentProgram *fprog, *fprog_blend;
+static SceGxmFragmentProgram *fprog, *fprog_blend, *fprog_tint;
+static const SceGxmProgramParameter *tint_param;
+static vertex *sprite_vertices;
+
+/* A menu picture in GPU memory. */
+typedef struct sprite_tex {
+    uint32_t id;              /* 0: free */
+    SceUID uid;
+    void *mem;
+    SceSize size;
+    unsigned used;            /* the last frame that drew it */
+} sprite_tex;
+
+static sprite_tex texes[TEX_CACHE];
+static unsigned frame_no;
 typedef struct layer_tex {
     uint8_t *mem;
     int max_w, max_h;
@@ -84,6 +104,8 @@ int vita_gfx_init(void)
     SceGxmVertexStream stream;
     const SceGxmProgram *vp = (const SceGxmProgram *)vita_texture_v_gxp;
     const SceGxmProgram *fp = (const SceGxmProgram *)vita_texture_f_gxp;
+    const SceGxmProgram *tp = (const SceGxmProgram *)vita_texture_tint_f_gxp;
+    SceGxmShaderPatcherId tid;
     unsigned int frag_usse_off, vert_usse_off, patcher_frag_off;
     void *vdm, *vring, *fring, *fusse, *pbuf, *pvusse, *pfusse;
     int r;
@@ -156,7 +178,8 @@ int vita_gfx_init(void)
         plat_log("gfx: sceGxmShaderPatcherCreate 0x%08x\n", r);
         return -1;
     }
-    if (sceGxmShaderPatcherRegisterProgram(patcher, vp, &vid) < 0 || sceGxmShaderPatcherRegisterProgram(patcher, fp, &fid) < 0) {
+    if (sceGxmShaderPatcherRegisterProgram(patcher, vp, &vid) < 0 || sceGxmShaderPatcherRegisterProgram(patcher, fp, &fid) < 0 ||
+        sceGxmShaderPatcherRegisterProgram(patcher, tp, &tid) < 0) {
         plat_log("gfx: cannot register the shaders\n");
         return -1;
     }
@@ -189,6 +212,25 @@ int vita_gfx_init(void)
             return -1;
         }
     }
+    {
+        /* Menu pictures over the video, the same "over" as the software layer and its
+           composition: colour by source alpha, and alpha accumulating. */
+        static SceGxmBlendInfo blend;
+        blend.colorMask = SCE_GXM_COLOR_MASK_ALL;
+        blend.colorFunc = SCE_GXM_BLEND_FUNC_ADD;
+        blend.alphaFunc = SCE_GXM_BLEND_FUNC_ADD;
+        blend.colorSrc = SCE_GXM_BLEND_FACTOR_SRC_ALPHA;
+        blend.colorDst = SCE_GXM_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        blend.alphaSrc = SCE_GXM_BLEND_FACTOR_ONE;
+        blend.alphaDst = SCE_GXM_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        r = sceGxmShaderPatcherCreateFragmentProgram(patcher, tid, SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
+                                                     SCE_GXM_MULTISAMPLE_NONE, &blend, vp, &fprog_tint);
+        if (r < 0) {
+            plat_log("gfx: cannot create the tint program: 0x%08x\n", r);
+            return -1;
+        }
+        tint_param = sceGxmProgramFindParameterByName(tp, "uTintColor");
+    }
     if ((r = sceGxmShaderPatcherCreateVertexProgram(patcher, vid, attrs, 2, &stream, 1, &vprog)) < 0 ||
         (r = sceGxmShaderPatcherCreateFragmentProgram(patcher, fid, SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
                                                       SCE_GXM_MULTISAMPLE_NONE, NULL, vp, &fprog)) < 0) {
@@ -198,6 +240,8 @@ int vita_gfx_init(void)
     wvp_param = sceGxmProgramFindParameterByName(vp, "wvp");
 
     vertices = gpu_alloc(SCE_KERNEL_MEMBLOCK_TYPE_USER_RW_UNCACHE, VERTICES * sizeof(vertex), 4096, SCE_GXM_MEMORY_ATTRIB_READ, 1);
+    sprite_vertices = gpu_alloc(SCE_KERNEL_MEMBLOCK_TYPE_USER_RW_UNCACHE, SPRITES_MAX * 4 * sizeof(vertex), 4096,
+                                SCE_GXM_MEMORY_ATTRIB_READ, 1);
     sub_tex.mem = gpu_alloc(SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW, OVERLAY_MAX_W * OVERLAY_MAX_H * 4, 256 * 1024,
                             SCE_GXM_MEMORY_ATTRIB_READ, 1);
     sub_tex.max_w = OVERLAY_MAX_W;
@@ -206,7 +250,7 @@ int vita_gfx_init(void)
     ui_tex.max_w = SCREEN_W;
     ui_tex.max_h = SCREEN_H;
     indices = gpu_alloc(SCE_KERNEL_MEMBLOCK_TYPE_USER_RW_UNCACHE, 4 * sizeof(uint16_t), 4096, SCE_GXM_MEMORY_ATTRIB_READ, 1);
-    if (!vertices || !indices || !sub_tex.mem || !ui_tex.mem)
+    if (!vertices || !sprite_vertices || !indices || !sub_tex.mem || !ui_tex.mem)
         return -1;
     for (int i = 0; i < 4; i++)
         indices[i] = (uint16_t)i;
@@ -269,6 +313,93 @@ static int layer_texture(SceGxmTexture *t, const layer_tex *l)
     return 0;
 }
 
+static void free_tex(sprite_tex *t)
+{
+    sceGxmUnmapMemory(t->mem);
+    sceKernelFreeMemBlock(t->uid);
+    memset(t, 0, sizeof(*t));
+}
+
+/* The GPU copy of a sprite's picture: found by id, or made, replacing the copy unused the
+   longest. Returns NULL if there is no room. */
+static sprite_tex *sprite_texture(const plat_sprite *s)
+{
+    sprite_tex *slot = NULL;
+    SceSize size = ALIGN((SceSize)ALIGN(s->w, 8) * (SceSize)s->h * 4, 4096);
+    void *base = NULL;
+    SceUID uid;
+
+    for (int i = 0; i < TEX_CACHE; i++)
+        if (texes[i].id == s->id) {
+            texes[i].used = frame_no;
+            return &texes[i];
+        }
+    if (s->w <= 0 || s->h <= 0 || s->w > 4096 || s->h > 4096)
+        return NULL;
+    for (int i = 0; i < TEX_CACHE; i++)
+        if (!texes[i].id || texes[i].used != frame_no) {
+            if (!texes[i].id) {
+                slot = &texes[i];
+                break;
+            }
+            if (!slot || texes[i].used < slot->used)
+                slot = &texes[i];
+        }
+    if (!slot)
+        return NULL;
+    if (slot->id)
+        free_tex(slot);
+    uid = sceKernelAllocMemBlock("menu", SCE_KERNEL_MEMBLOCK_TYPE_USER_RW_UNCACHE, size, NULL);
+    if (uid < 0 || sceKernelGetMemBlockBase(uid, &base) < 0) {
+        static int told;
+        if (!told++)
+            plat_log("gfx: no memory for a %dx%d menu picture\n", s->w, s->h);
+        return NULL;
+    }
+    if (sceGxmMapMemory(base, size, SCE_GXM_MEMORY_ATTRIB_READ) < 0) {
+        sceKernelFreeMemBlock(uid);
+        return NULL;
+    }
+    for (int y = 0; y < s->h; y++)
+        memcpy((uint8_t *)base + (size_t)y * ALIGN(s->w, 8) * 4, s->rgba + (size_t)y * s->w * 4, (size_t)s->w * 4);
+    slot->id = s->id;
+    slot->uid = uid;
+    slot->mem = base;
+    slot->size = size;
+    slot->used = frame_no;
+    return slot;
+}
+
+/* Each sprite as a tinted quad. Nearest texels, as the software drawing samples them. */
+static void draw_sprites(const plat_sprite *list, int count)
+{
+    static const float identity[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+
+    sceGxmSetFragmentProgram(context, fprog_tint);
+    for (int k = 0; k < count && k < SPRITES_MAX; k++) {
+        const plat_sprite *s = &list[k];
+        sprite_tex *t = sprite_texture(s);
+        vertex *v = &sprite_vertices[k * 4];
+        SceGxmTexture tex;
+        void *uniforms;
+        if (!t || sceGxmTextureInitLinear(&tex, t->mem, SCE_GXM_TEXTURE_FORMAT_A8B8G8R8, (unsigned)s->w,
+                                          (unsigned)s->h, 0) < 0)
+            continue;
+        sceGxmTextureSetMinFilter(&tex, SCE_GXM_TEXTURE_FILTER_POINT);
+        sceGxmTextureSetMagFilter(&tex, SCE_GXM_TEXTURE_FILTER_POINT);
+        for (int j = 0; j < 4; j++)
+            v[j] = (vertex){s->x[j] * 2.0f / SCREEN_W - 1, 1 - s->y[j] * 2.0f / SCREEN_H, 0.5f, j & 1 ? s->u1 : s->u0,
+                            j & 2 ? s->v1 : s->v0};
+        sceGxmReserveVertexDefaultUniformBuffer(context, &uniforms);
+        sceGxmSetUniformDataF(uniforms, wvp_param, 0, 16, identity);
+        sceGxmReserveFragmentDefaultUniformBuffer(context, &uniforms);
+        sceGxmSetUniformDataF(uniforms, tint_param, 0, 4, s->color);
+        sceGxmSetFragmentTexture(context, 0, &tex);
+        sceGxmSetVertexStream(context, 0, v);
+        sceGxmDraw(context, SCE_GXM_PRIMITIVE_TRIANGLE_STRIP, SCE_GXM_INDEX_FORMAT_U16, indices, 4);
+    }
+}
+
 int vita_gfx_present(const uint8_t *image, int image_w, int image_h, int pic_x, int pic_y, const plat_present_info *info)
 {
     SceGxmTexture tex;
@@ -303,13 +434,20 @@ int vita_gfx_present(const uint8_t *image, int image_w, int image_h, int pic_x, 
         quad(&vertices[4], info->overlay_dst, 0, 0, 1, 1);
         draw(fprog_blend, &tex, &vertices[4]);
     }
-    if (info->ui_rgba && upload(&ui_tex, info->ui_rgba, info->ui_w, info->ui_h, info->ui_stride, info->ui_id) == 0 &&
+    frame_no++;
+    if (info->ui_sprites) {
+        draw_sprites(info->ui_sprites, info->ui_sprite_count);
+    } else if (info->ui_rgba && upload(&ui_tex, info->ui_rgba, info->ui_w, info->ui_h, info->ui_stride, info->ui_id) == 0 &&
         layer_texture(&tex, &ui_tex) == 0) {
         quad(&vertices[8], (plat_rect){0, 0, 1, 1}, 0, 0, 1, 1);
         draw(fprog_blend, &tex, &vertices[8]);
     }
     sceGxmEndScene(context, NULL, NULL);
     sceGxmFinish(context);
+    /* The GPU is done with this frame: free the copies of pictures no longer drawn. */
+    for (int i = 0; i < TEX_CACHE; i++)
+        if (texes[i].id && frame_no - texes[i].used > TEX_IDLE)
+            free_tex(&texes[i]);
 
     memset(&fb, 0, sizeof(fb));
     fb.size = sizeof(fb);

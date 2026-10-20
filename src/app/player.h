@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+#include "../platform/platform.h"
+
 /* Plays one title of a UMD Video ISO. Portable: uses only src/core and src/platform/platform.h.
 
    Threads:
@@ -67,6 +69,9 @@ void player_set_window(player *p, const float *dst);
 /* 0 while something else (the disc's menus) takes the touch screen. */
 void player_set_touch(player *p, int on);
 void player_set_layer(player *p, const uint8_t *rgba, int w, int h, int stride, uint32_t id);
+/* With the layer, where the GPU draws the menus (plat_draws_sprites): their pictures, drawn
+   instead of the layer's pixels. They stay the caller's. */
+void player_set_sprites(player *p, const plat_sprite *sprites, int count);
 void player_close(player *p);
 
 #endif

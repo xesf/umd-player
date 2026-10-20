@@ -457,6 +457,8 @@ void plat_present(plat_frame *frame, const plat_present_info *info)
     displayed = frame;
 }
 
+int plat_draws_sprites(void) { return 1; }
+
 void plat_screen_size(int *w, int *h)
 {
     *w = SCREEN_W;

@@ -221,6 +221,8 @@ void plat_present(plat_frame *frame, const plat_present_info *info)
     [CATransaction commit];
 }
 
+int plat_draws_sprites(void) { return 0; }
+
 void plat_screen_size(int *w, int *h)
 {
     *w = (int)content_view.bounds.size.width;

@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "../core/canvas.h"
+#include "../platform/platform.h"
 
 /* Runs a UMD Video disc's own menus: loads the RCO packages from UMD_VIDEO/RESOURCE/, runs
    their scripts, and keeps the widgets, animations and timers going. Portable: it drives
@@ -89,6 +90,10 @@ void menu_debug(const menu *m);
 int menu_dirty(const menu *m);
 /* Draws the open pages into c (UI layer, transparent where nothing is drawn). */
 void menu_draw(menu *m, canvas *c);
+/* Instead of menu_draw where the GPU draws (plat_draws_sprites): the pictures of the open pages
+   on the 960x544 screen, in drawing order, at most max. Returns how many; *shown is 1 if any
+   of them shows something. The pictures stay valid until the menus change resource. */
+int menu_sprites(menu *m, plat_sprite *out, int max, int *shown);
 /* The touch screen, once per display refresh while the menus have focus: whether a finger
    is down and where (960x544). A tap on a button, or near one, focuses and chooses it; a
    tap away from every button is Cross; a swipe is a direction button. */

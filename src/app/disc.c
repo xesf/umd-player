@@ -11,6 +11,7 @@
 #include "player.h"
 #include "resume.h"
 
+#define DISC_SPRITES 512
 #define LAYER_W     960
 #define LAYER_H     544
 #define UNITS_W     854.0f
@@ -47,6 +48,9 @@ struct disc {
     int window_on;
     float window[4];          /* screen fractions */
     canvas layer;
+    /* Where the GPU draws the menus (the Vita): their pictures instead of the layer's pixels. */
+    plat_sprite sprites[DISC_SPRITES];
+    int sprite_count;
     uint32_t layer_id;
     int layer_shown;          /* the menus have something on screen */
     uint32_t presented;       /* layer_id last presented without a player */
@@ -500,7 +504,12 @@ int disc_update(disc *d, uint32_t pressed)
     t1 = t2 = t3 = plat_time_us();
     /* The menu layer before the player draws, so a frame never shows with the last frame's
        layer (it decides between Fit and the user's screen mode). */
-    if (menu_dirty(d->m)) {
+    if (menu_dirty(d->m) && plat_draws_sprites()) {
+        d->sprite_count = menu_sprites(d->m, d->sprites, DISC_SPRITES, &d->layer_shown);
+        t2 = t3 = plat_time_us();
+        d->layer_id++;
+        d->perf.draws++;
+    } else if (menu_dirty(d->m)) {
         menu_draw(d->m, &d->layer);
         t2 = plat_time_us();
         d->layer_shown = layer_has_pixels(&d->layer);
@@ -508,9 +517,11 @@ int disc_update(disc *d, uint32_t pressed)
         d->layer_id++;
         d->perf.draws++;
     }
-    if (d->pl)
+    if (d->pl) {
         player_set_layer(d->pl, d->layer_shown ? d->layer.rgba : NULL, d->layer.w, d->layer.h, d->layer.stride,
                          d->layer_id);
+        player_set_sprites(d->pl, plat_draws_sprites() ? d->sprites : NULL, d->sprite_count);
+    }
     if (menu_focus || menus_take_input(d)) {
         int tx, ty, down = plat_touch(&tx, &ty);
         menu_touch(d->m, down, tx, ty);
@@ -550,6 +561,10 @@ int disc_update(disc *d, uint32_t pressed)
             info.ui_h = d->layer.h;
             info.ui_stride = d->layer.stride;
             info.ui_id = 0x20000000u | d->layer_id;
+            if (plat_draws_sprites()) {
+                info.ui_sprites = d->sprites;
+                info.ui_sprite_count = d->sprite_count;
+            }
             plat_present(NULL, &info);
         }
     }

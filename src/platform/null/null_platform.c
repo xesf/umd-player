@@ -208,6 +208,8 @@ void plat_present(plat_frame *frame, const plat_present_info *info)
     }
 }
 
+int plat_draws_sprites(void) { return getenv("NULL_SPRITES") != NULL; }   /* tests of the Vita's path */
+
 void plat_screen_size(int *w, int *h)
 {
     *w = 960;

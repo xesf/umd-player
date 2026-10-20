@@ -183,6 +183,8 @@ struct player {
     const uint8_t *layer;            /* player_set_layer */
     int layer_w, layer_h, layer_stride;
     uint32_t layer_id;
+    const plat_sprite *layer_sprites;  /* drawn by the GPU instead of the layer (plat_draws_sprites) */
+    int layer_sprite_count;
     char resume_key[128];            /* empty: do not remember */
     char disc_title[96];             /* PARAM.SFO TITLE */
     int next_title;                  /* L or R: the title to switch to, or -1 */
@@ -1155,6 +1157,8 @@ static int update_osd(player *p)
         p->present.ui_h = p->layer_h;
         p->present.ui_stride = p->layer_stride;
         p->present.ui_id = p->layer_id | 0x40000000u;
+        p->present.ui_sprites = p->layer_sprites;
+        p->present.ui_sprite_count = p->layer_sprite_count;
         return changed;
     }
 
@@ -1164,6 +1168,7 @@ static int update_osd(player *p)
     p->osd_drawn = v;
     if (osd_visible(&v)) {
         osd_draw(&v, &p->ui);
+        p->present.ui_sprites = NULL;
         p->present.ui_rgba = p->ui.rgba;
         p->present.ui_w = p->ui.w;
         p->present.ui_h = p->ui.h;
@@ -1458,6 +1463,12 @@ void player_set_layer(player *p, const uint8_t *rgba, int w, int h, int stride, 
     p->layer_id = id;
     memset(&p->osd_drawn, 0xFF, sizeof(p->osd_drawn));   /* redraw the OSD when the layer goes */
     p->dirty = 1;
+}
+
+void player_set_sprites(player *p, const plat_sprite *sprites, int count)
+{
+    p->layer_sprites = sprites;
+    p->layer_sprite_count = count;
 }
 
 int player_finished(const player *p)

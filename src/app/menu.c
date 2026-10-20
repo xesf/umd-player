@@ -83,6 +83,7 @@ typedef struct res {
     uint8_t *img_fill;        /* the image is one colour: a fill that stretches to its widget */
     uint8_t *own_size;        /* per widget: draw the image at its own size (same_size_labels) */
     uint8_t **occ;            /* per image: its 8x8 blocks with a visible pixel (see blit) */
+    uint32_t *img_id;         /* per image: unique while decoded, for the GPU's copy of it */
     int pages[MAX_PAGES], page_count;   /* open pages, in drawing order */
     int active;               /* page that takes input, or -1 */
     int *focus;               /* per page: the focused button, or -1 */
@@ -1406,6 +1407,7 @@ static void free_res(res *r)
     for (int i = 0; r->occ && i < r->r.image_count; i++)
         free(r->occ[i]);
     free(r->occ);
+    free(r->img_id);
     free(r->rgba);
     free(r->img_w);
     free(r->img_h);
@@ -1451,9 +1453,10 @@ static res *load_res(menu *m, const char *name)
     r->img_fill = calloc((size_t)r->r.image_count + 1, 1);
     r->own_size = calloc((size_t)r->r.object_count + 1, 1);
     r->occ = calloc((size_t)r->r.image_count + 1, sizeof(uint8_t *));
+    r->img_id = calloc((size_t)r->r.image_count + 1, sizeof(uint32_t));
     r->vm = vs_create(r->r.script, r->r.script_size, vm_log, m);
     if (!r->w || !r->wref || !r->focus || !r->aref || !r->iref || !r->rgba || !r->img_w || !r->img_h || !r->img_fill ||
-        !r->own_size || !r->occ || !r->vm) {
+        !r->own_size || !r->occ || !r->img_id || !r->vm) {
         free_res(r);
         return NULL;
     }
@@ -1893,7 +1896,9 @@ static const uint8_t *image_rgba(res *r, int i, int *w, int *h)
             int n = iw * ih, same = 1;
             for (int k = 1; k < n && same; k++)
                 same = px[k] == px[0];
+            static uint32_t next_id;
             r->img_fill[i] = (uint8_t)same;
+            r->img_id[i] = ++next_id;
             r->img_w[i] = iw;
             r->img_h[i] = ih;
             /* Which 8x8 blocks have a visible pixel: the rings of The Transporter's dial are
@@ -1957,6 +1962,7 @@ typedef struct sprite {
     int widget;
     const uint8_t *img;
     const uint8_t *occ;       /* the image's visible 8x8 blocks, or NULL */
+    int image;                /* index in the resource's images */
     int iw, ih;
     float cx, cy, ex[2], ey[2], color[4], crop[4];
     int has_crop;
@@ -2216,6 +2222,7 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
             s->widget = i;
             s->img = img;
             s->occ = r->occ[w->image];
+            s->image = w->image;
             s->iw = iw;
             s->ih = ih;
             /* Image axes on screen: x right, and y down (the image's rows go down). */
@@ -2326,6 +2333,69 @@ void menu_draw(menu *m, canvas *c)
     cur ^= 1;
     valid = 1;
     m->dirty = 0;
+}
+
+int menu_sprites(menu *m, plat_sprite *out, int max, int *shown)
+{
+    static sprite list[MAX_SPRITES];
+    canvas c = {NULL, 960, 544, 960 * 4};
+    res *r = m->res;
+    int n = 0, count = 0;
+    xform root;
+
+    memset(&root, 0, sizeof(root));
+    for (int k = 0; k < 3; k++)
+        root.l[k][k] = 1;
+    for (int k = 0; k < 4; k++)
+        root.color[k] = 1;
+    /* as menu_draw: pages in their order in the RCO */
+    for (int i = 0; i < r->r.object_count; i++)
+        if (r->r.objects[i].kind == RCO_PAGE)
+            for (int p = 0; p < r->page_count; p++)
+                if (r->pages[p] == i)
+                    collect(r, &c, i, &root, list, &n);
+    *shown = 0;
+    for (int k = 0; k < n && count < max; k++) {
+        const sprite *s = &list[k];
+        plat_sprite *o = &out[count];
+        float det = s->ex[0] * s->ey[1] - s->ex[1] * s->ey[0];
+        float u0 = s->has_crop ? s->crop[0] : 0, v0 = s->has_crop ? s->crop[1] : 0;
+        float u1 = s->has_crop ? s->crop[0] + s->crop[2] : 1, v1 = s->has_crop ? s->crop[1] + s->crop[3] : 1;
+        int any = 0;
+        /* what blit leaves out */
+        if (isnan(s->color[0]) || isnan(s->color[1]) || isnan(s->color[2]) || !(s->color[3] * 256 >= 1) ||
+            fabsf(det) < 0.5f || s->box[0] >= s->box[2] || s->box[1] >= s->box[3])
+            continue;
+        if (u0 < 0) u0 = 0;
+        if (v0 < 0) v0 = 0;
+        if (u1 > 1) u1 = 1;
+        if (v1 > 1) v1 = 1;
+        if (u0 >= u1 || v0 >= v1)
+            continue;
+        o->rgba = s->img;
+        o->w = s->iw;
+        o->h = s->ih;
+        o->id = r->img_id[s->image];
+        /* the image's square u, v in 0..1 sits at centre + (u - 0.5) * ex + (v - 0.5) * ey */
+        for (int j = 0; j < 4; j++) {
+            float u = (j & 1 ? u1 : u0) - 0.5f, v = (j & 2 ? v1 : v0) - 0.5f;
+            o->x[j] = s->cx + u * s->ex[0] + v * s->ey[0];
+            o->y[j] = s->cy + u * s->ex[1] + v * s->ey[1];
+        }
+        o->u0 = u0;
+        o->v0 = v0;
+        o->u1 = u1;
+        o->v1 = v1;
+        memcpy(o->color, s->color, sizeof(o->color));
+        if (o->color[3] > 1)
+            o->color[3] = 1;
+        for (int b = 0; s->occ && !any && b < ((s->iw + 7) / 8) * ((s->ih + 7) / 8); b++)
+            any = s->occ[b];
+        *shown |= any || !s->occ;
+        count++;
+    }
+    m->dirty = 0;
+    return count;
 }
 
 /* ---- touch ---- */

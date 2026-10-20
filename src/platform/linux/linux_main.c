@@ -352,6 +352,8 @@ void plat_keep_awake(void)
         XResetScreenSaver(dpy);
 }
 
+int plat_draws_sprites(void) { return 0; }
+
 void plat_screen_size(int *w, int *h)
 {
     *w = win_w;

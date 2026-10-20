@@ -98,6 +98,21 @@ typedef struct plat_rect {
     float x, y, w, h;
 } plat_rect;
 
+/* A picture of the disc menus drawn by the GPU, where plat_draws_sprites() says it can: the
+   image's u v square goes to the quad x[0..3], y[0..3] on the 960x544 screen (top left, top
+   right, bottom left, bottom right), showing its part u0 v0 to u1 v1, multiplied by color. */
+typedef struct plat_sprite {
+    const uint8_t *rgba;                /* straight alpha, w * 4 bytes a row */
+    int w, h;
+    uint32_t id;                        /* the same while rgba holds the same picture */
+    float x[4], y[4];
+    float u0, v0, u1, v1;
+    float color[4];
+} plat_sprite;
+
+/* 1 if plat_present draws ui_sprites (the Vita); 0 where the app draws the UI layer itself. */
+int plat_draws_sprites(void);
+
 typedef struct plat_present_info {
     int video_w, video_h;               /* decoded picture size */
     int src_x, src_y, src_w, src_h;     /* the part of the picture to show */
@@ -112,6 +127,9 @@ typedef struct plat_present_info {
     const uint8_t *ui_rgba;
     int ui_w, ui_h, ui_stride;
     uint32_t ui_id;
+    /* Instead of ui_rgba where plat_draws_sprites(): the disc menus' pictures, in drawing order. */
+    const plat_sprite *ui_sprites;
+    int ui_sprite_count;
 } plat_present_info;
 
 /* Draws the layers, or a black screen with only the UI when frame is NULL. The app calls it
