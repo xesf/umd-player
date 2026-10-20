@@ -129,11 +129,46 @@ uint64_t plat_time_us(void)
 }
 
 /* Opens and closes the log on every line, so it survives the app being killed. */
+/* Log lines collect here and a thread writes them every half second: opening, appending to
+   and closing the file on the memory card for each line took about 10 ms, a dropped frame
+   for each line the menus or the library logged. */
+#define LOG_BUF  (64 * 1024)
+#define LOG_FILE "ux0:data/umdplayer/log.txt"
+
+static char log_buf[LOG_BUF];
+static int log_len, log_dropped;
+static SceKernelLwMutexWork log_lock;
+static int log_started;
+
+static void log_writer(void *user)
+{
+    static char out[LOG_BUF];
+    (void)user;
+    for (;;) {
+        int n, dropped;
+        sceKernelDelayThread(500000);
+        sceKernelLockLwMutex(&log_lock, 1, NULL);
+        n = log_len;
+        dropped = log_dropped;
+        memcpy(out, log_buf, (size_t)n);
+        log_len = log_dropped = 0;
+        sceKernelUnlockLwMutex(&log_lock, 1);
+        if (dropped)
+            n += snprintf(out + n, sizeof(out) - (size_t)n, "log: %d lines dropped\n", dropped);
+        if (n > 0) {
+            SceUID fd = sceIoOpen(LOG_FILE, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_APPEND, 0666);
+            if (fd >= 0) {
+                sceIoWrite(fd, out, n > LOG_BUF ? LOG_BUF : n);
+                sceIoClose(fd);
+            }
+        }
+    }
+}
+
 void plat_log(const char *fmt, ...)
 {
     char line[512];
     va_list ap;
-    SceUID fd;
     int n;
 
     va_start(ap, fmt);
@@ -143,11 +178,28 @@ void plat_log(const char *fmt, ...)
         return;
     if (n >= (int)sizeof(line))
         n = sizeof(line) - 1;
-    fd = sceIoOpen("ux0:data/umdplayer/log.txt", SCE_O_WRONLY | SCE_O_CREAT | SCE_O_APPEND, 0666);
-    if (fd >= 0) {
-        sceIoWrite(fd, line, n);
-        sceIoClose(fd);
+    if (!log_started) {
+        log_started = 1;
+        sceKernelCreateLwMutex(&log_lock, "log", 0, 0, NULL);
+        if (!plat_thread_start(log_writer, NULL, "log"))
+            log_started = 2;      /* no thread: write each line as before */
     }
+    if (log_started == 2) {
+        SceUID fd = sceIoOpen(LOG_FILE, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_APPEND, 0666);
+        if (fd >= 0) {
+            sceIoWrite(fd, line, n);
+            sceIoClose(fd);
+        }
+        return;
+    }
+    sceKernelLockLwMutex(&log_lock, 1, NULL);
+    if (log_len + n <= LOG_BUF - 64) {
+        memcpy(log_buf + log_len, line, (size_t)n);
+        log_len += n;
+    } else {
+        log_dropped++;
+    }
+    sceKernelUnlockLwMutex(&log_lock, 1);
 }
 
 void plat_keep_awake(void)
