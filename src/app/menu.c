@@ -2184,16 +2184,18 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
     const wstate *w = &r->w[i];
     float lm[3][3];
     xform x;
+    float own[4];
 
-    /* A plane without an image only places its children: its colour and alpha do not reach
-       them. Little Britain keeps its menu cube under plnMMFloat, at alpha 0 and never shown. */
-    if (w->image < 0 && r->r.objects[i].kind == RCO_PLANE) {
-        for (int k = 0; k < 4; k++)
-            x.color[k] = parent->color[k];
-    } else {
-        for (int k = 0; k < 4; k++)
-            x.color[k] = parent->color[k] * w->color[k];
+    /* A widget's colour and alpha are its own picture's: they do not reach its children, which
+       the scripts fade one by one (Species has fadeChildrenAlpha). Species and Terminator keep
+       their whole menu wheel under Wheel, a picture at alpha 0, and Little Britain its menu
+       cube under plnMMFloat, an empty plane at alpha 0. A fade (an animation's fade step, on
+       pages and groups) does reach them. */
+    for (int k = 0; k < 4; k++) {
+        own[k] = parent->color[k] * w->color[k];
+        x.color[k] = parent->color[k];
     }
+    own[3] *= w->fade;
     x.color[3] *= w->fade;
     if (x.color[3] <= 0.004f || w->hidden)
         return;
@@ -2249,7 +2251,7 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
             s->ey[1] = o11 * height * syu;
             s->cx = (UNITS_W / 2 + x.t[0] + o00 * shift + o01 * vshift) * sxu;
             s->cy = (UNITS_H / 2 - x.t[1] - o10 * shift - o11 * vshift) * syu;
-            memcpy(s->color, x.color, sizeof(s->color));
+            memcpy(s->color, own, sizeof(s->color));
             s->has_crop = w->has_crop;
             if (w->has_crop)
                 memcpy(s->crop, w->crop, sizeof(s->crop));
