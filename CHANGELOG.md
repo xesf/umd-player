@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Fixed Species' and Terminator's menus showing nothing (their whole menu sat under an invisible widget).
+- Fixed Superbad's menu taking no input.
+- Fixed Fawlty Towers freezing when choosing Episode Selection.
+- Fixed Vacancy's and Underworld Evolution's menus ignoring the D-pad, and Vacancy's menus ending after its logo.
+- Fixed Team America's subtitle switch doing nothing.
+- Fixed The Da Vinci Code's cryptex menu always showing the same word.
+- Disc menus have perspective: The Boondock Saints' and Foo Fighters' menus no longer draw at a quarter size, and Feel the Noise's no longer overlaps itself.
+- Library: interlaced PNG backgrounds load (Terminator).
+
 ## v0.8.0 (2026-10-20)
 
 - Vita: the GPU draws the disc menus and the library, at 60 frames a second where the CPU managed 4 (The Transporter's turning dial).
