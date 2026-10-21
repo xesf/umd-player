@@ -46,6 +46,9 @@
 #define STICK_DEAD     40              /* left stick travel (of 127) that does nothing */
 #define STICK_SLOW     3.0f            /* discs a second just past the dead zone */
 #define STICK_FAST     25.0f           /* and with the stick pushed all the way */
+#define HOLD_DELAY     350000          /* Up or Down held this long starts repeating */
+#define HOLD_SLOW      6.0f            /* discs a second as it starts */
+#define HOLD_RAMP      2.0f            /* seconds to reach STICK_FAST */
 #define AU_MAX         4096
 #define PMF_MAX        (2 * 1024 * 1024)
 #define SND_MAX        (4 * 1024 * 1024)
@@ -140,6 +143,9 @@ struct library {
 
     uint64_t moved_us;               /* when the selection last moved */
     int stick_on;                    /* the left stick is pushed past its dead zone */
+    uint32_t hold_dir;               /* PLAT_BTN_UP or PLAT_BTN_DOWN held, or 0 */
+    uint64_t hold_since, hold_us;
+    float hold_acc;
     float stick_acc;                 /* discs owed to the stick, a fraction of one */
     uint64_t stick_us;
     /* Where the GPU draws (plat_draws_sprites): the pictures as sprites, the background first
@@ -1919,6 +1925,39 @@ static int stick_steps(library *l)
     return y < 0 ? -n : n;
 }
 
+/* Discs to move for Up or Down held (the keyboard's arrows, the D-pad): after HOLD_DELAY, a
+   rate from HOLD_SLOW up to STICK_FAST over HOLD_RAMP seconds, as the stick scrolls. The press
+   itself moves one, as before. Negative is up. */
+static int hold_steps(library *l, uint32_t pressed)
+{
+    uint32_t held = plat_buttons() & (PLAT_BTN_UP | PLAT_BTN_DOWN);
+    uint64_t now = plat_time_us();
+    float t, rate;
+    int n;
+
+    if (held != PLAT_BTN_UP && held != PLAT_BTN_DOWN) {
+        l->hold_dir = 0;
+        return 0;
+    }
+    if (held != l->hold_dir || (pressed & held)) {
+        l->hold_dir = held;
+        l->hold_since = l->hold_us = now;
+        l->hold_acc = 0;
+        return 0;
+    }
+    if (now - l->hold_since < HOLD_DELAY) {
+        l->hold_us = now;
+        return 0;
+    }
+    t = (float)(now - l->hold_since - HOLD_DELAY) / 1e6f;
+    rate = t >= HOLD_RAMP ? STICK_FAST : HOLD_SLOW + (STICK_FAST - HOLD_SLOW) * t / HOLD_RAMP;
+    l->hold_acc += rate * (float)(now - l->hold_us) / 1e6f;
+    l->hold_us = now;
+    n = (int)l->hold_acc;
+    l->hold_acc -= (float)n;
+    return held == PLAT_BTN_UP ? -n : n;
+}
+
 int library_update(library *l, uint32_t pressed)
 {
     int present = 0;
@@ -1983,7 +2022,7 @@ int library_update(library *l, uint32_t pressed)
     {
         /* Up and Down a disc each, and the left stick as many as stick_steps says; on Windows
            and Linux the stick is the D-pad too, so its presses are left out. */
-        int to = l->sel + (l->settings_open ? 0 : stick_steps(l));
+        int to = l->sel + (l->settings_open ? 0 : stick_steps(l) + hold_steps(l, pressed));
         if (l->stick_on)
             pressed &= ~(uint32_t)(PLAT_BTN_UP | PLAT_BTN_DOWN);
         if (pressed & PLAT_BTN_UP)

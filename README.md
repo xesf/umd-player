@@ -36,7 +36,7 @@ On Windows, Linux and the Steam Deck, see [UMD Player on computers](docs/desktop
 
 | Button | Library | During a movie | In the options panel |
 |---|---|---|---|
-| Up, Down | Choose a disc | Next or previous chapter | Choose a row |
+| Up, Down | Choose a disc; hold to scroll | Next or previous chapter | Choose a row |
 | Left stick | Scroll the list, faster the further you push | | |
 | Left, Right | | Back or forward 10 s; hold to rewind or fast-forward | Change the value |
 | L, R | | Previous or next title on the disc (episodes, extras) | |

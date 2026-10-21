@@ -10,6 +10,7 @@
 - Fixed The Da Vinci Code's cryptex menu always showing the same word.
 - Disc menus have perspective: The Boondock Saints' and Foo Fighters' menus no longer draw at a quarter size, and Feel the Noise's no longer overlaps itself.
 - Library: interlaced PNG backgrounds load (Terminator).
+- Library: holding Up or Down (arrow keys or D-pad) scrolls the list, faster the longer it is held.
 
 ## v0.8.0 (2026-10-20)
 

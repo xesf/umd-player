@@ -35,7 +35,7 @@ The selected disc is the large icon on the left. On a PSP-authored disc, the bac
 
 | Button | What it does |
 |---|---|
-| Up, Down | Choose a disc |
+| Up, Down | Choose a disc; hold to scroll, faster the longer you hold |
 | Left stick | Scroll the list: the further you push it, the faster it goes |
 | ✕ | Play the disc (from where you left it, if you watched it before) |
 | □ | Forget where you stopped the disc, keeping its settings. ✕ then plays it from the start; with disc menus, as if inserted for the first time. |
