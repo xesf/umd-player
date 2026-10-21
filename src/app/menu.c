@@ -734,16 +734,21 @@ NATIVE(w_set_focus)
 {
     ref *rf = user;
     res *r = rf->m->res;
-    int page = page_of(r, rf->index);
+    /* Only buttons take the focus: a plane or a group passes it to its first button, and one
+       without a button keeps the focus where it is. Superbad focuses rootPlane.children[0],
+       its background picture, which left the menu taking no input. */
+    int target = first_button(r, rf->index), page = target >= 0 ? page_of(r, target) : -1;
     (void)vm; (void)args; (void)argc;
     *ret = self;
+    if (target < 0)
+        return;
     /* The script focusing the widget that has the focus still gets its focus-in: Austin
        Powers restarts its pulse and records the selected item there on return from a
        submenu. */
-    if (page >= 0 && r->focus[page] == rf->index)
-        do_action_named(rf->m, &r->r.objects[rf->index].action[RCO_BTN_FOCUS_IN], rf->index, "onFocusIn");
+    if (page >= 0 && r->focus[page] == target)
+        do_action_named(rf->m, &r->r.objects[target].action[RCO_BTN_FOCUS_IN], target, "onFocusIn");
     else
-        set_focus(rf->m, rf->index);
+        set_focus(rf->m, target);
 }
 
 /* setPos(x, y, z) sets at once; animPos(x, y, z, ms) moves over time: the duration is the
