@@ -292,7 +292,7 @@ int png_decode(const uint8_t *png, uint32_t size, uint8_t *rgba, int stride, uin
     depth = png[24];
     type = png[25];
     interlace = png[28];
-    if (interlace != 0)
+    if (interlace > 1)
         return -1;
     switch (type) {
     case 0: channels = 1; break;
@@ -305,6 +305,21 @@ int png_decode(const uint8_t *png, uint32_t size, uint8_t *rgba, int stride, uin
     rowbytes = ((uint32_t)w * channels * depth + 7) / 8;
     bpp = ((uint32_t)channels * depth + 7) / 8;
     if ((uint64_t)(rowbytes + 1) * h > work_size)
+        return -1;
+    /* Adam7 (Terminator's PIC1.PNG): seven passes, each a smaller image of every dx-th pixel
+       of every dy-th row from x0, y0, one after another in the data. */
+    static const int adam7[7][4] = {{0, 0, 8, 8}, {4, 0, 8, 8}, {0, 4, 4, 8}, {2, 0, 4, 4},
+                                    {0, 2, 2, 4}, {1, 0, 2, 2}, {0, 1, 1, 2}};
+    const int (*passes)[4] = interlace ? adam7 : (const int (*)[4])(const int[1][4]){{0, 0, 1, 1}};
+    int npass = interlace ? 7 : 1;
+    uint32_t total = 0;
+    for (int p = 0; p < npass; p++) {
+        uint32_t pw = (uint32_t)(w - passes[p][0] + passes[p][2] - 1) / (uint32_t)passes[p][2];
+        uint32_t ph = (uint32_t)(h - passes[p][1] + passes[p][3] - 1) / (uint32_t)passes[p][3];
+        if (pw && ph)
+            total += (((uint32_t)pw * channels * depth + 7) / 8 + 1) * ph;
+    }
+    if (total > work_size)
         return -1;
 
     memset(palette, 0, sizeof(palette));
@@ -352,74 +367,82 @@ int png_decode(const uint8_t *png, uint32_t size, uint8_t *rgba, int stride, uin
     b.error = 0;
     getbits(&b, 16);   /* zlib header */
     out.out = work;
-    out.size = (rowbytes + 1) * (uint32_t)h;
+    out.size = total;
     out.pos = 0;
     if (inflate_stream(&b, &out) < 0 || out.pos < out.size)
         return -1;
 
-    for (int y = 0; y < h; y++) {
-        uint8_t *row = work + (size_t)y * (rowbytes + 1);
-        const uint8_t *prev = y ? row - (rowbytes + 1) + 1 : NULL;
-        uint8_t filter = row[0], *r = row + 1;
-        uint8_t *dst = rgba + (size_t)y * stride;
+    for (int p = 0, base = 0; p < npass; p++) {
+        int x0 = passes[p][0], y0 = passes[p][1], dx = passes[p][2], dy = passes[p][3];
+        int pw = (w - x0 + dx - 1) / dx, ph = (h - y0 + dy - 1) / dy;
+        uint32_t prb = ((uint32_t)pw * channels * depth + 7) / 8;
+        if (pw <= 0 || ph <= 0)
+            continue;
+        for (int y = 0; y < ph; y++) {
+            uint8_t *row = work + base + (size_t)y * (prb + 1);
+            const uint8_t *prev = y ? row - (prb + 1) + 1 : NULL;
+            uint8_t filter = row[0], *r = row + 1;
+            uint8_t *dst = rgba + (size_t)(y0 + y * dy) * stride;
 
-        for (uint32_t x = 0; x < rowbytes; x++) {
-            int a = x >= bpp ? r[x - bpp] : 0, up = prev ? prev[x] : 0, c = prev && x >= bpp ? prev[x - bpp] : 0;
-            switch (filter) {
-            case 0: break;
-            case 1: r[x] = (uint8_t)(r[x] + a); break;
-            case 2: r[x] = (uint8_t)(r[x] + up); break;
-            case 3: r[x] = (uint8_t)(r[x] + ((a + up) >> 1)); break;
-            case 4: r[x] = (uint8_t)(r[x] + paeth(a, up, c)); break;
-            default: return -1;
-            }
-        }
-        for (int x = 0; x < w; x++) {
-            uint8_t *px = dst + x * 4;
-            if (depth < 8) {
-                int per = 8 / depth, shift = 8 - depth * (x % per + 1);
-                int v = (r[x / per] >> shift) & ((1 << depth) - 1);
-                if (type == 3) {
-                    memcpy(px, palette[v], 4);
-                } else {
-                    uint8_t g = (uint8_t)(v * 255 / ((1 << depth) - 1));
-                    px[0] = px[1] = px[2] = g;
-                    px[3] = have_key && v == key[0] ? 0 : 255;
-                }
-                continue;
-            }
-            {
-                int step = depth / 8;
-                const uint8_t *s = r + (size_t)x * channels * step;
-                uint8_t c0 = s[0], c1 = channels > 1 ? s[step] : 0, c2 = channels > 2 ? s[2 * step] : 0;
-                uint8_t c3 = channels > 3 ? s[3 * step] : 0;
-                switch (type) {
-                case 0:
-                    px[0] = px[1] = px[2] = c0;
-                    px[3] = have_key && (step == 1 ? c0 : (s[0] << 8 | s[1])) == key[0] ? 0 : 255;
-                    break;
-                case 2:
-                    px[0] = c0;
-                    px[1] = c1;
-                    px[2] = c2;
-                    px[3] = have_key && step == 1 && c0 == key[0] && c1 == key[1] && c2 == key[2] ? 0 : 255;
-                    break;
-                case 3:
-                    memcpy(px, palette[c0], 4);
-                    break;
-                case 4:
-                    px[0] = px[1] = px[2] = c0;
-                    px[3] = c1;
-                    break;
-                default:
-                    px[0] = c0;
-                    px[1] = c1;
-                    px[2] = c2;
-                    px[3] = c3;
-                    break;
+            for (uint32_t x = 0; x < prb; x++) {
+                int a = x >= bpp ? r[x - bpp] : 0, up = prev ? prev[x] : 0, c = prev && x >= bpp ? prev[x - bpp] : 0;
+                switch (filter) {
+                case 0: break;
+                case 1: r[x] = (uint8_t)(r[x] + a); break;
+                case 2: r[x] = (uint8_t)(r[x] + up); break;
+                case 3: r[x] = (uint8_t)(r[x] + ((a + up) >> 1)); break;
+                case 4: r[x] = (uint8_t)(r[x] + paeth(a, up, c)); break;
+                default: return -1;
                 }
             }
+            for (int x = 0; x < pw; x++) {
+                uint8_t *px = dst + (x0 + x * dx) * 4;
+                if (depth < 8) {
+                    int per = 8 / depth, shift = 8 - depth * (x % per + 1);
+                    int v = (r[x / per] >> shift) & ((1 << depth) - 1);
+                    if (type == 3) {
+                        memcpy(px, palette[v], 4);
+                    } else {
+                        uint8_t g = (uint8_t)(v * 255 / ((1 << depth) - 1));
+                        px[0] = px[1] = px[2] = g;
+                        px[3] = have_key && v == key[0] ? 0 : 255;
+                    }
+                    continue;
+                }
+                {
+                    int step = depth / 8;
+                    const uint8_t *s = r + (size_t)x * channels * step;
+                    uint8_t c0 = s[0], c1 = channels > 1 ? s[step] : 0, c2 = channels > 2 ? s[2 * step] : 0;
+                    uint8_t c3 = channels > 3 ? s[3 * step] : 0;
+                    switch (type) {
+                    case 0:
+                        px[0] = px[1] = px[2] = c0;
+                        px[3] = have_key && (step == 1 ? c0 : (s[0] << 8 | s[1])) == key[0] ? 0 : 255;
+                        break;
+                    case 2:
+                        px[0] = c0;
+                        px[1] = c1;
+                        px[2] = c2;
+                        px[3] = have_key && step == 1 && c0 == key[0] && c1 == key[1] && c2 == key[2] ? 0 : 255;
+                        break;
+                    case 3:
+                        memcpy(px, palette[c0], 4);
+                        break;
+                    case 4:
+                        px[0] = px[1] = px[2] = c0;
+                        px[3] = c1;
+                        break;
+                    default:
+                        px[0] = c0;
+                        px[1] = c1;
+                        px[2] = c2;
+                        px[3] = c3;
+                        break;
+                    }
+                }
+            }
         }
+        base += (int)(prb + 1) * ph;
     }
     return 0;
 }

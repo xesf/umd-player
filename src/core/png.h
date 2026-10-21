@@ -4,8 +4,8 @@
 #include <stdint.h>
 
 /* PNG decoding for subtitles (4-bit palette with transparency) and disc art (ICON0.PNG,
-   PIC1.PNG). Supports every non-interlaced 8-bit-or-less colour type plus 16-bit (truncated
-   to 8 bits). Adam7 interlacing is not supported. Output is RGBA, 4 bytes per pixel. */
+   PIC1.PNG). Supports every 8-bit-or-less colour type plus 16-bit (truncated to 8 bits),
+   with or without Adam7 interlacing. Output is RGBA, 4 bytes per pixel. */
 
 /* Raw DEFLATE (RFC 1951). Returns the bytes written, or -1 on bad data or a full output. */
 int64_t inflate_raw(const uint8_t *in, uint32_t in_size, uint8_t *out, uint32_t out_size);
