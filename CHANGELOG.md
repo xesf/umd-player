@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.8.1 (2026-10-20)
 
 - Fixed Species' and Terminator's menus showing nothing (their whole menu sat under an invisible widget).
 - Fixed Superbad's menu taking no input.
