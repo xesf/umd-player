@@ -47,6 +47,7 @@ typedef struct anim_run {
     int locked;               /* a lock step ran: input waits until an unlock or the end */
     int target;               /* anim.play(widget): the widget for steps that name none */
     uint64_t wait_until;
+    uint64_t started;         /* the menu clock when it was played */
 } anim_run;
 
 #define TIMER_ARGS 8
@@ -86,6 +87,7 @@ typedef struct res {
     uint32_t *img_id;         /* per image: unique while decoded, for the GPU's copy of it */
     int pages[MAX_PAGES], page_count;   /* open pages, in drawing order */
     int active;               /* page that takes input, or -1 */
+    int focus_page;           /* page of the button the script focused last, or -1 (input_page) */
     int *focus;               /* per page: the focused button, or -1 */
 } res;
 
@@ -468,13 +470,16 @@ static void play_anim(menu *m, int anim, int target)
 
     /* The same animation can run on several widgets at once (a list hides each item), but a
        widget runs one animation at a time: playing one stops the others on it. Freddy vs.
-       Jason stops its looping button fades by playing "killAnim", a bare delay, on the button. */
+       Jason stops its looping button fades by playing "killAnim", a bare delay, on the button.
+       Animations played in the same moment all run: Fawlty Towers plays its episode page's
+       transition on the button and then moves the focus, whose focus-out animation on that
+       button stopped the transition before it opened the page or ended its input lock. */
     for (int i = 0; i < MAX_RUNS; i++) {
         if (!m->runs[i].active || m->runs[i].target != target || target < 0)
             continue;
         if (m->runs[i].anim == anim)
             run = &m->runs[i];
-        else
+        else if (m->runs[i].started < m->now)
             m->runs[i].active = 0;
     }
     for (int i = 0; !run && i < MAX_RUNS; i++)
@@ -488,6 +493,7 @@ static void play_anim(menu *m, int anim, int target)
     run->target = target;
     run->step = 0;
     run->wait_until = m->now;
+    run->started = m->now;
 }
 
 static void step_anims(menu *m)
@@ -581,6 +587,19 @@ static int first_button(const res *r, int i)
    button's focus-in action: Tenjho Tenge and Shorts Play highlight an item only that way, and
    showed none until the first key, which then also moved past it. Not over a playing movie,
    where Valiant leaves a page of hidden buttons active. */
+/* The page that takes input: the active one, or when it has no buttons the page of the
+   button the script focused last, if still open. Vacancy and Underworld Evolution focus Nav on
+   pageRootMenu and then activate p_PLMM, a page of pictures. */
+static int input_page(const res *r)
+{
+    if (r->active >= 0 && first_button(r, r->active) >= 0)
+        return r->active;
+    for (int p = 0; r->focus_page >= 0 && p < r->page_count; p++)
+        if (r->pages[p] == r->focus_page)
+            return r->focus_page;
+    return r->active;
+}
+
 static void auto_focus(menu *m)
 {
     res *r = m->res;
@@ -601,7 +620,7 @@ static void do_input(menu *m, uint32_t pressed)
         {PLAT_BTN_LEFT, RCO_BTN_LEFT, "onFocusLeft"}, {PLAT_BTN_RIGHT, RCO_BTN_RIGHT, "onFocusRight"},
         {PLAT_BTN_UP, RCO_BTN_UP, "onFocusUp"}, {PLAT_BTN_DOWN, RCO_BTN_DOWN, "onFocusDown"}};
     res *r = m->res;
-    int page = r->active, focus;
+    int page = input_page(r), focus;
 
     if (page < 0 || m->lock || !pressed)
         return;
@@ -742,6 +761,7 @@ NATIVE(w_set_focus)
     *ret = self;
     if (target < 0)
         return;
+    r->focus_page = page;
     /* The script focusing the widget that has the focus still gets its focus-in: Austin
        Powers restarts its pulse and records the selected item there on return from a
        submenu. */
@@ -1046,6 +1066,8 @@ NATIVE(mp_play)
     int playlist, chapter;
     (void)vm; (void)self; (void)ret;
     /* play(0, 0, playlist, chapter[, video, audio, audio on, subtitle, subtitle on]) */
+    m->ended = 0;             /* the disc goes on after controller.end(): Vacancy calls it in
+                                 onPlayListEnd before playing its menu */
     if (argc < 3) {
         /* play(0, 0) names no title. Speed calls it near the end of its warnings and Harry
            Potter after its credits; the title plays on to its end, where onPlayListEnd decides
@@ -1466,6 +1488,7 @@ static res *load_res(menu *m, const char *name)
         return NULL;
     }
     r->active = -1;
+    r->focus_page = -1;
     same_size_labels(m, r);
     widgets = vs_new_array(r->vm, r->r.object_count);
     for (int i = 0; i < r->r.object_count; i++) {
@@ -1874,7 +1897,8 @@ int menu_has_focus(const menu *m)
 {
     /* A page without buttons takes no input: Saw leaves pageWaitDummy, a lone picture, active
        while the movie plays, and the player keeps its buttons. */
-    return m->res->active >= 0 && first_button(m->res, m->res->active) >= 0;
+    int page = input_page(m->res);
+    return page >= 0 && first_button(m->res, page) >= 0;
 }
 
 /* ---- drawing ---- */
@@ -2427,7 +2451,9 @@ static int button_at(menu *m, int x, int y)
         root.l[k][k] = 1;
     for (int k = 0; k < 4; k++)
         root.color[k] = 1;
-    collect(r, &c, r->active, &root, list, &n);
+    if (input_page(r) < 0)
+        return -1;
+    collect(r, &c, input_page(r), &root, list, &n);
     for (int k = n - 1; k >= 0; k--) {
         const sprite *s = &list[k];
         if (r->r.objects[s->widget].kind == RCO_BUTTON && s->color[3] > 0.05f &&
@@ -2467,7 +2493,7 @@ void menu_touch(menu *m, int down, int x, int y)
     if (!m->touch_down)
         return;
     m->touch_down = 0;
-    if (r->active < 0 || m->lock)
+    if (input_page(r) < 0 || m->lock)
         return;
     dx = m->touch_x - m->touch_x0;
     dy = m->touch_y - m->touch_y0;
@@ -2488,7 +2514,7 @@ void menu_touch(menu *m, int down, int x, int y)
         return;
     }
     /* A tap on a button: focus it, as the D-pad would, then choose it. */
-    if (r->focus[r->active] != b) {
+    if (r->focus[input_page(r)] != b) {
         set_focus(m, b);
         if (m->res != r || m->lock)
             return;
