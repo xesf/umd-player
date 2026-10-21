@@ -50,7 +50,8 @@ enum {
     RCO_STEP_DELAY = 7,
     RCO_STEP_EVENT = 8,
     RCO_STEP_LOCK = 9,
-    RCO_STEP_UNLOCK = 10
+    RCO_STEP_UNLOCK = 10,
+    RCO_STEP_CROP = 11        /* x y w h, fractions of the image: The Da Vinci Code scrolls its cryptex strips */
 };
 
 typedef struct rco_step {

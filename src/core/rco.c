@@ -171,9 +171,10 @@ static void read_step(parser *ps, uint32_t off, int sub)
     case RCO_STEP_COLOR:
     case RCO_STEP_ROTATE:
     case RCO_STEP_SCALE:
-    case RCO_STEP_FADE: {
+    case RCO_STEP_FADE:
+    case RCO_STEP_CROP: {
         uint32_t type = rd32(r, d), ptr = rd32(r, d + 4);
-        int n = sub == RCO_STEP_COLOR ? 4 : sub == RCO_STEP_FADE ? 1 : 3;
+        int n = sub == RCO_STEP_COLOR || sub == RCO_STEP_CROP ? 4 : sub == RCO_STEP_FADE ? 1 : 3;
         if ((type == REF_ANIMOBJ || type == REF_OBJECT) && ptr != 0xFFFFFFFF)
             s->object = (int)ptr;
         s->duration = rdf(r, d + 8);

@@ -22,6 +22,7 @@
 #define USERDATA_EMPTY 32           /* getUserData before anything was saved */
 #define UNITS_W      854.0f           /* menu coordinates: a 16:9 screen 480 units high */
 #define UNITS_H      480.0f
+#define PERSP_D      579.4f           /* the menu camera's distance: 240 / tan(22.5 degrees) */
 
 
 enum { P_POS, P_COLOR, P_SCALE, P_ROT, P_CROP, P_SIZE, P_FADE };
@@ -518,6 +519,7 @@ static void step_anims(menu *m)
             case RCO_STEP_ROTATE: start_tween(m, obj, P_ROT, s->value, 3, s->duration); break;
             case RCO_STEP_SCALE: start_tween(m, obj, P_SCALE, s->value, 3, s->duration); break;
             case RCO_STEP_FADE: start_tween(m, obj, P_FADE, s->value, 1, s->duration); break;
+            case RCO_STEP_CROP: start_tween(m, obj, P_CROP, s->value, 4, s->duration); break;
             case RCO_STEP_DELAY: run->wait_until = m->now + (uint64_t)(s->duration * 1000); break;
             case RCO_STEP_LOCK: run->locked = 1; break;
             case RCO_STEP_UNLOCK: run->locked = 0; break;
@@ -2062,7 +2064,9 @@ static void blit(canvas *c, const sprite *s, const int *clip)
     float det = s->ex[0] * s->ey[1] - s->ex[1] * s->ey[0];
     int x0 = s->box[0] > clip[0] ? s->box[0] : clip[0], x1 = s->box[2] < clip[2] ? s->box[2] : clip[2];
     int y0 = s->box[1] > clip[1] ? s->box[1] : clip[1], y1 = s->box[3] < clip[3] ? s->box[3] : clip[3];
-    /* crop: the visible part as x, y, w, h fractions of the image; the rest is not drawn */
+    /* crop: the part of the image, as x, y, w, h fractions, that covers the whole quad (a
+       texture window): The Da Vinci Code scales its cryptex strips to a quarter of their
+       height and shows a quarter of each strip's letters in them. */
     float u0 = s->has_crop ? s->crop[0] : 0, v0 = s->has_crop ? s->crop[1] : 0;
     float u1 = s->has_crop ? s->crop[0] + s->crop[2] : 1, v1 = s->has_crop ? s->crop[1] + s->crop[3] : 1;
     int32_t umin, umax, vmin, vmax, dudx, dvdx;
@@ -2088,13 +2092,13 @@ static void blit(canvas *c, const sprite *s, const int *clip)
     umax = (int32_t)(u1 * (float)s->iw * 65536);
     vmin = (int32_t)(v0 * (float)s->ih * 65536);
     vmax = (int32_t)(v1 * (float)s->ih * 65536);
-    dudx = (int32_t)(s->ey[1] / det * (float)s->iw * 65536);
-    dvdx = (int32_t)(-s->ex[1] / det * (float)s->ih * 65536);
+    dudx = (int32_t)(s->ey[1] / det * (u1 - u0) * (float)s->iw * 65536);
+    dvdx = (int32_t)(-s->ex[1] / det * (v1 - v0) * (float)s->ih * 65536);
     for (int y = y0; y < y1; y++) {
         uint8_t *d = c->rgba + (size_t)y * c->stride + (size_t)x0 * 4;
         float dx = (float)x0 + 0.5f - s->cx, dy = (float)y + 0.5f - s->cy;
-        int32_t u = (int32_t)(((dx * s->ey[1] - dy * s->ey[0]) / det + 0.5f) * (float)s->iw * 65536);
-        int32_t v = (int32_t)(((s->ex[0] * dy - s->ex[1] * dx) / det + 0.5f) * (float)s->ih * 65536);
+        int32_t u = (int32_t)((u0 + ((dx * s->ey[1] - dy * s->ey[0]) / det + 0.5f) * (u1 - u0)) * (float)s->iw * 65536);
+        int32_t v = (int32_t)((v0 + ((s->ex[0] * dy - s->ex[1] * dx) / det + 0.5f) * (v1 - v0)) * (float)s->ih * 65536);
         int k0 = 0, k1 = x1 - x0;
         if (!row_span(u, dudx, umin, umax, &k0, &k1) || !row_span(v, dvdx, vmin, vmax, &k0, &k1))
             continue;
@@ -2273,13 +2277,19 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
             float lx = sqrtf(x.l[0][0] * x.l[0][0] + x.l[1][0] * x.l[1][0] + x.l[2][0] * x.l[2][0]);
             float ly = sqrtf(x.l[0][1] * x.l[0][1] + x.l[1][1] * x.l[1][1] + x.l[2][1] * x.l[2][1]);
             float ca = cosf(ang), sa = sinf(ang);
-            float o00 = mx * ca * lx, o10 = mx * sa * lx, o01 = -sa * ly, o11 = ca * ly;
+            /* Perspective: z comes toward the viewer, a camera PERSP_D units from the screen
+               plane (a 45 degree view of the 480 units' height). The Boondock Saints lays its
+               menu out in the PSP's 480x272 pixels and brings it to z 254, where that grows by
+               854 / 480 to fill the screen; Feel the Noise sets its menu drum back at z -250.
+               Widgets at z 0, most of them, keep their size. */
+            float pz = x.t[2] > PERSP_D - 1 ? PERSP_D - 1 : x.t[2], f = PERSP_D / (PERSP_D - pz);
+            float o00 = mx * ca * lx * f, o10 = mx * sa * lx * f, o01 = -sa * ly * f, o11 = ca * ly * f;
             s->ex[0] = o00 * width * sxu;
             s->ex[1] = -o10 * width * syu;
             s->ey[0] = -o01 * height * sxu;
             s->ey[1] = o11 * height * syu;
-            s->cx = (UNITS_W / 2 + x.t[0] + o00 * shift + o01 * vshift) * sxu;
-            s->cy = (UNITS_H / 2 - x.t[1] - o10 * shift - o11 * vshift) * syu;
+            s->cx = (UNITS_W / 2 + x.t[0] * f + o00 * shift + o01 * vshift) * sxu;
+            s->cy = (UNITS_H / 2 - x.t[1] * f - o10 * shift - o11 * vshift) * syu;
             memcpy(s->color, own, sizeof(s->color));
             s->has_crop = w->has_crop;
             if (w->has_crop)
@@ -2407,9 +2417,9 @@ int menu_sprites(menu *m, plat_sprite *out, int max, int *shown)
         o->w = s->iw;
         o->h = s->ih;
         o->id = r->img_id[s->image];
-        /* the image's square u, v in 0..1 sits at centre + (u - 0.5) * ex + (v - 0.5) * ey */
+        /* the quad is centre +- ex / 2 +- ey / 2, and the crop (u0..u1, v0..v1) covers it all */
         for (int j = 0; j < 4; j++) {
-            float u = (j & 1 ? u1 : u0) - 0.5f, v = (j & 2 ? v1 : v0) - 0.5f;
+            float u = j & 1 ? 0.5f : -0.5f, v = j & 2 ? 0.5f : -0.5f;
             o->x[j] = s->cx + u * s->ex[0] + v * s->ey[0];
             o->y[j] = s->cy + u * s->ex[1] + v * s->ey[1];
         }
