@@ -22,7 +22,7 @@
 #define USERDATA_EMPTY 32           /* getUserData before anything was saved */
 #define UNITS_W      854.0f           /* menu coordinates: a 16:9 screen 480 units high */
 #define UNITS_H      480.0f
-#define PERSP_D      579.4f           /* the menu camera's distance: 240 / tan(22.5 degrees) */
+#define PERSP_D      507.668f         /* the menu camera's distance: twice The Boondock Saints' z */
 
 
 enum { P_POS, P_COLOR, P_SCALE, P_ROT, P_CROP, P_SIZE, P_FADE };
@@ -2139,21 +2139,27 @@ static void blit(canvas *c, const sprite *s, const int *clip)
     }
 }
 
-/* Whether an iw x ih image draws at its widget's width x height (STRETCH) or at its own size:
-   OWN when the shapes differ, OVER when it has the widget's shape but is more than 3 times
-   smaller. An image stretches to its widget's size only when the two have the same shape
-   (16:9 cards and backgrounds), the image is a fill or a strip at most FILL_MAX across in one
-   direction and four times as long (a 1x1 black fade; Tenjho Tenge's 10x64 band behind its
+/* Whether an iw x ih image draws at its widget's width x height (STRETCH), at its own size
+   (OWN), at its own size because it has the widget's shape but is more than OVER_MAX times
+   smaller (OVER), or scaled up evenly to fit inside the widget (FIT). An image stretches to its
+   widget's size when the two have the same shape (16:9 cards and backgrounds), the image is a
+   fill or a strip at most FILL_MAX across in one direction, four times as long, and spread
+   over four times its width or more (a 1x1 black fade; Tenjho Tenge's 10x64 band behind its
    buttons; not Jackass's 55x16 labels), or it is all one colour (12 Monkeys' 28x28 black fade
-   over the whole screen). Otherwise it is drawn at its own size: 2Fast2Furious and The Bourne
-   Supremacy size their label buttons for the longest translation, and on a PSP each label
-   keeps its own size. */
-enum { STRETCH, OWN, OVER };
+   over the whole screen). Artwork made at half or a third of its size fits its widget: Hero
+   and Deftones put 53x15 labels in 106x29 widgets, The Texas Chainsaw Massacre 54x14 in 177x49.
+   Otherwise it is drawn at its own size: 2Fast2Furious and The Bourne Supremacy size their
+   label buttons for the longest translation, and on a PSP each label keeps its own size. */
+enum { STRETCH, OWN, OVER, FIT };
+#define OVER_MAX 3.3f
 
 static int stretch_rule(int iw, int ih, float width, float height, int fill)
 {
     int thin = iw < ih ? iw : ih, thick = iw < ih ? ih : iw;
-    int strip = thin <= FILL_MAX && (thick <= FILL_MAX || thick >= 4 * thin);   /* not a 55x16 label (Jackass) */
+    float across = iw < ih ? width : height;      /* the widget's size along the image's thin side */
+    /* Not a 55x16 label (Jackass), nor Superbad's 119x12 labels in widgets 26 high: a strip
+       spreads across 4 times its width or more. */
+    int strip = thin <= FILL_MAX && (thick <= FILL_MAX || thick >= 4 * thin) && across >= 4.0f * (float)thin;
     float shape;
     int full, band;
 
@@ -2176,13 +2182,15 @@ static int stretch_rule(int iw, int ih, float width, float height, int fill)
        menus, as on a PSP (Batman Begins' gradient, The Fifth Element's black line too). */
     if (width > 1.05f * UNITS_W || height > 1.05f * UNITS_H)
         return STRETCH;
-    if (shape > 1.03f || shape < 0.97f)
-        return OWN;
-    return width > 3.0f * (float)iw && !full ? OVER : STRETCH;
+    if (shape > 1.03f || shape < 0.97f) {
+        float rw = width / (float)iw, rh = height / (float)ih, lo = rw < rh ? rw : rh, hi = rw < rh ? rh : rw;
+        return lo >= 1.5f && lo <= OVER_MAX && hi <= 1.6f * lo ? FIT : OWN;
+    }
+    return width > OVER_MAX * (float)iw && !full ? OVER : STRETCH;
 }
 
 /* Buttons side by side at one scale show their labels at one size: when one of them keeps its
-   image's size (over 3 times smaller than its widget), the others under the same parent with
+   image's size (over OVER_MAX times smaller than its widget), the others under the same parent with
    the same scale do too. The Goonies' language page has its spoken languages in widgets twice
    their images and its subtitles in widgets four times theirs, both at scale 1.8 and drawn in
    one font; stretching the first drew them twice the size of the second. */
@@ -2204,7 +2212,8 @@ static void same_size_labels(menu *m, res *r)
             if (j == i || r->own_size[j] || b->kind != RCO_BUTTON || b->parent != o->parent || b->scale[0] != o->scale[0] ||
                 b->image < 0 || png_info(rc->images[b->image].data, rc->images[b->image].size, &bw, &bh) < 0)
                 continue;
-            if (stretch_rule(bw, bh, b->size[0], b->size[1], 0) == STRETCH && b->size[0] > 1.03f * (float)bw) {
+            int rule = stretch_rule(bw, bh, b->size[0], b->size[1], 0);
+            if ((rule == STRETCH || rule == FIT) && b->size[0] > 1.03f * (float)bw) {
                 r->own_size[j] = 1;
                 mlog(m, "menu: %s keeps its image size, as %s does", b->name ? b->name : "?", o->name ? o->name : "?");
             }
@@ -2244,7 +2253,12 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
             sprite *s = &list[*count];
             float sxu = (float)c->w / UNITS_W, syu = (float)c->h / UNITS_H;
             float width = w->size[0] > 0 ? w->size[0] : (float)iw, height = w->size[1] > 0 ? w->size[1] : (float)ih;
-            if (r->own_size[i] || stretch_rule(iw, ih, width, height, r->img_fill[w->image]) != STRETCH) {
+            int rule = r->own_size[i] ? OWN : stretch_rule(iw, ih, width, height, r->img_fill[w->image]);
+            if (rule == FIT) {
+                float k = width / (float)iw < height / (float)ih ? width / (float)iw : height / (float)ih;
+                width = (float)iw * k;
+                height = (float)ih * k;
+            } else if (rule != STRETCH) {
                 width = (float)iw;
                 height = (float)ih;
             }
@@ -2278,10 +2292,11 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
             float ly = sqrtf(x.l[0][1] * x.l[0][1] + x.l[1][1] * x.l[1][1] + x.l[2][1] * x.l[2][1]);
             float ca = cosf(ang), sa = sinf(ang);
             /* Perspective: z comes toward the viewer, a camera PERSP_D units from the screen
-               plane (a 45 degree view of the 480 units' height). The Boondock Saints lays its
-               menu out in the PSP's 480x272 pixels and brings it to z 254, where that grows by
-               854 / 480 to fill the screen; Feel the Noise sets its menu drum back at z -250.
-               Widgets at z 0, most of them, keep their size. */
+               plane. The Boondock Saints and Cowboy Bebop lay their menus out at half size
+               (427x240 backgrounds) and bring them to z 253.834, where they double to fill
+               the screen; Foo Fighters' 480x272 backgrounds at z 220 grow by 1.77 to fill it.
+               Feel the Noise sets its menu drum back at z -250. Widgets at z 0, most of them,
+               keep their size. */
             float pz = x.t[2] > PERSP_D - 1 ? PERSP_D - 1 : x.t[2], f = PERSP_D / (PERSP_D - pz);
             float o00 = mx * ca * lx * f, o10 = mx * sa * lx * f, o01 = -sa * ly * f, o11 = ca * ly * f;
             s->ex[0] = o00 * width * sxu;
