@@ -83,6 +83,7 @@ typedef struct res {
     uint8_t **rgba;           /* decoded images, on first use */
     int *img_w, *img_h;
     uint8_t *img_fill;        /* one colour, or a one-way gradient: a fill that stretches to its widget */
+    uint8_t *img_plain;       /* a filled box: four fifths solid, every visible pixel one colour */
     uint8_t *own_size;        /* per widget: draw the image at its own size (same_size_labels) */
     float *label_k;           /* per widget: or this many times its size, as its neighbours (0: no) */
     uint8_t **occ;            /* per image: its 8x8 blocks with a visible pixel (see blit) */
@@ -1455,6 +1456,7 @@ static void free_res(res *r)
     free(r->img_w);
     free(r->img_h);
     free(r->img_fill);
+    free(r->img_plain);
     free(r->own_size);
     free(r->label_k);
     free(r->w);
@@ -1495,12 +1497,13 @@ static res *load_res(menu *m, const char *name)
     r->img_w = calloc((size_t)r->r.image_count + 1, sizeof(int));
     r->img_h = calloc((size_t)r->r.image_count + 1, sizeof(int));
     r->img_fill = calloc((size_t)r->r.image_count + 1, 1);
+    r->img_plain = calloc((size_t)r->r.image_count + 1, 1);
     r->own_size = calloc((size_t)r->r.object_count + 1, 1);
     r->label_k = calloc((size_t)r->r.object_count + 1, sizeof(float));
     r->occ = calloc((size_t)r->r.image_count + 1, sizeof(uint8_t *));
     r->img_id = calloc((size_t)r->r.image_count + 1, sizeof(uint32_t));
     r->vm = vs_create(r->r.script, r->r.script_size, vm_log, m);
-    if (!r->w || !r->wref || !r->focus || !r->aref || !r->iref || !r->rgba || !r->img_w || !r->img_h || !r->img_fill ||
+    if (!r->w || !r->wref || !r->focus || !r->aref || !r->iref || !r->rgba || !r->img_w || !r->img_h || !r->img_fill || !r->img_plain ||
         !r->own_size || !r->label_k || !r->occ || !r->img_id || !r->vm) {
         free_res(r);
         return NULL;
@@ -1951,8 +1954,19 @@ static const uint8_t *image_rgba(res *r, int i, int *w, int *h)
             for (int y = 1; y < ih && cols; y++)
                 for (int x = 0; x < iw && cols; x++)
                     cols = px[y * iw + x] == px[x];
+            int plain = 1, solid = 0;
+            uint32_t rgb = 0, seen = 0;
+            for (int k = 0; k < iw * ih && plain; k++)
+                if (r->rgba[i][(size_t)k * 4 + 3]) {
+                    solid += r->rgba[i][(size_t)k * 4 + 3] >= 128;
+                    uint32_t c3 = px[k] & 0x00FFFFFFu;   /* little-endian RGBA: the colour bytes */
+                    if (!seen)
+                        rgb = c3, seen = 1;
+                    plain = c3 == rgb;
+                }
             static uint32_t next_id;
             r->img_fill[i] = (uint8_t)(rows || cols);
+            r->img_plain[i] = (uint8_t)(plain && seen && solid >= iw * ih * 4 / 5);   /* a filled box, not a label */
             r->img_id[i] = ++next_id;
             r->img_w[i] = iw;
             r->img_h[i] = ih;
@@ -2279,6 +2293,23 @@ static void same_size_labels(menu *m, res *r)
     }
 }
 
+/* A button whose picture is a plain shape, one colour, is a highlight behind the page's
+   labels and draws beneath the rest of its page: Starship Troopers (eng) frames the chosen
+   scene's name with a black 448x95 box, a button after the names, and drawn in order it hid
+   the name it framed. */
+static void plain_buttons_under(const res *r, sprite *list, int n)
+{
+    int k = 0;
+    for (int j = 0; j < n; j++) {
+        const sprite *s = &list[j];
+        if (r->r.objects[s->widget].kind == RCO_BUTTON && r->img_plain[s->image]) {
+            sprite t = list[j];
+            memmove(&list[k + 1], &list[k], (size_t)(j - k) * sizeof(sprite));
+            list[k++] = t;
+        }
+    }
+}
+
 static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list, int *count)
 {
     const wstate *w = &r->w[i];
@@ -2424,8 +2455,11 @@ void menu_draw(menu *m, canvas *c)
     for (int i = 0; i < r->r.object_count; i++)
         if (r->r.objects[i].kind == RCO_PAGE)
             for (int p = 0; p < r->page_count; p++)
-                if (r->pages[p] == i)
+                if (r->pages[p] == i) {
+                    int first = n;
                     collect(r, c, i, &root, now, &n);
+                    plain_buttons_under(r, now + first, n - first);
+                }
     /* The region to redraw: every sprite that differs from the last picture, where it was
        and where it is now. A new resource or canvas starts from a full redraw. */
     if (!valid || !m->drawn_once) {
