@@ -927,7 +927,7 @@ static void draw_info(library *l)
     }
     canvas_text(c, tx, y + 54, 2, RGBA(255, 255, 255, 255), line);
     osd_button(c, x, y + 106, 2, ICON_BUTTON_SQUARE);
-    canvas_text(c, tx, y + 114, 2, TEXT_DIM, "Forget the resume point");
+    canvas_text(c, tx, y + 114, 2, TEXT_DIM, "Reset Resume");
 }
 
 /* ---- the disc on screen ---- */
