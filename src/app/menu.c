@@ -83,7 +83,7 @@ typedef struct res {
     uint8_t **rgba;           /* decoded images, on first use */
     int *img_w, *img_h;
     uint8_t *img_fill;        /* one colour, or a one-way gradient: a fill that stretches to its widget */
-    uint8_t *img_plain;       /* a filled box: four fifths solid, every visible pixel one colour */
+    uint8_t *img_plain;       /* a filled black box: four fifths solid, every visible pixel black */
     uint8_t *own_size;        /* per widget: draw the image at its own size (same_size_labels) */
     float *label_k;           /* per widget: or this many times its size, as its neighbours (0: no) */
     uint8_t **occ;            /* per image: its 8x8 blocks with a visible pixel (see blit) */
@@ -1966,7 +1966,7 @@ static const uint8_t *image_rgba(res *r, int i, int *w, int *h)
                 }
             static uint32_t next_id;
             r->img_fill[i] = (uint8_t)(rows || cols);
-            r->img_plain[i] = (uint8_t)(plain && seen && solid >= iw * ih * 4 / 5);   /* a filled box, not a label */
+            r->img_plain[i] = (uint8_t)(plain && seen && rgb == 0 && solid >= iw * ih * 4 / 5);
             r->img_id[i] = ++next_id;
             r->img_w[i] = iw;
             r->img_h[i] = ih;
@@ -2293,23 +2293,6 @@ static void same_size_labels(menu *m, res *r)
     }
 }
 
-/* A button whose picture is a filled box of one colour is a highlight behind the labels and
-   draws beneath every page: Starship Troopers (eng) frames the chosen scene's name with a
-   black 448x95 box, a button after the names, which drawn in order hid the name it framed,
-   and the main menu's bar in front trims the box to the scene strip. */
-static void plain_buttons_under(const res *r, sprite *list, int n)
-{
-    int k = 0;
-    for (int j = 0; j < n; j++) {
-        const sprite *s = &list[j];
-        if (r->r.objects[s->widget].kind == RCO_BUTTON && r->img_plain[s->image]) {
-            sprite t = list[j];
-            memmove(&list[k + 1], &list[k], (size_t)(j - k) * sizeof(sprite));
-            list[k++] = t;
-        }
-    }
-}
-
 static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list, int *count)
 {
     const wstate *w = &r->w[i];
@@ -2412,6 +2395,14 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
             if (w->has_crop)
                 memcpy(s->crop, w->crop, sizeof(s->crop));
             sprite_box(s, c->w, c->h);
+            /* A button whose picture is a filled black box under half the screen across is
+               not drawn: on a PSP, Starship Troopers shows its chosen scene and language by
+               the label alone, with no sign of the black boxes (448x95 for scenes) its buttons
+               hold. Black buttons that fade the screen (2ch Kanojo's TEX_FADE_BLACK) draw. The
+               box stays in the list, clear, for touch. */
+            if (r->r.objects[i].kind == RCO_BUTTON && r->img_plain[w->image] &&
+                s->box[2] - s->box[0] < c->w / 2 && s->box[3] - s->box[1] < c->h / 2)
+                s->color[3] = 0;
             if (s->box[2] > s->box[0] && s->box[3] > s->box[1])
                 (*count)++;
         }
@@ -2467,7 +2458,6 @@ void menu_draw(menu *m, canvas *c)
             for (int p = 0; p < r->page_count; p++)
                 if (r->pages[p] == i)
                     collect(r, c, i, &root, now, &n);
-    plain_buttons_under(r, now, n);
     /* The region to redraw: every sprite that differs from the last picture, where it was
        and where it is now. A new resource or canvas starts from a full redraw. */
     if (!valid || !m->drawn_once) {
