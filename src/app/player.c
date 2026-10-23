@@ -201,6 +201,7 @@ struct player {
     int ended;
     uint64_t audio_base_played;      /* plat_audio_played() when playback started */
     uint64_t clk_raw, clk_us, clk_last;  /* last audio clock reading, when it changed, last value given */
+    uint64_t clk_base;                   /* the steered clock at clk_us */
     uint64_t drain_us, drain_pts;        /* when the title's audio ran out, and the clock then */
     uint64_t wall_base_us, wall_base_pts;
     uint64_t last_report_us;
@@ -710,16 +711,24 @@ static int clock_now(player *p, uint64_t *now)
         drained = p->eof && p->pcm_count == 0;
         plat_mutex_unlock(p->lock);
         /* The platform reports played audio in buffer-sized steps (about 21 ms on the Vita).
-           Between steps, run on the system timer, at most CLOCK_LEAD ahead of the last step,
-           so frames that are 16.7 ms apart do not come due two at a time. */
+           The clock runs on the system timer and is steered toward each step by a sixteenth
+           of the difference, so frames come due at an even pace: restarting it at every step
+           moved it by up to a step, and 24 frames a second came out at an uneven 2 or 3
+           vblanks each. A difference over 100 ms (a start, a pause) restarts it, and it runs
+           at most 2 CLOCK_LEAD ahead of the sound, should the sound stop. */
         t = plat_time_us();
-        if (raw != p->clk_raw) {
-            p->clk_raw = raw;
+        if (!p->clk_raw || raw != p->clk_raw) {
+            int64_t err = p->clk_raw ? (int64_t)raw - (int64_t)(p->clk_base + (t - p->clk_us) * 9 / 100) : 0;
+            if (!p->clk_raw || err > 9000 || err < -9000)
+                p->clk_base = raw;
+            else
+                p->clk_base = (uint64_t)((int64_t)(p->clk_base + (t - p->clk_us) * 9 / 100) + err / 16);
             p->clk_us = t;
+            p->clk_raw = raw;
         }
-        est = p->clk_raw + (t - p->clk_us) * 9 / 100;
-        if (est > raw + CLOCK_LEAD)
-            est = raw + CLOCK_LEAD;
+        est = p->clk_base + (t - p->clk_us) * 9 / 100;
+        if (est > raw + 2 * CLOCK_LEAD)
+            est = raw + 2 * CLOCK_LEAD;
         /* Once the title's audio has all played, the system timer runs the clock on: the last
            video frames can end after the sound (Akira's logo by half a frame), and a clock held
            at the end of the sound would never show them or reach the end of the title. */
