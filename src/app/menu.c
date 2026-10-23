@@ -499,57 +499,63 @@ static void play_anim(menu *m, int anim, int target)
     run->started = m->now;
 }
 
-static void step_anims(menu *m)
+/* Runs an animation's steps that are due; 0 if an event changed the resource. */
+static int step_run(menu *m, anim_run *run)
 {
-    for (int i = 0; i < MAX_RUNS; i++) {
-        anim_run *run = &m->runs[i];
-        res *r = m->res;
-        while (run->active && m->now >= run->wait_until) {
-            const rco_anim *a = &r->r.anims[run->anim];
-            const rco_step *s;
-            int obj;
-            if (run->step >= a->step_count) {
-                run->active = 0;      /* an animation's lock ends with it */
-                run->locked = 0;
-                break;
-            }
-            s = &r->r.steps[a->first_step + run->step++];
-            obj = s->object >= 0 ? s->object : run->target;
-            switch (s->kind) {
-            case RCO_STEP_MOVE: start_tween(m, obj, P_POS, s->value, 3, s->duration); break;
-            case RCO_STEP_COLOR: start_tween(m, obj, P_COLOR, s->value, 4, s->duration); break;
-            case RCO_STEP_ROTATE: start_tween(m, obj, P_ROT, s->value, 3, s->duration); break;
-            case RCO_STEP_SCALE: start_tween(m, obj, P_SCALE, s->value, 3, s->duration); break;
-            case RCO_STEP_FADE: start_tween(m, obj, P_FADE, s->value, 1, s->duration); break;
-            case RCO_STEP_CROP: start_tween(m, obj, P_CROP, s->value, 4, s->duration); break;
-            case RCO_STEP_DELAY: run->wait_until = m->now + (uint64_t)(s->duration * 1000); break;
-            case RCO_STEP_LOCK: run->locked = 1; break;
-            case RCO_STEP_UNLOCK: run->locked = 0; break;
-            case RCO_STEP_EVENT:
-                if (s->anim >= 0) {
-                    /* Another animation, on the same widget. Playing this one again restarts
-                       it; from the next frame, so a loop without a delay cannot spin. */
-                    int again = s->anim == run->anim;
-                    play_anim(m, s->anim, run->target);
-                    if (again)
-                        run->wait_until = m->now + 1;
-                }
-                if (!s->event)
-                    break;
-                /* "this" is the widget the animation runs on (postBlink switches on this.name) */
-                call_event(m, s->event, run->target);
-                if (m->res != r)
-                    return;   /* the event changed the resource */
-                /* The handler played an animation on this widget again: it starts next frame.
-                   Battlestar Galactica's menu loops this way, an event step whose handler
-                   plays the animation again, and spun inside one frame. */
-                if (run->active && run->step == 0 && run->wait_until <= m->now)
+    res *r = m->res;
+    while (run->active && m->now >= run->wait_until) {
+        const rco_anim *a = &r->r.anims[run->anim];
+        const rco_step *s;
+        int obj;
+        if (run->step >= a->step_count) {
+            run->active = 0;      /* an animation's lock ends with it */
+            run->locked = 0;
+            break;
+        }
+        s = &r->r.steps[a->first_step + run->step++];
+        obj = s->object >= 0 ? s->object : run->target;
+        switch (s->kind) {
+        case RCO_STEP_MOVE: start_tween(m, obj, P_POS, s->value, 3, s->duration); break;
+        case RCO_STEP_COLOR: start_tween(m, obj, P_COLOR, s->value, 4, s->duration); break;
+        case RCO_STEP_ROTATE: start_tween(m, obj, P_ROT, s->value, 3, s->duration); break;
+        case RCO_STEP_SCALE: start_tween(m, obj, P_SCALE, s->value, 3, s->duration); break;
+        case RCO_STEP_FADE: start_tween(m, obj, P_FADE, s->value, 1, s->duration); break;
+        case RCO_STEP_CROP: start_tween(m, obj, P_CROP, s->value, 4, s->duration); break;
+        case RCO_STEP_DELAY: run->wait_until = m->now + (uint64_t)(s->duration * 1000); break;
+        case RCO_STEP_LOCK: run->locked = 1; break;
+        case RCO_STEP_UNLOCK: run->locked = 0; break;
+        case RCO_STEP_EVENT:
+            if (s->anim >= 0) {
+                /* Another animation, on the same widget. Playing this one again restarts
+                   it; from the next frame, so a loop without a delay cannot spin. */
+                int again = s->anim == run->anim;
+                play_anim(m, s->anim, run->target);
+                if (again)
                     run->wait_until = m->now + 1;
-                break;
-            default: break;
             }
+            if (!s->event)
+                break;
+            /* "this" is the widget the animation runs on (postBlink switches on this.name) */
+            call_event(m, s->event, run->target);
+            if (m->res != r)
+                return 0; /* the event changed the resource */
+            /* The handler played an animation on this widget again: it starts next frame.
+               Battlestar Galactica's menu loops this way, an event step whose handler
+               plays the animation again, and spun inside one frame. */
+            if (run->active && run->step == 0 && run->wait_until <= m->now)
+                run->wait_until = m->now + 1;
+            break;
+        default: break;
         }
     }
+    return 1;
+}
+
+static void step_anims(menu *m)
+{
+    for (int i = 0; i < MAX_RUNS; i++)
+        if (!step_run(m, &m->runs[i]))
+            return;
 }
 
 /* ---- focus and input ---- */
@@ -801,6 +807,15 @@ static void set_values(ref *rf, int prop, const vs_value *args, int argc, int ti
         if (!(dur > 0))               /* undefined (NaN) or negative: at once. Robots passes an unset variable */
             dur = 0;
         argc--;
+    }
+    /* An animation played on the widget just before has started, as on a PSP, so a value
+       set now wins over its first steps: Starship Troopers (eng) plays animSSChapFocusIn on
+       the chosen scene (colour 1 over 0.5 s), then sets that scene's colour to grey. */
+    for (int i = 0; i < MAX_RUNS; i++) {
+        anim_run *run = &rf->m->runs[i];
+        if (run->active && run->target == rf->index && run->step == 0 && run->started == rf->m->now &&
+            !step_run(rf->m, run))
+            return;
     }
     cur = prop_ptr(&rf->m->res->w[rf->index], prop, &count);
     if (n > count)
