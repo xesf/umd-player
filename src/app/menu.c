@@ -2231,8 +2231,10 @@ static void same_size_labels(menu *m, res *r)
         }
     }
     /* Labels scaled up to fit their widgets (FIT) all take the smallest scale of the labels
-       beside them, one keeping its own size counting as 1: Superbad's subtitle languages,
-       64x16 to 194x16 images in widgets of 105x26 to 214x27, share one font size. */
+       beside them, one keeping its own size counting as 1 and a stretched one as its smaller
+       stretch: Superbad's subtitle languages, 64x16 to 194x16 images in widgets of 105x26 to
+       214x27, share one font size, and its trailer "Gabriel" (64x13 in 182x32) matches "Walk
+       Hard" (184x31 in 195x32). */
     for (int i = 0; i < rc->object_count; i++) {
         const rco_object *o = &rc->objects[i];
         int iw, ih;
@@ -2252,7 +2254,7 @@ static void same_size_labels(menu *m, res *r)
             rule = r->own_size[j] ? OWN : stretch_rule(bw, bh, b->size[0], b->size[1], 0);
             if (rule == OWN || rule == OVER) {
                 lo = lo < 1 ? lo : 1;
-            } else if (rule == FIT) {
+            } else if (rule == FIT || rule == STRETCH) {
                 float kb = b->size[0] / (float)bw < b->size[1] / (float)bh ? b->size[0] / (float)bw : b->size[1] / (float)bh;
                 lo = lo < kb ? lo : kb;
             }
