@@ -240,6 +240,7 @@ Check: the `.vpk` installs with VitaShell. All Phase 3, 4, and 5 checks pass on 
 ### Phase 7: later work
 
 - Disc menus: parse `.RCO` and the menu logic. This needs its own research plan.
+- A DVD to UMD converter, `dvd2umd`. See [plan/dvd-to-umd.md](plan/dvd-to-umd.md).
 - Online covers and movie details. Both platforms can make HTTPS requests with no external library (`NSURLSession` on macOS, `sceHttp` and `sceSsl` on the Vita). Google Images has no free API that allows this use, so do not scrape it. Two options to compare:
   - A small cover index in this repo, keyed by the disc ID from `UMD_DATA.BIN`, with images hosted on GitHub. It works offline once cached and needs no API key.
   - TMDB, searched by the title from `PARAM.SFO`. It has better data, but it needs an API key and its terms apply.
