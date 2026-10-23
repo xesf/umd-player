@@ -84,6 +84,7 @@ typedef struct res {
     int *img_w, *img_h;
     uint8_t *img_fill;        /* one colour, or a one-way gradient: a fill that stretches to its widget */
     uint8_t *own_size;        /* per widget: draw the image at its own size (same_size_labels) */
+    float *label_k;           /* per widget: or this many times its size, as its neighbours (0: no) */
     uint8_t **occ;            /* per image: its 8x8 blocks with a visible pixel (see blit) */
     uint32_t *img_id;         /* per image: unique while decoded, for the GPU's copy of it */
     int pages[MAX_PAGES], page_count;   /* open pages, in drawing order */
@@ -1442,6 +1443,7 @@ static void free_res(res *r)
     free(r->img_h);
     free(r->img_fill);
     free(r->own_size);
+    free(r->label_k);
     free(r->w);
     free(r->wref);
     free(r->aref);
@@ -1481,11 +1483,12 @@ static res *load_res(menu *m, const char *name)
     r->img_h = calloc((size_t)r->r.image_count + 1, sizeof(int));
     r->img_fill = calloc((size_t)r->r.image_count + 1, 1);
     r->own_size = calloc((size_t)r->r.object_count + 1, 1);
+    r->label_k = calloc((size_t)r->r.object_count + 1, sizeof(float));
     r->occ = calloc((size_t)r->r.image_count + 1, sizeof(uint8_t *));
     r->img_id = calloc((size_t)r->r.image_count + 1, sizeof(uint32_t));
     r->vm = vs_create(r->r.script, r->r.script_size, vm_log, m);
     if (!r->w || !r->wref || !r->focus || !r->aref || !r->iref || !r->rgba || !r->img_w || !r->img_h || !r->img_fill ||
-        !r->own_size || !r->occ || !r->img_id || !r->vm) {
+        !r->own_size || !r->label_k || !r->occ || !r->img_id || !r->vm) {
         free_res(r);
         return NULL;
     }
@@ -2227,6 +2230,38 @@ static void same_size_labels(menu *m, res *r)
             }
         }
     }
+    /* Labels scaled up to fit their widgets (FIT) all take the smallest scale of the labels
+       beside them, one keeping its own size counting as 1: Superbad's subtitle languages,
+       64x16 to 194x16 images in widgets of 105x26 to 214x27, share one font size. */
+    for (int i = 0; i < rc->object_count; i++) {
+        const rco_object *o = &rc->objects[i];
+        int iw, ih;
+        float k, lo;
+        if (o->kind != RCO_BUTTON || o->image < 0 || r->own_size[i] ||
+            png_info(rc->images[o->image].data, rc->images[o->image].size, &iw, &ih) < 0 ||
+            stretch_rule(iw, ih, o->size[0], o->size[1], 0) != FIT)
+            continue;
+        k = o->size[0] / (float)iw < o->size[1] / (float)ih ? o->size[0] / (float)iw : o->size[1] / (float)ih;
+        lo = k;
+        for (int j = 0; j < rc->object_count; j++) {
+            const rco_object *b = &rc->objects[j];
+            int bw, bh, rule;
+            if (j == i || b->kind != RCO_BUTTON || b->parent != o->parent || b->scale[0] != o->scale[0] ||
+                b->image < 0 || png_info(rc->images[b->image].data, rc->images[b->image].size, &bw, &bh) < 0)
+                continue;
+            rule = r->own_size[j] ? OWN : stretch_rule(bw, bh, b->size[0], b->size[1], 0);
+            if (rule == OWN || rule == OVER) {
+                lo = lo < 1 ? lo : 1;
+            } else if (rule == FIT) {
+                float kb = b->size[0] / (float)bw < b->size[1] / (float)bh ? b->size[0] / (float)bw : b->size[1] / (float)bh;
+                lo = lo < kb ? lo : kb;
+            }
+        }
+        if (lo < k) {
+            r->label_k[i] = lo;
+            mlog(m, "menu: %s scales its image by %.2f, as the labels beside it", o->name ? o->name : "?", lo);
+        }
+    }
 }
 
 static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list, int *count)
@@ -2262,7 +2297,10 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
             float sxu = (float)c->w / UNITS_W, syu = (float)c->h / UNITS_H;
             float width = w->size[0] > 0 ? w->size[0] : (float)iw, height = w->size[1] > 0 ? w->size[1] : (float)ih;
             int rule = r->own_size[i] ? OWN : stretch_rule(iw, ih, width, height, r->img_fill[w->image]);
-            if (rule == FIT) {
+            if (rule == FIT && r->label_k[i] > 0) {
+                width = (float)iw * r->label_k[i];
+                height = (float)ih * r->label_k[i];
+            } else if (rule == FIT) {
                 float k = width / (float)iw < height / (float)ih ? width / (float)iw : height / (float)ih;
                 width = (float)iw * k;
                 height = (float)ih * k;
