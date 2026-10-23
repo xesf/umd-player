@@ -2375,6 +2375,16 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
                         x.l[0][1] * (x.l[1][0] * x.l[2][2] - x.l[1][2] * x.l[2][0]) +
                         x.l[0][2] * (x.l[1][0] * x.l[2][1] - x.l[1][1] * x.l[2][0]);
             float mx = det < 0 ? -1.0f : 1.0f;
+            /* A widget left facing straight away, by turns of its own and of the groups above,
+               shows its picture from behind, mirrored: Underworld Evolution draws the right
+               halves of its ornaments by turning left halves by pi about Y, and the lower halves
+               by pi about X (a mirror then reads as upside down). To Die For turns its labels by
+               pi inside a drum turned by -pi: they face the viewer. Other turns, and turns on
+               the way, stay as described above: The Texas Chainsaw Massacre turns its labels by
+               up to 2.5 about Y as they slide. */
+            float zl = sqrtf(x.l[0][2] * x.l[0][2] + x.l[1][2] * x.l[1][2] + x.l[2][2] * x.l[2][2]);
+            if (!w->view_rot_on && zl > 0 && x.l[2][2] < -0.999f * zl)
+                mx = -mx;
             /* The angle in the screen's plane from the image's up axis as projected (its x axis
                when the up axis is end-on): Batman tilts its carousel back by 0.1, and the two
                axes together read that as a turn of 6 degrees, or 180 at the back. */
