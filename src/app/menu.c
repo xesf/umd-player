@@ -2293,10 +2293,10 @@ static void same_size_labels(menu *m, res *r)
     }
 }
 
-/* A button whose picture is a plain shape, one colour, is a highlight behind the page's
-   labels and draws beneath the rest of its page: Starship Troopers (eng) frames the chosen
-   scene's name with a black 448x95 box, a button after the names, and drawn in order it hid
-   the name it framed. */
+/* A button whose picture is a filled box of one colour is a highlight behind the labels and
+   draws beneath every page: Starship Troopers (eng) frames the chosen scene's name with a
+   black 448x95 box, a button after the names, which drawn in order hid the name it framed,
+   and the main menu's bar in front trims the box to the scene strip. */
 static void plain_buttons_under(const res *r, sprite *list, int n)
 {
     int k = 0;
@@ -2455,11 +2455,9 @@ void menu_draw(menu *m, canvas *c)
     for (int i = 0; i < r->r.object_count; i++)
         if (r->r.objects[i].kind == RCO_PAGE)
             for (int p = 0; p < r->page_count; p++)
-                if (r->pages[p] == i) {
-                    int first = n;
+                if (r->pages[p] == i)
                     collect(r, c, i, &root, now, &n);
-                    plain_buttons_under(r, now + first, n - first);
-                }
+    plain_buttons_under(r, now, n);
     /* The region to redraw: every sprite that differs from the last picture, where it was
        and where it is now. A new resource or canvas starts from a full redraw. */
     if (!valid || !m->drawn_once) {
