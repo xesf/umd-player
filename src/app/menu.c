@@ -82,7 +82,7 @@ typedef struct res {
     ref *wref, *aref, *iref;
     uint8_t **rgba;           /* decoded images, on first use */
     int *img_w, *img_h;
-    uint8_t *img_fill;        /* the image is one colour: a fill that stretches to its widget */
+    uint8_t *img_fill;        /* one colour, or a one-way gradient: a fill that stretches to its widget */
     uint8_t *own_size;        /* per widget: draw the image at its own size (same_size_labels) */
     uint8_t **occ;            /* per image: its 8x8 blocks with a visible pixel (see blit) */
     uint32_t *img_id;         /* per image: unique while decoded, for the GPU's copy of it */
@@ -1924,11 +1924,19 @@ static const uint8_t *image_rgba(res *r, int i, int *w, int *h)
                                  : work && png_decode(data, size, r->rgba[i], iw * 4, work, (uint32_t)(iw * 8 + 1) * ih) == 0);
         if (ok) {
             const uint32_t *px = (const uint32_t *)r->rgba[i];
-            int n = iw * ih, same = 1;
-            for (int k = 1; k < n && same; k++)
-                same = px[k] == px[0];
+            int rows = 1, cols = 1;
+            /* A gradient that changes in one direction only, every row or every column one
+               colour, has no shape to keep either: The Da Vinci Code darkens each cryptex
+               strip with an 86x286 black gradient in its 58x206 widget, and at its own size
+               the five overlapped in a black box. */
+            for (int y = 0; y < ih && rows; y++)
+                for (int x = 1; x < iw && rows; x++)
+                    rows = px[y * iw + x] == px[y * iw];
+            for (int y = 1; y < ih && cols; y++)
+                for (int x = 0; x < iw && cols; x++)
+                    cols = px[y * iw + x] == px[x];
             static uint32_t next_id;
-            r->img_fill[i] = (uint8_t)same;
+            r->img_fill[i] = (uint8_t)(rows || cols);
             r->img_id[i] = ++next_id;
             r->img_w[i] = iw;
             r->img_h[i] = ih;
@@ -2146,7 +2154,7 @@ static void blit(canvas *c, const sprite *s, const int *clip)
    fill or a strip at most FILL_MAX across in one direction, four times as long, and spread
    over four times its width or more (a 1x1 black fade; Tenjho Tenge's 10x64 band behind its
    buttons; not Jackass's 55x16 labels), or it is all one colour (12 Monkeys' 28x28 black fade
-   over the whole screen). Artwork made at half or a third of its size fits its widget: Hero
+   over the whole screen) or a gradient in one direction. Artwork made at half or a third of its size fits its widget: Hero
    and Deftones put 53x15 labels in 106x29 widgets, The Texas Chainsaw Massacre 54x14 in 177x49.
    Otherwise it is drawn at its own size: 2Fast2Furious and The Bourne Supremacy size their
    label buttons for the longest translation, and on a PSP each label keeps its own size. */
