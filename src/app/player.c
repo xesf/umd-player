@@ -28,7 +28,7 @@
 #define AUDIO_RATE    48000
 #define START_AUDIO   (AUDIO_RATE / 5)   /* audio buffered before playback starts */
 #define STALL_RESTART 3000000            /* us without a new frame before the player restarts reading */
-#define FRAMES_AHEAD  4                  /* decoded frames kept ahead of the clock */
+#define FRAMES_AHEAD  6                  /* decoded frames kept ahead of the clock: slack for busy scenes */
 #define MAX_DECODED   8
 #define RESOLVE_SPAN  (3 * VTIMING_SETTLE + 2)
 #define AT3P_FRAME_TICKS (AT3P_FRAME_SAMPLES * 90000 / AUDIO_RATE)
@@ -132,7 +132,7 @@ struct player {
     int have_audio_pts, audio_started;
     uint32_t underruns;              /* audio callbacks the PCM ring could not fill while playing */
     uint32_t underruns_seen;         /* the count when the main thread last checked */
-    int power_full;                  /* stay at full CPU speed: playback ran short at the lower one */
+    int power_full;                  /* stay at full CPU speed: playback ran short or late at the lower one */
     uint64_t silence_frames;         /* frames of silence the callback produced: not on the clock */
 
     /* Reader thread only. */
@@ -1961,6 +1961,12 @@ int player_update(player *p, uint32_t pressed)
             for (int i = 0; i < best; i++) {
                 plat_frame_release(p->frames[i].frame);
                 p->frames_late++;
+            }
+            /* A frame dropped for lateness (Spider-Man's action scenes at 333 MHz): full speed
+               from here on, as for audio that runs short. */
+            if (best > 0 && !p->power_full && !p->seeking) {
+                plat_log("video ran late: staying at full CPU speed\n");
+                p->power_full = 1;
             }
             if (p->shown)
                 plat_frame_release(p->shown);
