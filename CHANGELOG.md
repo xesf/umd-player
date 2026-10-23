@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.8.2 (2026-10-23)
+
+- Fixed The Boondock Saints' scene list scrolling up the middle of the screen, and its preview always playing scene 1.
+- Fixed La Blue Girl Returns' menu ignoring ✕ most of the time.
+- Fixed The Da Vinci Code's black box around the cryptex.
+- Fixed Superbad's menu labels drawing too big, and its submenu entries drawing at different sizes.
+- Fixed The Texas Chainsaw Massacre's set-up labels drawing too small. Labels made at half or a third of their size (Hero, Deftones) now scale up to fit.
+- Disc menus: The Boondock Saints' and Cowboy Bebop's half-size menus fill the screen.
+- Playback: the player decodes further ahead and stays at full CPU speed once video runs late, so action scenes drop fewer frames (Spider-Man).
+- Library: the □ action reads "Reset Resume".
+
 ## v0.8.1 (2026-10-20)
 
 - Fixed Species' and Terminator's menus showing nothing (their whole menu sat under an invisible widget).
