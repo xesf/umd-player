@@ -1370,6 +1370,7 @@ static void switch_title(player *p, int dir)
 int player_title_ended(const player *p) { return p->ended; }
 int player_started(const player *p) { return !p->seeking || p->ended || (!p->video && p->audio_started); }
 uint64_t player_title_end(const player *p) { return p->title->end_pts; }
+uint64_t player_title_start(const player *p) { return p->title->start_pts; }
 int player_paused(const player *p) { return p->paused; }
 int player_audio(const player *p) { return p->want_audio; }
 int player_subtitle(const player *p) { return p->sub_sub == DEMUX_NONE ? -1 : p->sub_sub; }

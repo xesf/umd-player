@@ -150,6 +150,8 @@ typedef struct sim {
     umdv_playlist pl;
     menu_status st;
     uint64_t now, title_end, title_start, seek_until;  /* virtual time, us */
+    int left_playlist;        /* as src/app/disc.c: the title stop() ended, and where (us) */
+    uint64_t left_pos;
     int start_chapter;
     int ready_page;           /* the active page with buttons last reported as READY, or -1 */
     uint64_t chapter_at[64];
@@ -205,7 +207,11 @@ static void sim_play(void *user, int playlist, int chapter, int audio, int subti
             uint64_t cur = s->title_end > s->now ? len - (s->title_end - s->now) : len;
             if ((cur > from ? cur - from : from - cur) <= 10000000)
                 seek = 0;
+        } else if (!s->st.playing && s->left_playlist == playlist && chapter <= 1 &&
+                   s->left_pos <= 10000000) {
+            seek = 0;                /* played again from its start, from near there */
         }
+        s->left_playlist = 0;
         s->seek_until = s->now + seek;
     }
     s->st.playing = 1;
@@ -232,6 +238,12 @@ static void sim_stop(void *user)
     if (s->st.playing && !s->menu_mode && (!s->m || menu_title_resumable(s->m, s->st.playlist))) {
         s->saved_playlist = s->st.playlist;
         s->saved_chapter = s->st.chapter;
+    }
+    if (s->st.playlist > 0) {         /* playing, or ended and not yet replaced */
+        const umdv_title *t = &s->pl.titles[s->st.playlist - 1];
+        uint64_t len = (uint64_t)(t->end_pts - t->start_pts) * 100 / 9;
+        s->left_playlist = s->st.playlist;
+        s->left_pos = s->title_end > s->now ? len - (s->title_end - s->now) : len;
     }
     s->st.playing = 0;
     s->st.playlist = 0;

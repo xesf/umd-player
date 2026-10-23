@@ -39,6 +39,8 @@ struct disc {
         int frames, draws;
     } perf;
     uint64_t seek_until;      /* the first chapter event of a title waits until then */
+    int left_title;           /* the title stop() closed, and where it was: a replay from there */
+    uint64_t left_pos;        /* close by needs no seek */
     int end_sent;             /* menu_playlist_ended was called for pl */
     /* what stop() left, for resume() */
     int stopped_title, stopped_audio, stopped_sub;
@@ -108,6 +110,15 @@ static void start(disc *d, int title, int chapter, uint64_t pos)
     d->catching_up = 0;
     d->end_sent = 0;
     d->seek_until = plat_time_us() + SEEK_US;
+    /* A title stopped and played again from its start, when it was short or near its start:
+       La Blue Girl Returns stops and replays its 1 s menu video, covering the menu until
+       onChapter, so a 1 s wait left it covered and took no input. */
+    if (d->pl && title == d->left_title && chapter <= 1 && pos == 0) {
+        uint64_t at = player_title_start(d->pl);
+        if ((d->left_pos > at ? d->left_pos - at : at - d->left_pos) <= SEEK_NEAR)
+            d->seek_until = 0;
+    }
+    d->left_title = 0;
     if (!d->pl) {
         plat_log("disc: cannot play title %d\n", title);
         return;
@@ -188,6 +199,8 @@ static void d_stop(void *user)
     if (!d->pl)
         return;
     keep_place(d);
+    d->left_title = d->title;
+    d->left_pos = player_position(d->pl);
     player_close(d->pl);
     d->pl = NULL;
     d->title = 0;
