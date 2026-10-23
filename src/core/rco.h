@@ -39,6 +39,8 @@ typedef struct rco_object {
                                  2 its right edge), next 4 bits y (0 centre, 1 top, 2 bottom) */
     int image;                /* image index, or -1 */
     rco_action action[RCO_BTN_ACTIONS];      /* buttons: RCO_BTN_*; pages: RCO_PAGE_* */
+    rco_action init;          /* planes, groups and buttons: run as their page opens (Underworld
+                                 Evolution mirrors its ornaments with a turn of pi) */
 } rco_object;
 
 enum {

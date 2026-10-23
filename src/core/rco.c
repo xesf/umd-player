@@ -99,7 +99,7 @@ static void read_object(parser *ps, uint32_t off, int sub, const char *name, int
     rco *r = ps->r;
     rco_object *o;
     uint32_t d = off + HEADER_SIZE;
-    int pending[RCO_BTN_ACTIONS], pending_anim[RCO_BTN_ACTIONS], cap = ps->object_cap;
+    int pending[RCO_BTN_ACTIONS], pending_anim[RCO_BTN_ACTIONS], init_obj = -1, init_anim = -1, cap = ps->object_cap;
 
     if (grow((void **)&r->objects, r->object_count, &ps->object_cap, sizeof(rco_object)) < 0 ||
         grow((void **)&ps->offsets, r->object_count, &cap, sizeof(uint32_t)) < 0) {
@@ -134,6 +134,7 @@ static void read_object(parser *ps, uint32_t off, int sub, const char *name, int
         for (int i = 0; i < 3; i++)
             o->scale[i] = rdf(r, d + 40 + (uint32_t)i * 4);
         o->anchor = (int)rd32(r, d + 52);
+        o->init = read_action(ps, d + 56, &init_obj, &init_anim);
         if (sub == RCO_PLANE || sub == RCO_BUTTON) {
             uint32_t type = rd32(r, d + 64), ptr = rd32(r, d + 68);
             if (type == REF_IMAGE && ptr != 0xFFFFFFFF)
@@ -147,6 +148,8 @@ static void read_object(parser *ps, uint32_t off, int sub, const char *name, int
         o->action[i].object = pending[i];          /* still entry offsets until rco_parse maps them */
         o->action[i].anim = pending_anim[i];
     }
+    o->init.object = init_obj;
+    o->init.anim = init_anim;
     ps->offsets[r->object_count] = off;
     r->object_count++;
 }
@@ -335,6 +338,10 @@ int rco_parse(rco *r, const uint8_t *data, uint32_t size)
             if (o->action[a].anim >= 0)
                 o->action[a].anim = anim_at(&ps, (uint32_t)o->action[a].anim);
         }
+        if (o->init.object >= 0)
+            o->init.object = object_at(&ps, (uint32_t)o->init.object);
+        if (o->init.anim >= 0)
+            o->init.anim = anim_at(&ps, (uint32_t)o->init.anim);
     }
     for (int i = 0; i < r->step_count; i++)
         if (r->steps[i].anim >= 0)

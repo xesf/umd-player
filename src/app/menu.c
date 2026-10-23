@@ -700,6 +700,17 @@ static void preload(res *r, int i)
         preload(r, c);
 }
 
+/* The widgets' own onInit, as their page opens: an animation on the widget or a script
+   handler. Underworld Evolution draws the right and lower halves of its ornaments by turning
+   left-half images by pi (animFlipH, animFlipV); Toy Story starts its aliens wiggling. */
+static void init_tree(menu *m, res *r, int i)
+{
+    for (int c = r->r.objects[i].first_child; c >= 0 && m->res == r; c = r->r.objects[c].next_sibling) {
+        do_action(m, &r->r.objects[c].init, c);
+        init_tree(m, r, c);
+    }
+}
+
 NATIVE(w_open)
 {
     ref *rf = user;
@@ -715,7 +726,9 @@ NATIVE(w_open)
         preload(r, rf->index);
         r->focus[rf->index] = -1;
         r->pages[r->page_count++] = rf->index;
-        do_action(rf->m, &r->r.objects[rf->index].action[RCO_PAGE_INIT], rf->index);
+        init_tree(rf->m, r, rf->index);
+        if (rf->m->res == r)
+            do_action(rf->m, &r->r.objects[rf->index].action[RCO_PAGE_INIT], rf->index);
     }
     rf->m->dirty = 1;
 }

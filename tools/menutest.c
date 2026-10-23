@@ -548,6 +548,8 @@ static int run_rco(int argc, char **argv)
         for (int a = 0; a < RCO_BTN_ACTIONS; a++)
             if (o->action[a].event || o->action[a].object >= 0)
                 printf(" [%d %s]", a, o->action[a].event ? o->action[a].event : nm(r.objects[o->action[a].object].name));
+        if (o->init.event || o->init.anim >= 0)
+            printf(" [init %s]", o->init.event ? o->init.event : nm(r.anims[o->init.anim].name));
         printf("\n");
     }
     for (int i = 0; i < r.image_count; i++)
