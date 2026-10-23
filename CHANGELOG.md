@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.8.3 (2026-10-23)
+
+- Fixed Underworld Evolution's menu ornaments: their right and lower halves are now drawn, mirrored, so each label sits in a whole emblem.
+- Fixed Starship Troopers showing black boxes on its scene and language menus; the chosen scene shows by its grey name, and stays grey while browsing.
+- Fixed Starship Troopers (eng) hiding the chosen scene's name.
+- Disc menus: widgets run their own start-up animations as their page opens (Toy Story, Batman, The Crow and others use them).
+- Playback: the video clock follows the audio smoothly, so frames come at an even pace and the frame rate no longer wavers.
+
 ## v0.8.2 (2026-10-23)
 
 - Fixed The Boondock Saints' scene list scrolling up the middle of the screen, and its preview always playing scene 1.
