@@ -454,6 +454,9 @@ static void native_string(vsmx *vm, void *user, vs_value self, const vs_value *a
 
 static void native_slice(vsmx *vm, void *user, vs_value self, const vs_value *args, int argc, vs_value *ret);
 static void native_push(vsmx *vm, void *user, vs_value self, const vs_value *args, int argc, vs_value *ret);
+static void native_pop(vsmx *vm, void *user, vs_value self, const vs_value *args, int argc, vs_value *ret);
+static void native_shift(vsmx *vm, void *user, vs_value self, const vs_value *args, int argc, vs_value *ret);
+static void native_unshift(vsmx *vm, void *user, vs_value self, const vs_value *args, int argc, vs_value *ret);
 
 /* x.toString() on a number, a boolean, a string or an object: SAMURAI 7 builds its page
    names as "page" + n.toString(). */
@@ -498,6 +501,12 @@ vs_value vs_get(vsmx *vm, vs_value obj, const char *key)
             return vs_new_native(vm, native_slice, NULL);
         if (key == vm->k_push)
             return vs_new_native(vm, native_push, NULL);
+        if (strcmp(key, "pop") == 0)
+            return vs_new_native(vm, native_pop, NULL);
+        if (strcmp(key, "shift") == 0)
+            return vs_new_native(vm, native_shift, NULL);
+        if (strcmp(key, "unshift") == 0)
+            return vs_new_native(vm, native_unshift, NULL);
         /* "3" as a key */
         if (key[0] >= '0' && key[0] <= '9')
             return vs_get_index(vm, obj, atoi(key));
@@ -640,6 +649,62 @@ static void native_push(vsmx *vm, void *user, vs_value self, const vs_value *arg
     (void)user;
     for (int i = 0; i < argc; i++)
         vs_set_index(vm, self, vs_length(self), args[i]);
+    *ret = vs_int(vs_length(self));
+}
+
+/* pop, shift and unshift: The Boondock Saints scrolls its scene list by moving items between
+   the ends of an array. */
+static void native_pop(vsmx *vm, void *user, vs_value self, const vs_value *args, int argc, vs_value *ret)
+{
+    int n = vs_length(self);
+
+    if (self.type != VS_OBJ || self.u.o->kind != OBJ_ARRAY) {
+        *ret = vs_undef();
+        return;
+    }
+    (void)user;
+    (void)args;
+    (void)argc;
+    *ret = n > 0 ? vs_get_index(vm, self, n - 1) : vs_undef();
+    if (n > 0)
+        self.u.o->length = n - 1;
+}
+
+static void native_shift(vsmx *vm, void *user, vs_value self, const vs_value *args, int argc, vs_value *ret)
+{
+    int n = vs_length(self);
+
+    if (self.type != VS_OBJ || self.u.o->kind != OBJ_ARRAY) {
+        *ret = vs_undef();
+        return;
+    }
+    (void)user;
+    (void)args;
+    (void)argc;
+    *ret = n > 0 ? vs_get_index(vm, self, 0) : vs_undef();
+    if (n > 0) {
+        memmove(self.u.o->items, self.u.o->items + 1, (size_t)(n - 1) * sizeof(vs_value));
+        self.u.o->length = n - 1;
+    }
+}
+
+static void native_unshift(vsmx *vm, void *user, vs_value self, const vs_value *args, int argc, vs_value *ret)
+{
+    int n = vs_length(self);
+
+    if (self.type != VS_OBJ || self.u.o->kind != OBJ_ARRAY) {
+        *ret = vs_undef();
+        return;
+    }
+    (void)user;
+    if (argc > 0) {
+        vs_set_index(vm, self, n + argc - 1, vs_undef());     /* grows the array */
+        if (vs_length(self) == n + argc) {
+            memmove(self.u.o->items + argc, self.u.o->items, (size_t)n * sizeof(vs_value));
+            for (int i = 0; i < argc; i++)
+                self.u.o->items[i] = args[i];
+        }
+    }
     *ret = vs_int(vs_length(self));
 }
 
