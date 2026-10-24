@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.8.4 (2026-10-24)
 
 - Fixed Feel the Noise, To Die For and Memoirs of a Geisha: their menu drums now turn cleanly both ways, and open in the right order.
 - Fixed The Animatrix's main menu showing all four page backgrounds in turn before taking input.
@@ -9,6 +9,7 @@
 - Fixed Kill Bill Vol. 2's scene selection showing the preview video in the margins.
 - Fixed Underworld Evolution's missing black band behind the menu labels.
 - Fixed Starship Troopers' subtitle menu losing its selection box.
+- Fixed A Force of One pulsing both the item you left and Play after closing a submenu.
 - Fixed Superbad's subtitle labels drawing at a different size from its audio page.
 - Library: disc images whose names start with a dot ("...As If") are listed; macOS's "._" files are still hidden.
 - macOS, Linux and Windows write the log to log.txt in the data folder (~/.umdplayer on macOS).
