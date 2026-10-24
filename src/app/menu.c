@@ -2410,13 +2410,13 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
             if (w->has_crop)
                 memcpy(s->crop, w->crop, sizeof(s->crop));
             sprite_box(s, c->w, c->h);
-            /* A button whose picture is a filled black box under half the screen across is
-               not drawn: on a PSP, Starship Troopers shows its chosen scene and language by
-               the label alone, with no sign of the black boxes (448x95 for scenes) its buttons
-               hold. Black buttons that fade the screen (2ch Kanojo's TEX_FADE_BLACK) draw. The
-               box stays in the list, clear, for touch. */
+            /* A button tinted black whose picture is a filled black box is not drawn: on a
+               PSP, Starship Troopers (eng) shows its chosen scene by the name's colour, with no
+               sign of the 448x95 box its scene button (tinted 0, 0, 0) holds, while the boxes
+               of its language buttons (tinted white) mark the chosen language. The box stays
+               in the list, clear, for touch. */
             if (r->r.objects[i].kind == RCO_BUTTON && r->img_plain[w->image] &&
-                s->box[2] - s->box[0] < c->w / 2 && s->box[3] - s->box[1] < c->h / 2)
+                r->r.objects[i].color[0] == 0 && r->r.objects[i].color[1] == 0 && r->r.objects[i].color[2] == 0)
                 s->color[3] = 0;
             if (s->box[2] > s->box[0] && s->box[3] > s->box[1])
                 (*count)++;
