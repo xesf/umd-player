@@ -33,8 +33,9 @@ typedef struct menu_player {
     uint8_t *(*read_file)(void *user, const char *path, uint32_t *size);
     /* Start a title (1-based) at a chapter (1-based); audio and subtitle are substreams,
        subtitle -1 for off. menu_mode marks a menu's own video (play's second argument): a stop
-       during it keeps the resume point of the title played before. */
-    void (*play)(void *user, int playlist, int chapter, int audio, int subtitle, int menu_mode);
+       during it keeps the resume point of the title played before. one_chapter (play's first
+       argument 1) ends the title at the next chapter, holding its picture. */
+    void (*play)(void *user, int playlist, int chapter, int audio, int subtitle, int menu_mode, int one_chapter);
     void (*stop)(void *user);
     /* Continue the title that was playing before the menu stopped it. Returns 0, or -1 when
        there is nothing to continue. */

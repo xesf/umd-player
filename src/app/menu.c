@@ -1199,7 +1199,8 @@ NATIVE(mp_play)
         }
     }
     m->menu_mode = vs_truthy(arg(args, argc, 1));
-    m->p.play(m->p.user, playlist, chapter, m->audio_id, m->sub_on ? m->sub_id : -1, m->menu_mode);
+    m->p.play(m->p.user, playlist, chapter, m->audio_id, m->sub_on ? m->sub_id : -1, m->menu_mode,
+              args[0].type == VS_NUM && vs_number(args[0]) == 1);
 }
 
 NATIVE(mp_stop)

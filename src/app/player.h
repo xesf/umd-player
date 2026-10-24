@@ -30,6 +30,7 @@ typedef struct player_options {
     int chapter;
     uint64_t start_pts;
     int subtitle;
+    int one_chapter;    /* menus: end the title where the next chapter starts */
 } player_options;
 
 player *player_open(const player_options *opt);
@@ -60,7 +61,7 @@ uint64_t player_title_end(const player *p);       /* 90 kHz, in the clip's time 
 uint64_t player_title_start(const player *p);     /* 90 kHz, in the clip's time */
 /* Plays the same title again from a chapter (1-based) without reopening anything: a menu
    video that loops. */
-uint64_t player_restart(player *p, int chapter);   /* returns how far it jumped, 90 kHz */
+uint64_t player_restart(player *p, int chapter, int one_chapter);   /* returns how far it jumped, 90 kHz */
 void player_set_audio(player *p, int audio);
 void player_set_subtitle(player *p, int subtitle);   /* -1 turns them off */
 /* Shows the video in part of the screen (fractions of it), or full screen when dst is NULL. */

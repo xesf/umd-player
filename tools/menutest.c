@@ -180,7 +180,7 @@ static uint8_t *sim_read(void *user, const char *path, uint32_t *size)
     return buf;
 }
 
-static void sim_play(void *user, int playlist, int chapter, int audio, int subtitle, int menu_mode)
+static void sim_play(void *user, int playlist, int chapter, int audio, int subtitle, int menu_mode, int one_chapter)
 {
     sim *s = user;
     const umdv_title *t;
@@ -199,6 +199,8 @@ static void sim_play(void *user, int playlist, int chapter, int audio, int subti
     len = (uint64_t)(t->end_pts - t->start_pts) * 100 / 9;
     if (chapter > 1 && chapter <= t->chapter_count)
         from = (uint64_t)(s->pl.chapters[t->first_chapter + chapter - 1].pts - t->start_pts) * 100 / 9;
+    if (one_chapter && (chapter < 1 ? 1 : chapter) < t->chapter_count)   /* as src/app/player.c: ends at the next chapter */
+        len = (uint64_t)(s->pl.chapters[t->first_chapter + (chapter < 1 ? 1 : chapter)].pts - t->start_pts) * 100 / 9;
     printf("  \"%s\", %.1f s\n", t->name, (len - from) / 1e6);
     {
         /* as src/app/disc.c: a new title or a jump over 10 s waits 1 s for the drive's seek */
@@ -255,7 +257,7 @@ static int sim_resume(void *user)
     printf("%8.2f s  RESUME\n", s->now / 1e6);
     if (!s->saved_playlist)
         return -1;
-    sim_play(user, s->saved_playlist, s->saved_chapter, s->st.audio, s->st.subtitle, 0);
+    sim_play(user, s->saved_playlist, s->saved_chapter, s->st.audio, s->st.subtitle, 0, 0);
     return 0;
 }
 

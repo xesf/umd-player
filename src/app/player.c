@@ -1421,7 +1421,24 @@ const char *player_next_event(player *p, uint32_t *data)
     return NULL;
 }
 
-uint64_t player_restart(player *p, int chapter)
+/* A menu playing one chapter (play's first argument 1): the title ends where the next
+   chapter starts and holds that picture. The Animatrix keeps the backgrounds of its four
+   menu pages as one-second chapters of a 4 s title and plays the page's chapter; played on,
+   its menu showed all four in turn. */
+static void end_at_chapter(player *p, int chapter, int one)
+{
+    const umdv_title *t = &p->playlist.titles[p->title_index];
+    int c = chapter < 1 ? 1 : chapter;
+
+    p->cur.end_pts = p->playlist.items[t->first_item + p->item].end_pts;
+    if (one && c < t->chapter_count) {
+        const umdv_chapter *next = &p->playlist.chapters[t->first_chapter + c];
+        if (next->item == p->item && next->pts > p->cur.start_pts && next->pts < p->cur.end_pts)
+            p->cur.end_pts = next->pts;
+    }
+}
+
+uint64_t player_restart(player *p, int chapter, int one_chapter)
 {
     uint64_t start, from = player_position(p);
 
@@ -1434,6 +1451,7 @@ uint64_t player_restart(player *p, int chapter)
 
     if (chapter > 1 && chapter <= p->title->chapter_count)
         start = p->playlist.chapters[p->title->first_chapter + chapter - 1].pts;
+    end_at_chapter(p, chapter, one_chapter);
     p->ended = 0;
     restart_reader(p, start, p->want_audio, p->sub_sub);
     return start > from ? start - from : from - start;
@@ -1816,6 +1834,8 @@ player *player_open(const player_options *opt)
         chapter_start = 0;
         if (opt->menu && opt->chapter > 1 && opt->chapter <= t->chapter_count)
             chapter_start = p->playlist.chapters[t->first_chapter + opt->chapter - 1].pts;
+        if (opt->menu)
+            end_at_chapter(p, opt->chapter, opt->one_chapter);
     }
     p->menu_short = opt->menu && p->title->end_pts - p->title->start_pts < 10u * 60 * 90000;
     /* Audio: the asked-for track, else the remembered one, else the first in the language from

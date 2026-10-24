@@ -39,6 +39,7 @@ struct disc {
         int frames, draws;
     } perf;
     uint64_t seek_until;      /* the first chapter event of a title waits until then */
+    int one_chapter;          /* the play being started ends at its next chapter */
     int left_title;           /* the title stop() closed, and where it was: a replay from there */
     uint64_t left_pos;        /* close by needs no seek */
     int end_sent;             /* menu_playlist_ended was called for pl */
@@ -100,7 +101,7 @@ static int from_substream(int sub) { return sub >= 0x80 ? sub - 0x80 : -1; }
 static void start(disc *d, int title, int chapter, uint64_t pos)
 {
     player_options opt = {.iso_path = d->path, .title = title - 1, .audio = d->audio, .menu = 1, .chapter = chapter,
-                          .start_pts = pos, .subtitle = to_substream(d->subtitle)};
+                          .start_pts = pos, .subtitle = to_substream(d->subtitle), .one_chapter = d->one_chapter};
 
     player_close(d->pl);
     d->pl = player_open(&opt);
@@ -142,7 +143,7 @@ static void keep_place(disc *d)
     d->stopped_sub = from_substream(player_subtitle(d->pl));
 }
 
-static void d_play(void *user, int playlist, int chapter, int audio, int subtitle, int menu_mode)
+static void d_play(void *user, int playlist, int chapter, int audio, int subtitle, int menu_mode, int one_chapter)
 {
     disc *d = user;
 
@@ -179,7 +180,7 @@ static void d_play(void *user, int playlist, int chapter, int audio, int subtitl
         }
         /* A jump far into the title is a seek; a short one (Monty Python loops a 0.3 s chapter
            of its menu video) is not, and its chapters come at once. */
-        uint64_t jump = player_restart(d->pl, chapter);
+        uint64_t jump = player_restart(d->pl, chapter, one_chapter);
         d->last_chapter = 0;
         d->first_chapter = 0;
         d->catching_up = 0;
@@ -189,7 +190,9 @@ static void d_play(void *user, int playlist, int chapter, int audio, int subtitl
     }
     d->audio = audio;
     d->subtitle = subtitle;
+    d->one_chapter = one_chapter;
     start(d, playlist, chapter, 0);
+    d->one_chapter = 0;
 }
 
 static void d_stop(void *user)
