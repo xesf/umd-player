@@ -83,6 +83,7 @@ typedef struct res {
     uint8_t **rgba;           /* decoded images, on first use */
     int *img_w, *img_h;
     uint8_t *img_fill;        /* one colour, or a one-way gradient: a fill that stretches to its widget */
+    uint8_t *img_clear;       /* some pixels fully transparent: a frame or an overlay, not a card */
     uint8_t *img_plain;       /* a filled black box: four fifths solid, every visible pixel black */
     uint8_t *own_size;        /* per widget: draw the image at its own size (same_size_labels) */
     float *label_k;           /* per widget: or this many times its size, as its neighbours (0: no) */
@@ -1461,9 +1462,9 @@ static void free_res(res *r)
     if (!r)
         return;
     vs_destroy(r->vm);
-    for (int i = 0; r->rgba && i < r->r.image_count; i++)
+    for (int i = 0; r->rgba && i <= r->r.image_count; i++)   /* and the fill pixel after them */
         free(r->rgba[i]);
-    for (int i = 0; r->occ && i < r->r.image_count; i++)
+    for (int i = 0; r->occ && i <= r->r.image_count; i++)
         free(r->occ[i]);
     free(r->occ);
     free(r->img_id);
@@ -1472,6 +1473,7 @@ static void free_res(res *r)
     free(r->img_h);
     free(r->img_fill);
     free(r->img_plain);
+    free(r->img_clear);
     free(r->own_size);
     free(r->label_k);
     free(r->w);
@@ -1513,12 +1515,13 @@ static res *load_res(menu *m, const char *name)
     r->img_h = calloc((size_t)r->r.image_count + 1, sizeof(int));
     r->img_fill = calloc((size_t)r->r.image_count + 1, 1);
     r->img_plain = calloc((size_t)r->r.image_count + 1, 1);
+    r->img_clear = calloc((size_t)r->r.image_count + 1, 1);
     r->own_size = calloc((size_t)r->r.object_count + 1, 1);
     r->label_k = calloc((size_t)r->r.object_count + 1, sizeof(float));
     r->occ = calloc((size_t)r->r.image_count + 1, sizeof(uint8_t *));
     r->img_id = calloc((size_t)r->r.image_count + 1, sizeof(uint32_t));
     r->vm = vs_create(r->r.script, r->r.script_size, vm_log, m);
-    if (!r->w || !r->wref || !r->focus || !r->aref || !r->iref || !r->rgba || !r->img_w || !r->img_h || !r->img_fill || !r->img_plain ||
+    if (!r->w || !r->wref || !r->focus || !r->aref || !r->iref || !r->rgba || !r->img_w || !r->img_h || !r->img_fill || !r->img_plain || !r->img_clear ||
         !r->own_size || !r->label_k || !r->occ || !r->img_id || !r->vm) {
         free_res(r);
         return NULL;
@@ -1939,11 +1942,23 @@ int menu_has_focus(const menu *m)
 
 /* ---- drawing ---- */
 
+static uint32_t next_image_id;
+
+/* Image index image_count is a white pixel: the picture of a plane with a size and no image,
+   drawn in its colour (fill_image). */
 static const uint8_t *image_rgba(res *r, int i, int *w, int *h)
 {
-    if (i < 0 || i >= r->r.image_count)
+    if (i < 0 || i > r->r.image_count)
         return NULL;
-    if (!r->rgba[i] && r->r.images[i].data) {
+    if (i == r->r.image_count) {
+        if (!r->rgba[i] && (r->rgba[i] = malloc(4)) != NULL && (r->occ[i] = malloc(1)) != NULL) {
+            memset(r->rgba[i], 255, 4);
+            r->occ[i][0] = 1;
+            r->img_fill[i] = 1;
+            r->img_id[i] = ++next_image_id;
+            r->img_w[i] = r->img_h[i] = 1;
+        }
+    } else if (!r->rgba[i] && r->r.images[i].data) {
         const uint8_t *data = r->r.images[i].data;
         uint32_t size = r->r.images[i].size;
         int iw, ih, jpeg = size > 2 && data[0] == 0xFF && data[1] == 0xD8, ok;
@@ -1969,7 +1984,10 @@ static const uint8_t *image_rgba(res *r, int i, int *w, int *h)
             for (int y = 1; y < ih && cols; y++)
                 for (int x = 0; x < iw && cols; x++)
                     cols = px[y * iw + x] == px[x];
-            int plain = 1, solid = 0;
+            int plain = 1, solid = 0, clear = 0;
+            for (int k = 0; k < iw * ih && !clear; k++)
+                clear = r->rgba[i][(size_t)k * 4 + 3] == 0;
+            r->img_clear[i] = (uint8_t)clear;
             uint32_t rgb = 0, seen = 0;
             for (int k = 0; k < iw * ih && plain; k++)
                 if (r->rgba[i][(size_t)k * 4 + 3]) {
@@ -1979,10 +1997,9 @@ static const uint8_t *image_rgba(res *r, int i, int *w, int *h)
                         rgb = c3, seen = 1;
                     plain = c3 == rgb;
                 }
-            static uint32_t next_id;
             r->img_fill[i] = (uint8_t)(rows || cols);
             r->img_plain[i] = (uint8_t)(plain && seen && rgb == 0 && solid >= iw * ih * 4 / 5);
-            r->img_id[i] = ++next_id;
+            r->img_id[i] = ++next_image_id;
             r->img_w[i] = iw;
             r->img_h[i] = ih;
             /* Which 8x8 blocks have a visible pixel: the rings of The Transporter's dial are
@@ -2338,14 +2355,25 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
         x.t[k] = parent->t[k] + parent->l[k][0] * w->pos[0] + parent->l[k][1] * w->pos[1] + parent->l[k][2] * w->pos[2];
     local_matrix(lm, w->view_rot_on ? w->view_rot : w->rot, w->scale);
     mat_mul(x.l, (float (*)[3])parent->l, lm);
-    if (w->image >= 0 && r->r.objects[i].kind != RCO_PAGE && r->r.objects[i].kind != RCO_GROUP && *count < MAX_SPRITES) {
+    /* A plane with a size and no image is a rectangle of its colour: Underworld Evolution's
+       plnBlackBack, 858x36 in black, is the band behind its menu labels, and masks such as
+       Kill Bill Vol. 2's plnSSMask cover the screen when the script colours them. */
+    int image = w->image >= 0 ? w->image
+              : r->r.objects[i].kind == RCO_PLANE && w->size[0] > 0 && w->size[1] > 0 ? r->r.image_count : -1;
+    if (image >= 0 && r->r.objects[i].kind != RCO_PAGE && r->r.objects[i].kind != RCO_GROUP && *count < MAX_SPRITES) {
         int iw, ih;
-        const uint8_t *img = image_rgba(r, w->image, &iw, &ih);
+        const uint8_t *img = image_rgba(r, image, &iw, &ih);
         if (img) {
             sprite *s = &list[*count];
             float sxu = (float)c->w / UNITS_W, syu = (float)c->h / UNITS_H;
             float width = w->size[0] > 0 ? w->size[0] : (float)iw, height = w->size[1] > 0 ? w->size[1] : (float)ih;
-            int rule = r->own_size[i] ? OWN : stretch_rule(iw, ih, width, height, r->img_fill[w->image]);
+            int rule = r->own_size[i] ? OWN : stretch_rule(iw, ih, width, height, r->img_fill[image]);
+            /* A frame over the whole screen, with clear parts, covers it whatever its shape:
+               Kill Bill Vol. 2 frames its scene previews with a 252x168 picture in an 854x480
+               widget, and fitted to the height it left the preview showing at the sides.
+               Opaque cards (Clerks' 512x341 rating card) keep their shape. */
+            if (rule == FIT && width >= 0.9f * UNITS_W && height >= 0.9f * UNITS_H && r->img_clear[image])
+                rule = STRETCH;
             if (r->label_k[i] > 0) {
                 width = (float)iw * r->label_k[i];
                 height = (float)ih * r->label_k[i];
@@ -2365,8 +2393,8 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
             memset(s, 0, sizeof(*s));
             s->widget = i;
             s->img = img;
-            s->occ = r->occ[w->image];
-            s->image = w->image;
+            s->occ = r->occ[image];
+            s->image = image;
             s->iw = iw;
             s->ih = ih;
             /* Image axes on screen: x right, and y down (the image's rows go down). */
@@ -2420,7 +2448,7 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
                sign of the 448x95 box its scene button (tinted 0, 0, 0) holds, while the boxes
                of its language buttons (tinted white) mark the chosen language. The box stays
                in the list, clear, for touch. */
-            if (r->r.objects[i].kind == RCO_BUTTON && r->img_plain[w->image] &&
+            if (r->r.objects[i].kind == RCO_BUTTON && r->img_plain[image] &&
                 r->r.objects[i].color[0] == 0 && r->r.objects[i].color[1] == 0 && r->r.objects[i].color[2] == 0)
                 s->color[3] = 0;
             if (s->box[2] > s->box[0] && s->box[3] > s->box[1])
