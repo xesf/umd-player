@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.8.5 (2026-10-24)
 
 - Fixed Appleseed's subtitle options opening low and jumping to the centre when you moved.
 - Fixed Starship Troopers' scene list stalling as it scrolls: a scene's preview now seeks in the open video instead of reopening it.
