@@ -274,6 +274,21 @@ void plat_log(const char *fmt, ...)
     fputs(buf, stdout);
     fflush(stdout);
     OutputDebugStringA(buf);
+    {
+        /* and to log.txt in the data folder, started anew each run */
+        static FILE *file;
+        static int tried;
+        if (!tried) {
+            char path[MAX_PATH * 3];
+            tried = 1;
+            if (data_path(path, sizeof(path), "log.txt") == 0)
+                file = open_file(path, L"w");
+        }
+        if (file) {
+            fputs(buf, file);
+            fflush(file);
+        }
+    }
 }
 
 void plat_keep_awake(void)

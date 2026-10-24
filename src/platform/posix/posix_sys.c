@@ -133,13 +133,32 @@ uint64_t plat_time_us(void)
     return (uint64_t)ts.tv_sec * 1000000u + (uint64_t)ts.tv_nsec / 1000u;
 }
 
+static int data_path(char *path, size_t size, const char *name);
+
+/* To the terminal, and to log.txt in the data folder (~/.umdplayer on macOS), started anew
+   each run: an app opened from the Finder has no terminal. */
 void plat_log(const char *fmt, ...)
 {
+    static FILE *file;
+    static int tried;
     va_list ap;
+
+    if (!tried) {
+        char path[1024];
+        tried = 1;
+        if (data_path(path, sizeof(path), "log.txt") == 0)
+            file = fopen(path, "w");
+    }
     va_start(ap, fmt);
     vprintf(fmt, ap);
     va_end(ap);
     fflush(stdout);
+    if (file) {
+        va_start(ap, fmt);
+        vfprintf(file, fmt, ap);
+        va_end(ap);
+        fflush(file);
+    }
 }
 
 #ifdef __APPLE__
