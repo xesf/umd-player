@@ -39,6 +39,7 @@ typedef struct wstate {
 
 typedef struct tween {
     int active, widget, prop, n;
+    int halfway;              /* a turn logged half done ("rot:" lines) */
     float from[4], to[4], dur;
     uint64_t start;
 } tween;
@@ -140,6 +141,24 @@ static void mlog(menu *m, const char *fmt, ...)
     va_end(ap);
     if (m->p.log)
         m->p.log(m->p.user, buf);
+}
+
+/* Turning menus (Feel the Noise's drum, The Legend of Zorro's wheel) in the log, lines that
+   start "rot:": the keys, every turn a script or an animation asks for, what getRotate
+   answers, and where each turn ends, to compare with a PSP. Moves are logged for widgets in
+   a turned group. */
+static const char *wname(const menu *m, int i)
+{
+    const char *n = i >= 0 && i < m->res->r.object_count ? m->res->r.objects[i].name : NULL;
+    return n ? n : "?";
+}
+
+static int in_turned_group(const res *r, int i)
+{
+    for (; i >= 0; i = r->r.objects[i].parent)
+        if (r->w[i].rot[0] != 0 || r->w[i].rot[1] != 0 || r->w[i].rot[2] != 0)
+            return 1;
+    return 0;
 }
 
 static void vm_log(void *user, const char *msg)
@@ -245,6 +264,7 @@ static void start_tween(menu *m, int widget, int prop, const float *to, int n, f
     memcpy(t->to, to, (size_t)n * sizeof(float));
     t->dur = dur;
     t->start = m->now;
+    t->halfway = 0;
 }
 
 /* ---- rotations as orientations ---- */
@@ -326,6 +346,8 @@ static void step_tweens(menu *m)
         cur = prop_ptr(&m->res->w[t->widget], t->prop, &n);
         for (int c = 0; c < t->n; c++)
             cur[c] = t->from[c] + (t->to[c] - t->from[c]) * k;
+        if (t->prop == P_ROT && !t->active)
+            mlog(m, "rot: %s turned to %.3f %.3f %.3f", wname(m, t->widget), cur[0], cur[1], cur[2]);
         /* Rotations are drawn turning as orientations, the short way round: the wheels of The
            Legend of Zorro and Christmas With the Kranks step between angles such as
            (pi/3, -pi, -pi) and (pi/3, pi, pi), the same orientation, and turning each angle
@@ -336,6 +358,11 @@ static void step_tweens(menu *m)
             w->view_rot_on = k < 1;
             if (k < 1)
                 rotation_between(t->from, t->to, k, w->view_rot);
+            if (k >= 0.5f && k < 1 && !t->halfway) {
+                t->halfway = 1;
+                mlog(m, "rot: %s half way: angles %.3f %.3f %.3f, drawn as %.3f %.3f %.3f", wname(m, t->widget),
+                     cur[0], cur[1], cur[2], w->view_rot[0], w->view_rot[1], w->view_rot[2]);
+            }
         }
         m->dirty = 1;
     }
@@ -518,7 +545,11 @@ static int step_run(menu *m, anim_run *run)
         switch (s->kind) {
         case RCO_STEP_MOVE: start_tween(m, obj, P_POS, s->value, 3, s->duration); break;
         case RCO_STEP_COLOR: start_tween(m, obj, P_COLOR, s->value, 4, s->duration); break;
-        case RCO_STEP_ROTATE: start_tween(m, obj, P_ROT, s->value, 3, s->duration); break;
+        case RCO_STEP_ROTATE:
+            mlog(m, "rot: %s step turn %.3f %.3f %.3f in %.0f ms (animation %s)", wname(m, obj), s->value[0],
+                 s->value[1], s->value[2], s->duration, r->r.anims[run->anim].name ? r->r.anims[run->anim].name : "?");
+            start_tween(m, obj, P_ROT, s->value, 3, s->duration);
+            break;
         case RCO_STEP_SCALE: start_tween(m, obj, P_SCALE, s->value, 3, s->duration); break;
         case RCO_STEP_FADE: start_tween(m, obj, P_FADE, s->value, 1, s->duration); break;
         case RCO_STEP_CROP: start_tween(m, obj, P_CROP, s->value, 4, s->duration); break;
@@ -663,6 +694,7 @@ static void do_input(menu *m, uint32_t pressed)
     for (unsigned i = 0; i < 4; i++)
         if (pressed & dirs[i].button) {
             const rco_action *a = &r->r.objects[focus].action[dirs[i].action];
+            mlog(m, "rot: key %s on %s (page %s)", dirs[i].name + 7, wname(m, focus), wname(m, page));
             if (script_handler(m, focus, dirs[i].name))
                 ;
             else if (a->object >= 0)
@@ -836,6 +868,10 @@ static void set_values(ref *rf, int prop, const vs_value *args, int argc, int ti
         if (prop == P_COLOR)          /* colours are fractions: 250 is full */
             v[i] = v[i] < 0 ? 0 : v[i] > 1 ? 1 : v[i];
     }
+    if (prop == P_ROT || (prop == P_POS && in_turned_group(rf->m->res, rf->index)))
+        mlog(rf->m, "rot: %s.%s%s(%.3f %.3f %.3f) in %.0f ms, from %.3f %.3f %.3f", wname(rf->m, rf->index),
+             timed ? "anim" : "set", prop == P_ROT ? "Rotate" : "Pos", v[0], n > 1 ? v[1] : 0, n > 2 ? v[2] : 0, dur,
+             cur[0], count > 1 ? cur[1] : 0, count > 2 ? cur[2] : 0);
     start_tween(rf->m, rf->index, prop, v, n, dur);
 }
 
@@ -883,6 +919,8 @@ static void get_values(vsmx *vm, ref *rf, int prop, vs_value *ret)
         m->poll_prop = prop;
         m->poll_count = 0;
     }
+    if (prop == P_ROT)
+        mlog(m, "rot: %s.getRotate() = %.3f %.3f %.3f", wname(m, rf->index), v[0], v[1], v[2]);
     *ret = array3(vm, v, n);
 }
 
