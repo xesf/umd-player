@@ -2272,11 +2272,11 @@ static void same_size_labels(menu *m, res *r)
             }
         }
     }
-    /* Labels scaled up to fit their widgets (FIT) all take the smallest scale of the labels
-       beside them, one keeping its own size counting as 1 and a stretched one as its smaller
-       stretch: Superbad's subtitle languages, 64x16 to 194x16 images in widgets of 105x26 to
-       214x27, share one font size, and its trailer "Gabriel" (64x13 in 182x32) matches "Walk
-       Hard" (184x31 in 195x32). */
+    /* Labels beside a label scaled up to fit its widget (FIT) all take the smallest scale
+       that fits each in its widget, one at its own size counting as at most 1 and a stretched
+       one as its smaller stretch: Superbad's subtitle languages, 64x16 to 194x16 images in
+       widgets of 105x26 to 214x27, share the 0.63 that fits Portuguese in 123 across, and its
+       trailer "Gabriel" (64x13 in 182x32) matches "Walk Hard" (184x31 in 195x32). */
     for (int i = 0; i < rc->object_count; i++) {
         const rco_object *o = &rc->objects[i];
         int iw, ih;
@@ -2294,16 +2294,21 @@ static void same_size_labels(menu *m, res *r)
                 b->image < 0 || png_info(rc->images[b->image].data, rc->images[b->image].size, &bw, &bh) < 0)
                 continue;
             rule = r->own_size[j] ? OWN : stretch_rule(bw, bh, b->size[0], b->size[1], 0);
-            if (rule == OWN || rule == OVER) {
-                lo = lo < 1 ? lo : 1;
-            } else if (rule == FIT || rule == STRETCH) {
-                float kb = b->size[0] / (float)bw < b->size[1] / (float)bh ? b->size[0] / (float)bw : b->size[1] / (float)bh;
+            float kb = b->size[0] / (float)bw < b->size[1] / (float)bh ? b->size[0] / (float)bw : b->size[1] / (float)bh;
+            if ((rule == OWN || rule == OVER) && kb > 1)
+                kb = 1;
+            if (kb > 0)
                 lo = lo < kb ? lo : kb;
-            }
         }
-        if (lo < k) {
-            r->label_k[i] = lo;
-            mlog(m, "menu: %s scales its image by %.2f, as the labels beside it", o->name ? o->name : "?", lo);
+        if (lo >= k)
+            continue;
+        for (int j = 0; j < rc->object_count; j++) {    /* the whole row, this label included */
+            const rco_object *b = &rc->objects[j];
+            if (b->kind == RCO_BUTTON && b->parent == o->parent && b->scale[0] == o->scale[0] && b->image >= 0 &&
+                (r->label_k[j] == 0 || r->label_k[j] > lo)) {
+                r->label_k[j] = lo;
+                mlog(m, "menu: %s scales its image by %.2f, as the labels beside it", b->name ? b->name : "?", lo);
+            }
         }
     }
 }
@@ -2341,7 +2346,7 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
             float sxu = (float)c->w / UNITS_W, syu = (float)c->h / UNITS_H;
             float width = w->size[0] > 0 ? w->size[0] : (float)iw, height = w->size[1] > 0 ? w->size[1] : (float)ih;
             int rule = r->own_size[i] ? OWN : stretch_rule(iw, ih, width, height, r->img_fill[w->image]);
-            if (rule == FIT && r->label_k[i] > 0) {
+            if (r->label_k[i] > 0) {
                 width = (float)iw * r->label_k[i];
                 height = (float)ih * r->label_k[i];
             } else if (rule == FIT) {
