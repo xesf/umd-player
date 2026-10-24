@@ -2357,11 +2357,13 @@ static void same_size_labels(menu *m, res *r)
             }
         }
     }
-    /* Labels beside a label scaled up to fit its widget (FIT) all take the smallest scale
-       that fits each in its widget, one at its own size counting as at most 1 and a stretched
-       one as its smaller stretch: Superbad's subtitle languages, 64x16 to 194x16 images in
-       widgets of 105x26 to 214x27, share the 0.63 that fits Portuguese in 123 across, and its
-       trailer "Gabriel" (64x13 in 182x32) matches "Walk Hard" (184x31 in 195x32). */
+    /* Labels beside a label scaled up to fit its widget (FIT) all take the smallest scale of
+       the row, one at its own size counting as 1 and a stretched one as its smaller stretch:
+       Superbad's subtitle languages, 64x16 to 194x16 images in widgets of 105x26 to 214x27,
+       draw at their own size, as its audio page draws the same English image, and its trailer
+       "Gabriel" (64x13 in 182x32) matches "Walk Hard" (184x31 in 195x32). Shrinking the row to
+       fit Portuguese (194) in its 123 widget drew English at 0.63 here and 1 on the audio
+       page. */
     for (int i = 0; i < rc->object_count; i++) {
         const rco_object *o = &rc->objects[i];
         int iw, ih;
@@ -2380,7 +2382,7 @@ static void same_size_labels(menu *m, res *r)
                 continue;
             rule = r->own_size[j] ? OWN : stretch_rule(bw, bh, b->size[0], b->size[1], 0);
             float kb = b->size[0] / (float)bw < b->size[1] / (float)bh ? b->size[0] / (float)bw : b->size[1] / (float)bh;
-            if ((rule == OWN || rule == OVER) && kb > 1)
+            if (rule == OWN || rule == OVER)    /* at its own size, even wider than its widget */
                 kb = 1;
             if (kb > 0)
                 lo = lo < kb ? lo : kb;
