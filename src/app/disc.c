@@ -190,6 +190,19 @@ static void d_play(void *user, int playlist, int chapter, int audio, int subtitl
     }
     d->audio = audio;
     d->subtitle = subtitle;
+    /* Another title of the clip playing: a seek in the open player. Starship Troopers plays
+       each scene's preview as a title of the movie's clip, and reopening the player for each
+       stalled its scene list as it scrolled. */
+    if (d->pl && player_switch_title(d->pl, playlist - 1, chapter, audio, to_substream(subtitle), one_chapter) != UINT64_MAX) {
+        d->title = playlist;
+        d->last_chapter = 0;
+        d->first_chapter = 0;
+        d->catching_up = 0;
+        d->end_sent = 0;
+        d->seek_until = plat_time_us() + SEEK_US;
+        d->left_title = 0;
+        return;
+    }
     d->one_chapter = one_chapter;
     start(d, playlist, chapter, 0);
     d->one_chapter = 0;

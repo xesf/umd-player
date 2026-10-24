@@ -1457,6 +1457,38 @@ uint64_t player_restart(player *p, int chapter, int one_chapter)
     return start > from ? start - from : from - start;
 }
 
+uint64_t player_switch_title(player *p, int title, int chapter, int audio, int subtitle, int one_chapter)
+{
+    const umdv_title *t;
+    uint64_t start, from;
+    int item = 0;
+
+    if (title < 0 || title >= p->playlist.title_count)
+        return UINT64_MAX;
+    t = &p->playlist.titles[title];
+    if (t->item_count > 1 && chapter > 1 && chapter <= t->chapter_count)
+        item = p->playlist.chapters[t->first_chapter + chapter - 1].item;
+    if (strcmp(p->playlist.items[t->first_item + item].clip, p->cur.clip) != 0)
+        return UINT64_MAX;
+    from = player_position(p);
+    stop_reader(p);
+    p->title_index = title;
+    if (load_item(p, item) < 0)
+        return UINT64_MAX;
+    p->menu_short = p->menu_mode && p->title->end_pts - p->title->start_pts < 10u * 60 * 90000;
+    start = p->title->start_pts;
+    if (chapter > 1 && chapter <= t->chapter_count)
+        start = p->playlist.chapters[t->first_chapter + chapter - 1].pts;
+    end_at_chapter(p, chapter, one_chapter);
+    p->ended = 0;
+    if (!has_stream(p, UMDV_STREAM_AUDIO, audio))
+        audio = p->want_audio;
+    subtitle = subtitle >= 0 && has_stream(p, UMDV_STREAM_SUBTITLE, subtitle) ? subtitle : DEMUX_NONE;
+    plat_log("title \"%s\" (clip %s), in place\n", p->title->name, p->title->clip);
+    restart_reader(p, start, audio, subtitle);
+    return start > from ? start - from : from - start;
+}
+
 void player_set_audio(player *p, int audio)
 {
     if (has_stream(p, UMDV_STREAM_AUDIO, audio)) {
@@ -1696,7 +1728,7 @@ static int load_item(player *p, int item)
     const umdv_item *it = &p->playlist.items[t->first_item + item];
     char path[64];
     uint32_t size;
-    int i;
+    int i, same = p->clp_buf && strcmp(p->cur.clip, it->clip) == 0;
 
     p->cur = *t;
     p->item = item;
@@ -1720,6 +1752,8 @@ static int load_item(player *p, int item)
         for (p->cur.event_count = 0; i < t->event_count && p->playlist.events[t->first_event + i].item == item; i++)
             p->cur.event_count++;
     }
+    if (same)                 /* the clip already read: its file and entry points stay */
+        return 0;
     free(p->clp_buf);
     snprintf(path, sizeof(path), "UMD_VIDEO/CLIPINF/%s.CLP", it->clip);
     if ((p->clp_buf = read_file(p, path, &size)) == NULL || umdv_clip_parse(p->clp_buf, size, &p->clip) < 0) {

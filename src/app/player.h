@@ -62,6 +62,9 @@ uint64_t player_title_start(const player *p);     /* 90 kHz, in the clip's time 
 /* Plays the same title again from a chapter (1-based) without reopening anything: a menu
    video that loops. */
 uint64_t player_restart(player *p, int chapter, int one_chapter);   /* returns how far it jumped, 90 kHz */
+/* Another title of the same clip, without reopening (title from 0, subtitle a substream):
+   how far it jumped, or UINT64_MAX when the title needs a new player. */
+uint64_t player_switch_title(player *p, int title, int chapter, int audio, int subtitle, int one_chapter);
 void player_set_audio(player *p, int audio);
 void player_set_subtitle(player *p, int subtitle);   /* -1 turns them off */
 /* Shows the video in part of the screen (fractions of it), or full screen when dst is NULL. */
