@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Fixed Appleseed's subtitle options opening low and jumping to the centre when you moved.
+- Fixed Starship Troopers' scene list stalling as it scrolls: a scene's preview now seeks in the open video instead of reopening it.
+
 ## v0.8.4 (2026-10-24)
 
 - Fixed Feel the Noise, To Die For and Memoirs of a Geisha: their menu drums now turn cleanly both ways, and open in the right order.
