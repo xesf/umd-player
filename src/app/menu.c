@@ -919,8 +919,21 @@ static void get_values(vsmx *vm, ref *rf, int prop, vs_value *ret)
         m->poll_prop = prop;
         m->poll_count = 0;
     }
-    if (prop == P_ROT)
-        mlog(m, "rot: %s.getRotate() = %.3f %.3f %.3f", wname(m, rf->index), v[0], v[1], v[2]);
+    if (prop == P_ROT && n == 3) {
+        /* The PSP reads a turn back from its matrix (Y, then X, then Z), X within -pi/2..pi/2:
+           a turn of 2pi/3 about X reads (pi/3, -pi, -pi), and (pi, pi, pi), no turn at all,
+           reads (0, 0, 0). Feel the Noise, To Die For and Memoirs of a Geisha keep Y and Z
+           from it to aim their drum's next turn; given the stored angles they turned to the
+           wrong item on Up. Products keep their signed zeros as on the PSP (0 * cos(2pi/3) is
+           -0, and atan2 of -0 is -pi). */
+        float sx = sinf(v[0]), cx = cosf(v[0]), sy = sinf(v[1]), cy = cosf(v[1]);
+        float sz = sinf(v[2]), cz = cosf(v[2]);
+        float e[3] = {asinf(sx < -1 ? -1 : sx > 1 ? 1 : sx), atan2f(sy * cx, cy * cx), atan2f(cx * sz, cx * cz)};
+        mlog(m, "rot: %s.getRotate() = %.3f %.3f %.3f (stored %.3f %.3f %.3f)", wname(m, rf->index), e[0], e[1], e[2],
+             v[0], v[1], v[2]);
+        *ret = array3(vm, e, 3);
+        return;
+    }
     *ret = array3(vm, v, n);
 }
 
@@ -1912,6 +1925,10 @@ int menu_update(menu *m, uint32_t pressed, uint32_t held, uint64_t now_us)
 {
     m->now = now_us;
     pressed = repeat_dirs(m, pressed, held);
+    /* Tweens due now finish before the timers run: Feel the Noise turns its menu drum over
+       350 ms and reads the angle back in a 350 ms timer, which caught the turn 95 % done and
+       left the drum tilted. */
+    step_tweens(m);
     for (int i = 0; i < MAX_TIMERS; i++) {
         mtimer *t = &m->timers[i];
         if (t->used && now_us >= t->due) {
