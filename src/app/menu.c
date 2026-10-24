@@ -583,6 +583,23 @@ static int step_run(menu *m, anim_run *run)
     return 1;
 }
 
+/* 1 if an animation that has not begun changes the widget before its first wait. */
+static int first_steps_touch(const menu *m, const anim_run *run, int index)
+{
+    const rco_anim *a = &m->res->r.anims[run->anim];
+    if (run->target == index)
+        return 1;
+    for (int i = 0; i < a->step_count; i++) {
+        const rco_step *s = &m->res->r.steps[a->first_step + i];
+        if ((s->kind == RCO_STEP_DELAY && s->duration > 0) || s->kind == RCO_STEP_EVENT)
+            return 0;
+        if ((s->object >= 0 ? s->object : run->target) == index && s->kind != RCO_STEP_DELAY &&
+            s->kind != RCO_STEP_LOCK && s->kind != RCO_STEP_UNLOCK)
+            return 1;
+    }
+    return 0;
+}
+
 static void step_anims(menu *m)
 {
     for (int i = 0; i < MAX_RUNS; i++)
@@ -858,10 +875,12 @@ static void set_values(ref *rf, int prop, const vs_value *args, int argc, int ti
     }
     /* An animation played on the widget just before has started, as on a PSP, so a value
        set now wins over its first steps: Starship Troopers (eng) plays animSSChapFocusIn on
-       the chosen scene (colour 1 over 0.5 s), then sets that scene's colour to grey. */
+       the chosen scene (colour 1 over 0.5 s), then sets that scene's colour to grey. The same
+       holds for one played on its group that moves it: Appleseed places its subtitle labels
+       with animSUBS_SetMoveIn on the page, then sets where they go. */
     for (int i = 0; i < MAX_RUNS; i++) {
         anim_run *run = &rf->m->runs[i];
-        if (run->active && run->target == rf->index && run->step == 0 && run->started == rf->m->now &&
+        if (run->active && run->step == 0 && run->started == rf->m->now && first_steps_touch(rf->m, run, rf->index) &&
             !step_run(rf->m, run))
             return;
     }
