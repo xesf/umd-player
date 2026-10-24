@@ -803,11 +803,16 @@ static void set_values(ref *rf, int prop, const vs_value *args, int argc, int ti
     float *cur;
     int count;
 
-    if (timed && argc > 0) {
-        dur = (float)vs_number(args[argc - 1]);
+    /* The time follows the values: animColor(r, g, b, a, ms), animPos(x, y, z, ms). Given no
+       more arguments than values, there is no time: First Descent calls animColor(1, 1, 1,
+       250) to show its chosen scene's name, an alpha of 250 (full) at once. */
+    if (timed && argc > n) {
+        dur = (float)vs_number(args[n]);
         if (!(dur > 0))               /* undefined (NaN) or negative: at once. Robots passes an unset variable */
             dur = 0;
-        argc--;
+        argc = n;
+    } else if (timed) {
+        timed = 0;
     }
     /* An animation played on the widget just before has started, as on a PSP, so a value
        set now wins over its first steps: Starship Troopers (eng) plays animSSChapFocusIn on
@@ -821,8 +826,11 @@ static void set_values(ref *rf, int prop, const vs_value *args, int argc, int ti
     cur = prop_ptr(&rf->m->res->w[rf->index], prop, &count);
     if (n > count)
         n = count;
-    for (int i = 0; i < n; i++)
+    for (int i = 0; i < n; i++) {
         v[i] = argf(args, argc, i, cur[i]);
+        if (prop == P_COLOR)          /* colours are fractions: 250 is full */
+            v[i] = v[i] < 0 ? 0 : v[i] > 1 ? 1 : v[i];
+    }
     start_tween(rf->m, rf->index, prop, v, n, dur);
 }
 
