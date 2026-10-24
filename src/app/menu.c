@@ -768,9 +768,14 @@ NATIVE(w_activate)
     ref *rf = user;
     res *r = rf->m->res;
     (void)vm; (void)args; (void)argc;
+    int was = r->active, focus = r->focus[rf->index];
     *ret = self;
     r->active = rf->index;
     do_action(rf->m, &r->r.objects[rf->index].action[RCO_PAGE_ACTIVATE], rf->index);
+    /* A page made active again gives its focused button its focus-in: First Blood moves its
+       crosshair back to the chosen item there on return from its scene and subtitle pages. */
+    if (was != rf->index && focus >= 0 && rf->m->res == r && r->focus[rf->index] == focus)
+        do_action_named(rf->m, &r->r.objects[focus].action[RCO_BTN_FOCUS_IN], focus, "onFocusIn");
 }
 
 NATIVE(w_set_focus)
