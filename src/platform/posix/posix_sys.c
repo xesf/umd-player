@@ -220,16 +220,15 @@ int plat_list_dir(const char *dir, plat_dir_fn fn, void *user)
     if (!d)
         return -1;
     while ((e = readdir(d)) != NULL) {
-        int is_dir;
-        if (e->d_name[0] == '.')
-            continue;
-        is_dir = e->d_type == DT_DIR;
+        int is_dir = e->d_type == DT_DIR;
         if (e->d_type == DT_LNK || e->d_type == DT_UNKNOWN) {   /* follow links; some file systems give no type */
             char path[1024];
             struct stat st;
             snprintf(path, sizeof(path), "%s/%s", dir, e->d_name);
             is_dir = stat(path, &st) == 0 && S_ISDIR(st.st_mode);
         }
+        if (plat_hidden_entry(e->d_name, is_dir))
+            continue;
         fn(user, e->d_name, is_dir);
     }
     closedir(d);

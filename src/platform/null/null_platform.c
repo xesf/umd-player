@@ -400,10 +400,11 @@ int plat_list_dir(const char *dir, plat_dir_fn fn, void *user)
     while ((e = readdir(d)) != NULL) {
         char path[1024];
         struct stat st;
-        if (e->d_name[0] == '.')
-            continue;
+        int is_dir;
         snprintf(path, sizeof(path), "%s/%s", dir, e->d_name);
-        fn(user, e->d_name, stat(path, &st) == 0 && S_ISDIR(st.st_mode));
+        is_dir = stat(path, &st) == 0 && S_ISDIR(st.st_mode);
+        if (!plat_hidden_entry(e->d_name, is_dir))
+            fn(user, e->d_name, is_dir);
     }
     closedir(d);
     return 0;

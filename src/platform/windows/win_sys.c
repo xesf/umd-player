@@ -83,11 +83,10 @@ int plat_list_dir(const char *dir, plat_dir_fn fn, void *user)
     if (h == INVALID_HANDLE_VALUE)
         return -1;
     do {
-        if (fd.cFileName[0] == L'.')
-            continue;
+        int is_dir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
         to_utf8(fd.cFileName, name, sizeof(name));
-        if (name[0])
-            fn(user, name, (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0);
+        if (name[0] && !plat_hidden_entry(name, is_dir))
+            fn(user, name, is_dir);
     } while (FindNextFileW(h, &fd));
     FindClose(h);
     return 0;

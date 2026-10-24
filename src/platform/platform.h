@@ -20,10 +20,18 @@ void plat_iso_close(umd_source *src);
 /* ---- Logging: stdout on macOS, ux0:data/umdplayer/log.txt on the Vita ---- */
 void plat_log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 
-/* Calls fn for each entry of a directory, hidden ones (".name") left out; is_dir is 1 for a
-   folder, or a link to one. Returns 0, or -1 if it cannot be read. */
+/* Calls fn for each entry of a directory, hidden ones left out (plat_hidden_entry); is_dir is
+   1 for a folder, or a link to one. Returns 0, or -1 if it cannot be read. */
 typedef void (*plat_dir_fn)(void *user, const char *name, int is_dir);
 int plat_list_dir(const char *dir, plat_dir_fn fn, void *user);
+
+/* Hidden: "." and "..", folders whose names start with a dot (.Trashes, .Spotlight-V100), and
+   the "._name" files macOS leaves beside files on memory cards. A disc image named
+   "...As If.iso" is not hidden. */
+static inline int plat_hidden_entry(const char *name, int is_dir)
+{
+    return name[0] == '.' && (is_dir || name[1] == '\0' || name[1] == '_' || (name[1] == '.' && name[2] == '\0'));
+}
 
 /* Small files of app data (settings, resume points), stored under a platform folder:
    ux0:data/umdplayer on the Vita, ~/.umdplayer on macOS. Load returns the bytes read or -1. */
