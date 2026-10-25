@@ -2456,6 +2456,11 @@ static int stretch_rule(int iw, int ih, float width, float height, int fill)
            Peeks" in a 121x28 button sits between the chevrons placed for it. */
         if (hi <= 1.0f && lo >= 0.6f)
             return STRETCH;
+        /* Half-size pictures that nearly fit their widget fill it: Eight Below's 279x227 dog in
+           a 548x500 plane has its feet on the screen's bottom edge, which fitting left 13
+           units above it. Labels and cards keep their shape. */
+        if (lo >= 1.5f && lo <= OVER_MAX && hi <= 1.15f * lo && width >= 200.0f && height >= 200.0f)
+            return STRETCH;
         return lo >= 1.5f && lo <= OVER_MAX && hi <= 1.6f * lo ? FIT : OWN;
     }
     return width > OVER_MAX * (float)iw && !full ? OVER : STRETCH;
