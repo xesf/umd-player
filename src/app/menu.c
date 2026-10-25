@@ -91,6 +91,8 @@ typedef struct res {
     uint8_t **occ;            /* per image: its 8x8 blocks with a visible pixel (see blit) */
     uint32_t *img_id;         /* per image: unique while decoded, for the GPU's copy of it */
     int pages[MAX_PAGES], page_count;   /* open pages, in drawing order */
+    int activated;                       /* the page last activated with no focus, and when */
+    uint64_t activated_at;
     int active;               /* page that takes input, or -1 */
     int focus_page;           /* page of the button the script focused last, or -1 (input_page) */
     int *focus;               /* per page: the focused button, or -1 */
@@ -830,6 +832,10 @@ NATIVE(w_activate)
        crosshair back to the chosen item there on return from its scene and subtitle pages. */
     if (was != rf->index && focus >= 0 && rf->m->res == r && r->focus[rf->index] == focus)
         do_action_named(rf->m, &r->r.objects[focus].action[RCO_BTN_FOCUS_IN], focus, "onFocusIn");
+    if (focus < 0) {
+        r->activated = rf->index;
+        r->activated_at = rf->m->now;
+    }
 }
 
 NATIVE(w_set_focus)
@@ -845,6 +851,16 @@ NATIVE(w_set_focus)
     if (target < 0)
         return;
     r->focus_page = page;
+    /* A page activated just now with no focus has given it to its first button, with a
+       focus-in: First Blood ignores that one on its subtitle page, and moves its crosshair to
+       the chosen subtitle on the focus-in of the button it focuses next. Focusing the first
+       button itself gives one focus-in: First Blood does not wait for a second one then. */
+    if (page >= 0 && page == r->activated && r->activated_at == rf->m->now && r->focus[page] < 0 &&
+        page == r->active && first_button(r, page) != target) {
+        set_focus(rf->m, first_button(r, page));
+        if (rf->m->res != r)
+            return;
+    }
     /* The script focusing the widget that has the focus still gets its focus-in: Austin
        Powers restarts its pulse and records the selected item there on return from a
        submenu. */
@@ -1617,6 +1633,7 @@ static res *load_res(menu *m, const char *name)
     }
     r->active = -1;
     r->focus_page = -1;
+    r->activated = -1;
     same_size_labels(m, r);
     widgets = vs_new_array(r->vm, r->r.object_count);
     for (int i = 0; i < r->r.object_count; i++) {
