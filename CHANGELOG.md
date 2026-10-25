@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.8.7 (2026-10-25)
+
+- Disc menus play their sound effects: 265 of the 709 test discs have them (Kill Bill Vol. 2 plays one as the selection moves and one on a press).
+- Fixed Kill Bill Vol. 2's set-up page showing a white background: the last pictures of a title now play to its end.
+- Fixed Eight Below's "Sneak Peeks" drawing under its chevrons instead of between them.
+- Fixed Enter the Dragon's scene number showing as a column down the screen.
+- Fixed Escaflowne showing a set-up choice during its transition and leaving the chosen one unhighlighted after it.
+- Fixed Escaflowne's scene frame highlight showing as a small square.
+- Library: □ reads "Play from Beginning" and starts the disc from its beginning.
+
 ## v0.8.6 (2026-10-25)
 
 - Fixed First Blood's crosshair not moving to the chosen subtitle when its subtitle menu opens.
