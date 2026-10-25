@@ -2374,6 +2374,26 @@ static int stretch_rule(int iw, int ih, float width, float height, int fill)
    the same scale do too. The Goonies' language page has its spoken languages in widgets twice
    their images and its subtitles in widgets four times theirs, both at scale 1.8 and drawn in
    one font; stretching the first drew them twice the size of the second. */
+/* 1 if a button draws the image at its own size: one that keeps it (own_size, OWN, OVER). */
+static int drawn_own_size(const res *r, int image)
+{
+    const rco *rc = &r->r;
+    int iw, ih;
+
+    if (image < 0 || png_info(rc->images[image].data, rc->images[image].size, &iw, &ih) < 0)
+        return 0;
+    for (int j = 0; j < rc->object_count; j++) {
+        const rco_object *b = &rc->objects[j];
+        int rule;
+        if (b->kind != RCO_BUTTON || b->image != image)
+            continue;
+        rule = r->own_size[j] ? OWN : stretch_rule(iw, ih, b->size[0], b->size[1], 0);
+        if (rule == OWN || rule == OVER)
+            return 1;
+    }
+    return 0;
+}
+
 static void same_size_labels(menu *m, res *r)
 {
     const rco *rc = &r->r;
@@ -2405,7 +2425,9 @@ static void same_size_labels(menu *m, res *r)
        draw at their own size, as its audio page draws the same English image, and its trailer
        "Gabriel" (64x13 in 182x32) matches "Walk Hard" (184x31 in 195x32). Shrinking the row to
        fit Portuguese (194) in its 123 widget drew English at 0.63 here and 1 on the audio
-       page. */
+       page. An image another button draws at its own size counts as 1 too: the other Superbad
+       (eng, fra, spa) has 73x18 to 110x12 subtitle images that all fit their widgets at 1.52,
+       while its audio page draws the same English image at its own size. */
     for (int i = 0; i < rc->object_count; i++) {
         const rco_object *o = &rc->objects[i];
         int iw, ih;
@@ -2415,7 +2437,7 @@ static void same_size_labels(menu *m, res *r)
             stretch_rule(iw, ih, o->size[0], o->size[1], 0) != FIT)
             continue;
         k = o->size[0] / (float)iw < o->size[1] / (float)ih ? o->size[0] / (float)iw : o->size[1] / (float)ih;
-        lo = k;
+        lo = drawn_own_size(r, o->image) ? 1 : k;
         for (int j = 0; j < rc->object_count; j++) {
             const rco_object *b = &rc->objects[j];
             int bw, bh, rule;
@@ -2424,7 +2446,7 @@ static void same_size_labels(menu *m, res *r)
                 continue;
             rule = r->own_size[j] ? OWN : stretch_rule(bw, bh, b->size[0], b->size[1], 0);
             float kb = b->size[0] / (float)bw < b->size[1] / (float)bh ? b->size[0] / (float)bw : b->size[1] / (float)bh;
-            if (rule == OWN || rule == OVER)    /* at its own size, even wider than its widget */
+            if (rule == OWN || rule == OVER || drawn_own_size(r, b->image))    /* at its own size, even wider than its widget */
                 kb = 1;
             if (kb > 0)
                 lo = lo < kb ? lo : kb;
