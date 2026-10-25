@@ -44,6 +44,7 @@ All values are little-endian. The 18 files on the test discs are version `0x71`.
 | `0x04` | Version (`0x71`) |
 | `0x10` | Offset of the main table (always `0xA4`) |
 | `0x14` | Offset of the script table |
+| `0x1C` | Offset of the sound table entry (Kill Bill Vol. 2: `0xF81C`), or `0xFFFFFFFF` |
 | `0x24` | Offset of the image table |
 | `0x30` | Offset of the object (widget) table |
 | `0x34` | Offset of the animation table |
@@ -79,7 +80,7 @@ The first child follows the entry, at its entry size.
 
 ### Sound table
 
-265 of the 709 start menus have sound effects. Their sound entries are type 6 and are reached by the same walk of the entry tree as the other entries. After the 0x28-byte header, a sound entry holds:
+265 of the 709 start menus have sound effects. Header field `0x1C` points to the sound table entry; its children, of type 6, are reached by the same walk of the entry tree as the other entries. After the 0x28-byte header, a sound entry holds:
 
 | Offset from the header | Size | Field |
 |---|---|---|
