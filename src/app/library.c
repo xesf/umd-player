@@ -927,7 +927,7 @@ static void draw_info(library *l)
     }
     canvas_text(c, tx, y + 54, 2, RGBA(255, 255, 255, 255), line);
     osd_button(c, x, y + 106, 2, ICON_BUTTON_SQUARE);
-    canvas_text(c, tx, y + 114, 2, TEXT_DIM, "Reset Resume");
+    canvas_text(c, tx, y + 114, 2, TEXT_DIM, "Play from Beginning");
 }
 
 /* ---- the disc on screen ---- */
@@ -2015,9 +2015,10 @@ int library_update(library *l, uint32_t pressed)
     if ((pressed & PLAT_BTN_SQUARE) && l->discs[l->sel].has_resume) {
         resume_forget_position(file_name(l->discs[l->sel].path));
         disc_state_save(file_name(l->discs[l->sel].path), NULL);
-        l->discs[l->sel].has_resume = 0;   /* forgotten only: Cross then plays from the start */
+        l->discs[l->sel].has_resume = 0;   /* forgotten, so the disc plays from the start */
         l->marks_stale = 1;
         l->ui_dirty = 1;
+        return l->sel;
     }
     {
         /* Up and Down a disc each, and the left stick as many as stick_steps says; on Windows
