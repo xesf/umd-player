@@ -2584,6 +2584,12 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
                Opaque cards (Clerks' 512x341 rating card) keep their shape. */
             if (rule == FIT && width >= 0.9f * UNITS_W && height >= 0.9f * UNITS_H && r->img_clear[image])
                 rule = STRETCH;
+            /* A cropped part of a strip larger than its widget fills the widget: Enter the Dragon
+               shows one scene number of its 59x512 strip, squashed numerals 18 high, in a 59x55
+               widget. Kept at the strip's size, the number stretched down the screen as a column.
+               Ultraviolet's 304x275 panel in a 450x275 widget keeps its size as it unfolds. */
+            if (w->has_crop && w->size[0] > 0 && w->size[1] > 0 && ((float)iw > width || (float)ih > height))
+                rule = STRETCH;
             if (r->label_k[i] > 0) {
                 width = (float)iw * r->label_k[i];
                 height = (float)ih * r->label_k[i];
