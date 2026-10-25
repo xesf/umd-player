@@ -95,6 +95,7 @@ typedef struct res {
     uint32_t *img_id;         /* per image: unique while decoded, for the GPU's copy of it */
     int pages[MAX_PAGES], page_count;   /* open pages, in drawing order */
     int activated;                       /* the page last activated with no focus, and when */
+    int active_left;                     /* active only because the page above it closed */
     uint64_t activated_at;
     int active;               /* page that takes input, or -1 */
     int focus_page;           /* page of the button the script focused last, or -1 (input_page) */
@@ -670,7 +671,10 @@ static void auto_focus(menu *m)
     int page = r->active, first;
     menu_status st;
 
-    if (page < 0 || m->lock || r->focus[page] >= 0 || (first = first_button(r, page)) < 0)
+    /* Nor a page left active by the close of the one above it, until the script activates it:
+       Escaflowne closes its main menu as its set-up transition starts, with the set-up page open
+       for later, and highlighted the first set-up choice through the transition. */
+    if (page < 0 || m->lock || r->focus[page] >= 0 || r->active_left || (first = first_button(r, page)) < 0)
         return;
     m->p.status(m->p.user, &st);
     if (st.playing && !m->menu_mode)
@@ -807,8 +811,10 @@ NATIVE(w_close)
             r->page_count--;
             break;
         }
-    if (r->active == rf->index)
+    if (r->active == rf->index) {
         r->active = r->page_count ? r->pages[r->page_count - 1] : -1;
+        r->active_left = 1;
+    }
     /* Animations on the closed page's widgets end with it, and their locks: Jackass locks
        input on its intro page with a lock step and a delay of 15 days, and opens the menu page
        after it. A Force of One pulses its focused item with an animation that replays itself;
@@ -830,6 +836,7 @@ NATIVE(w_activate)
     int was = r->active, focus = r->focus[rf->index];
     *ret = self;
     r->active = rf->index;
+    r->active_left = 0;
     do_action(rf->m, &r->r.objects[rf->index].action[RCO_PAGE_ACTIVATE], rf->index);
     /* A page made active again gives its focused button its focus-in: First Blood moves its
        crosshair back to the chosen item there on return from its scene and subtitle pages. */
@@ -2166,7 +2173,7 @@ static const uint8_t *image_rgba(res *r, int i, int *w, int *h)
             for (int y = 1; y < ih && cols; y++)
                 for (int x = 0; x < iw && cols; x++)
                     cols = px[y * iw + x] == px[x];
-            int plain = 1, solid = 0, clear = 0;
+            int plain = 1, solid = 0, clear = 0, dense = 1;
             for (int k = 0; k < iw * ih && !clear; k++)
                 clear = r->rgba[i][(size_t)k * 4 + 3] == 0;
             r->img_clear[i] = (uint8_t)clear;
@@ -2174,12 +2181,16 @@ static const uint8_t *image_rgba(res *r, int i, int *w, int *h)
             for (int k = 0; k < iw * ih && plain; k++)
                 if (r->rgba[i][(size_t)k * 4 + 3]) {
                     solid += r->rgba[i][(size_t)k * 4 + 3] >= 128;
+                    dense &= r->rgba[i][(size_t)k * 4 + 3] >= 200;
                     uint32_t c3 = px[k] & 0x00FFFFFFu;   /* little-endian RGBA: the colour bytes */
                     if (!seen)
                         rgb = c3, seen = 1;
                     plain = c3 == rgb;
                 }
-            r->img_fill[i] = (uint8_t)(rows || cols);
+            /* One colour over the whole image, its edges at most a little softer, is a fill too:
+               Escaflowne's 19x19 cyan box with feathered edges highlights its 427x240 scene
+               frame, and at its own size it was a small square. */
+            r->img_fill[i] = (uint8_t)(rows || cols || (plain && seen && dense && !clear));
             r->img_plain[i] = (uint8_t)(plain && seen && rgb == 0 && solid >= iw * ih * 4 / 5);
             r->img_id[i] = ++next_image_id;
             r->img_w[i] = iw;
