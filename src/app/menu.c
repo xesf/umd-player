@@ -2436,6 +2436,10 @@ static int stretch_rule(int iw, int ih, float width, float height, int fill)
         return STRETCH;
     if (shape > 1.03f || shape < 0.97f) {
         float rw = width / (float)iw, rh = height / (float)ih, lo = rw < rh ? rw : rh, hi = rw < rh ? rh : rw;
+        /* A label a little wider than its widget squeezes into it: Eight Below's 161x28 "Sneak
+           Peeks" in a 121x28 button sits between the chevrons placed for it. */
+        if (hi <= 1.0f && lo >= 0.6f)
+            return STRETCH;
         return lo >= 1.5f && lo <= OVER_MAX && hi <= 1.6f * lo ? FIT : OWN;
     }
     return width > OVER_MAX * (float)iw && !full ? OVER : STRETCH;
