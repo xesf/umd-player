@@ -88,6 +88,9 @@ int  plat_video_decode(plat_video *v, const uint8_t *au, uint32_t size, uint64_t
 int  plat_video_frame(plat_video *v, plat_frame **frame, uint64_t *pts);
 void plat_frame_release(plat_frame *f);
 void plat_video_flush(plat_video *v);   /* drop all state after a seek */
+/* The stream has ended: the pictures the decoder still holds for reordering come out through
+   plat_video_frame. A flush or a seek starts it again. */
+void plat_video_drain(plat_video *v);
 void plat_video_close(plat_video *v);
 
 /* ---- Audio: 48 kHz interleaved 16-bit stereo, pulled from the app ---- */

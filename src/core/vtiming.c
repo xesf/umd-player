@@ -53,7 +53,7 @@ static const vtiming_entry *predecessor(const vtiming *v, const vtiming_entry *x
 
 static int settled(const vtiming *v, const vtiming_entry *x)
 {
-    return v->next_id - x->id > VTIMING_SETTLE;
+    return v->ended || v->next_id - x->id > VTIMING_SETTLE;
 }
 
 static int64_t abs64(int64_t a)
@@ -141,8 +141,15 @@ uint32_t vtiming_push(vtiming *v, const h264_au_info *info, uint64_t pes_pts)
     x->t = VTIMING_UNKNOWN;
     x->predicted = VTIMING_UNKNOWN;
     x->lost = 0;
+    v->ended = 0;
     resolve(v);
     return x->id;
+}
+
+void vtiming_finish(vtiming *v)
+{
+    v->ended = 1;
+    resolve(v);
 }
 
 int vtiming_get(const vtiming *v, uint32_t id, uint64_t *pts90)

@@ -40,6 +40,7 @@ typedef struct vtiming {
     int64_t pending_jump;     /* offset of the last disagreeing anchor, 0 if none */
     uint32_t outliers;        /* anchors overridden by the chain */
     uint32_t jumps;           /* anchors accepted after the next one confirmed them */
+    int ended;                /* vtiming_finish: no access unit follows */
 } vtiming;
 
 void vtiming_reset(vtiming *v, const h264_sps *sps);
@@ -51,6 +52,9 @@ uint32_t vtiming_push(vtiming *v, const h264_au_info *info, uint64_t pes_pts);
    -1: will never be known (for example a leading picture after a seek, reported as soon as it
    is settled); do not display it. */
 int vtiming_get(const vtiming *v, uint32_t id, uint64_t *pts90);
+/* The stream has ended: the last access units settle without VTIMING_SETTLE more after them.
+   Kill Bill Vol. 2's set-up transition ends on four pictures without a PTS, which were dropped. */
+void vtiming_finish(vtiming *v);
 
 /* For tests: the predicted time of an entry (90 kHz), or -1 if it had no prediction. */
 int64_t vtiming_predicted(const vtiming *v, uint32_t id);

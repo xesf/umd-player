@@ -117,6 +117,12 @@ void plat_frame_release(plat_frame *f)
     free(f);
 }
 
+void plat_video_drain(plat_video *v)
+{
+    h264dec_flush(v->dec);
+    take_frames(v);
+}
+
 void plat_video_flush(plat_video *v)
 {
     while (v->out_count > 0) {

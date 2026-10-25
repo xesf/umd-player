@@ -179,6 +179,7 @@ struct player {
     int intro, skipped;              /* player_options.intro; × skipped it */
     int menu_mode, menu_request;     /* player_options.menu; Circle asked for the disc menu */
     int menu_short;                  /* a short title in menu mode: always Fit */
+    int video_drained;               /* the decoder gave up its last pictures at the stream's end */
     int window_on;                   /* player_set_window */
     float window[4];
     const uint8_t *layer;            /* player_set_layer */
@@ -555,6 +556,7 @@ static void reader_main(void *user)
         }
     }
     plat_mutex_lock(p->lock);
+    vtiming_finish(&p->vt);
     vq_resolve(p, 1);
     plat_mutex_unlock(p->lock);
     /* End of the clip: decode what is still queued, then report the end. */
@@ -656,6 +658,17 @@ static void decode_ahead(player *p)
         uint64_t pts;
 
         plat_mutex_lock(p->lock);
+        /* Every access unit decoded at the end of the stream: the pictures the decoder holds
+           for reordering come out. Kill Bill Vol. 2's set-up transition ends on four pictures
+           of its background after a white flash, and the flash stayed on screen. */
+        if (p->vq_count == 0 && p->eof && !p->video_drained) {
+            p->video_drained = 1;
+            plat_mutex_unlock(p->lock);
+            plat_video_drain(p->video);
+            while (plat_video_frame(p->video, &f, &pts))
+                keep_frame(p, f, pts);
+            return;
+        }
         if (p->vq_count == 0 || p->vq[p->vq_first].state == AU_PENDING) {
             if (p->frame_count < 2) {
                 if (p->vq_count == 0)
@@ -809,6 +822,7 @@ static void restart_reader(player *p, uint64_t target, int audio, int sub)
     p->frame_count = 0;
     if (p->video)
         plat_video_flush(p->video);
+    p->video_drained = 0;
 
     plat_mutex_lock(p->lock);
     p->stop = 0;

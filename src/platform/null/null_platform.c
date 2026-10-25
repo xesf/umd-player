@@ -178,6 +178,7 @@ int plat_video_frame(plat_video *v, plat_frame **frame, uint64_t *pts)
 
 void plat_frame_release(plat_frame *f) { (void)f; }
 void plat_video_flush(plat_video *v) { v->out_count = 0; v->fields = 0; }
+void plat_video_drain(plat_video *v) { (void)v; }
 void plat_video_close(plat_video *v) { (void)v; }
 
 int plat_frame_lock(plat_frame *f, const uint8_t **pixels, int *stride)

@@ -47,6 +47,9 @@ int sceAvcdecSetInterlacedStreamMode(SceVideodecType codec, int mode);
 /* Also exported but undeclared: drops the pictures the decoder holds and returns it to its
    starting state, for a seek. */
 int sceAvcdecDecodeFlush(const SceAvcdecCtrl *decoder);
+/* Also exported (NID 0x9648D853) but undeclared: at the end of the stream, hands out a picture
+   the decoder still holds for reordering. */
+int sceAvcdecDecodeStop(const SceAvcdecCtrl *decoder, SceAvcdecArrayPicture *array_picture);
 
 struct plat_frame {
     uint8_t *pixels;          /* the framebuffer */
@@ -270,33 +273,17 @@ plat_video *plat_video_open(const plat_video_config *cfg)
     return decoder_create(&v) == 0 ? &v : NULL;
 }
 
-int plat_video_decode(plat_video *v, const uint8_t *au, uint32_t size, uint64_t pts, unsigned flags)
+/* Decodes one access unit, or with in NULL takes one of the pictures the decoder still holds
+   at the end of the stream, into a free framebuffer. Returns the pictures out, or -1. */
+static int decode_into(plat_video *v, const SceAvcdecAu *in)
 {
-    SceAvcdecAu in;
     SceAvcdecPicture pic, *pics[1] = {&pic};
     SceAvcdecArrayPicture arr;
     plat_frame *target = pool_get(NULL);
     int r;
 
-    if (!v->ready)
+    if (!target || v->out_count == POOL)
         return -1;
-    /* In interlaced mode the decoder takes each field on its own; remember which were fields. */
-    if (!target || size > ES_SIZE || v->out_count == POOL)
-        return -1;
-    if (pts != PLAT_PTS_HIDDEN) {
-        v->sent[v->sent_next].pts = pts;
-        v->sent[v->sent_next].field = (flags & PLAT_AU_FIELD) != 0;
-        v->sent_next = (v->sent_next + 1) % SENT_MAX;
-    }
-    memcpy(es_buf, au, size);
-    memset(&in, 0xFF, sizeof(in));
-    if (pts != PLAT_PTS_HIDDEN) {
-        in.pts.upper = (uint32_t)(pts >> 32);
-        in.pts.lower = (uint32_t)pts;
-    }
-    in.es.pBuf = es_buf;
-    in.es.size = size;
-
     memset(&pic, 0, sizeof(pic));
     pic.size = sizeof(pic);
     pic.frame.pixelType = SCE_AVCDEC_PIXELFORMAT_RGBA8888;
@@ -313,10 +300,10 @@ int plat_video_decode(plat_video *v, const uint8_t *au, uint32_t size, uint64_t 
     arr.numOfElm = 1;
     arr.pPicture = pics;
 
-    r = sceAvcdecDecode(&v->ctrl, &in, &arr);
+    r = in ? sceAvcdecDecode(&v->ctrl, in, &arr) : sceAvcdecDecodeStop(&v->ctrl, &arr);
     if (r < 0) {
         if (decode_errors++ < 10)
-            plat_log("sceAvcdecDecode: 0x%08x (%u bytes)\n", r, size);
+            plat_log("%s: 0x%08x\n", in ? "sceAvcdecDecode" : "sceAvcdecDecodeStop", r);
         return -1;
     }
     if (arr.numOfOutput > 0) {
@@ -340,7 +327,7 @@ int plat_video_decode(plat_video *v, const uint8_t *au, uint32_t size, uint64_t 
             target->app_ref = 1;
             v->out[v->out_count].frame = target;
             v->out[v->out_count++].pts = out_pts;
-            return 0;
+            return 1;
         }
         if (v->interlaced) {
             plat_frame *second = pool_get(target);
@@ -366,14 +353,49 @@ int plat_video_decode(plat_video *v, const uint8_t *au, uint32_t size, uint64_t 
             v->out[v->out_count++].pts = out_pts;
             v->out[v->out_count].frame = second;
             v->out[v->out_count++].pts = out_pts + FIELD_TICKS;
-            return 0;
+            return 1;
         }
         target->app_ref = 1;
         v->out[v->out_count].frame = target;
         v->out[v->out_count].pts = hidden ? PLAT_PTS_HIDDEN : out_pts;
         v->out_count++;
+        return 1;
     }
     return 0;
+}
+
+int plat_video_decode(plat_video *v, const uint8_t *au, uint32_t size, uint64_t pts, unsigned flags)
+{
+    SceAvcdecAu in;
+
+    if (!v->ready)
+        return -1;
+    /* In interlaced mode the decoder takes each field on its own; remember which were fields. */
+    if (!pool_get(NULL) || size > ES_SIZE || v->out_count == POOL)
+        return -1;
+    if (pts != PLAT_PTS_HIDDEN) {
+        v->sent[v->sent_next].pts = pts;
+        v->sent[v->sent_next].field = (flags & PLAT_AU_FIELD) != 0;
+        v->sent_next = (v->sent_next + 1) % SENT_MAX;
+    }
+    memcpy(es_buf, au, size);
+    memset(&in, 0xFF, sizeof(in));
+    if (pts != PLAT_PTS_HIDDEN) {
+        in.pts.upper = (uint32_t)(pts >> 32);
+        in.pts.lower = (uint32_t)pts;
+    }
+    in.es.pBuf = es_buf;
+    in.es.size = size;
+
+    return decode_into(v, &in) < 0 ? -1 : 0;
+}
+
+/* sceAvcdecDecodeStop hands out one held picture per call. */
+void plat_video_drain(plat_video *v)
+{
+    for (int i = 0; v->ready && i < REF_FRAMES + 2; i++)
+        if (decode_into(v, NULL) <= 0)
+            break;
 }
 
 int plat_video_frame(plat_video *v, plat_frame **frame, uint64_t *pts)
