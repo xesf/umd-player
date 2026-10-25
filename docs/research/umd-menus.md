@@ -51,7 +51,7 @@ All values are little-endian. The 18 files on the test discs are version `0x71`.
 | `0x48`, `0x4C` | Offset and length of the event strings (handler names such as `script:onPush_btnRootMenu`) |
 | `0x80`, `0x84` | Offset and length of the image data |
 
-`0xFFFFFFFF` marks a table the file does not have. None of the test files has text, sound or font tables: menu text is drawn into the images.
+`0xFFFFFFFF` marks a table the file does not have. None of the test files has text or font tables: menu text is drawn into the images. 265 of 709 start menus have a sound table (pointer at 0x1C, entries of type 6). Each sound entry holds, after the 0x28-byte header, the format (16 bits, 1 for VAG), the channel count (16 bits, 1 or 2), the size and offset of all channels, then each channel's size and offset into the sound data (0x88). Each channel is a whole VAG file ("VAGp" header, 48, 44.1, 32, 22.05 or 16 kHz on the test discs). The scripts play them with `resource.soundtable.<name>.play()`.
 
 ### Entries
 

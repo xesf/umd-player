@@ -46,6 +46,8 @@ typedef struct menu_player {
     /* Show the video in a window (menu units, centre origin), or full screen when w is 0. */
     void (*set_window)(void *user, float x, float y, float w, float h);
     void (*log)(void *user, const char *msg);
+    /* Play a sound effect: 48 kHz interleaved stereo, copied; NULL stops them all. */
+    void (*sound)(void *user, const int16_t *stereo, int frames);
 } menu_player;
 
 /* Loads the start menus (EN100000.RCO, or another language's XX100000.RCO) and runs their top

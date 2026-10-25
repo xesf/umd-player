@@ -29,11 +29,11 @@ BUILD = build/$(PLATFORM)
 
 CORE = src/core/disc_image.c src/core/iso9660.c src/core/umdv.c src/core/mpeg_ps.c src/core/demux.c src/core/h264.c \
        src/core/vtiming.c src/core/deint.c src/core/png.c src/core/canvas.c src/core/font8x8.c src/core/cropdetect.c src/core/sfo.c src/core/icons.c \
-       src/core/rco.c src/core/vsmx.c src/core/jpeg.c src/core/yuv.c src/core/hash.c \
+       src/core/rco.c src/core/vag.c src/core/vsmx.c src/core/jpeg.c src/core/yuv.c src/core/hash.c \
        src/core/h264dec.c src/core/h264dec_slice.c src/core/h264dec_recon.c src/core/h264dec_deblock.c src/core/h264_cabac_tables.c
 AT3P = $(wildcard src/core/atrac3p/*.c)
 APP = src/app/main.c src/app/player.c src/app/screen.c src/app/osd.c src/app/library.c src/app/resume.c \
-      src/app/backdrop.c src/app/backdrop_png.c src/app/manual.c src/app/manual_png.c src/app/settings.c src/app/intro.c src/app/disc.c src/app/menu.c src/app/infosheet.c
+      src/app/backdrop.c src/app/backdrop_png.c src/app/manual.c src/app/manual_png.c src/app/settings.c src/app/intro.c src/app/disc.c src/app/menu.c src/app/sfx.c src/app/infosheet.c
 SOFT = src/platform/soft/soft_video.c src/platform/soft/soft_compose.c
 
 ifeq ($(PLATFORM),macos)

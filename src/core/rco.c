@@ -10,7 +10,7 @@
 #define REF_ANIM    0x408
 #define REF_ANIMOBJ 0x409
 
-enum { TYPE_MAIN = 1, TYPE_SCRIPT = 2, TYPE_IMAGE = 4, TYPE_OBJECT = 8, TYPE_ANIM = 9 };
+enum { TYPE_MAIN = 1, TYPE_SCRIPT = 2, TYPE_IMAGE = 4, TYPE_SOUND = 6, TYPE_OBJECT = 8, TYPE_ANIM = 9 };
 
 typedef struct parser {
     rco *r;
@@ -19,6 +19,8 @@ typedef struct parser {
     const char *events;
     uint32_t events_size;
     uint32_t img_data, img_size;
+    uint32_t snd_data, snd_size;
+    int sound_cap;
     uint32_t *offsets;        /* entry offset of each widget, to resolve references */
     uint32_t *anim_offsets;   /* and of each animation */
     int anim_offset_cap;
@@ -241,6 +243,29 @@ static uint32_t walk(parser *ps, uint32_t off, int parent_object, int anim)
             im->data = r->file + ps->img_data + istart;
             im->size = isize;
         }
+    } else if (sub && type == TYPE_SOUND) {
+        /* Format (1: VAG) and channels (16 bits each), size and offset of all channels, then
+           each channel's size and offset into the sound data. */
+        uint32_t d = off + HEADER_SIZE;
+        int format = r->file[d] | r->file[d + 1] << 8, channels = r->file[d + 2] | r->file[d + 3] << 8;
+        if (format == 1 && channels >= 1 && channels <= 2 && d + 12 + 8 * (uint32_t)channels <= r->file_size) {
+            rco_sound *sd;
+            if (grow((void **)&r->sounds, r->sound_count, &ps->sound_cap, sizeof(rco_sound)) < 0) {
+                ps->failed = 1;
+                return 0;
+            }
+            sd = &r->sounds[r->sound_count++];
+            memset(sd, 0, sizeof(*sd));
+            sd->name = name;
+            sd->channels = channels;
+            for (int c = 0; c < channels; c++) {
+                uint32_t csize = rd32(r, d + 12 + 8 * (uint32_t)c), cstart = rd32(r, d + 16 + 8 * (uint32_t)c);
+                if (cstart + csize <= ps->snd_size && ps->snd_data + cstart + csize <= r->file_size) {
+                    sd->data[c] = r->file + ps->snd_data + cstart;
+                    sd->size[c] = csize;
+                }
+            }
+        }
     } else if (sub && type == TYPE_OBJECT) {
         read_object(ps, off, (int)sub, name, parent_object);
         me = r->object_count - 1;
@@ -320,6 +345,8 @@ int rco_parse(rco *r, const uint8_t *data, uint32_t size)
     }
     ps.img_data = rd32(r, 0x80);
     ps.img_size = rd32(r, 0x84);
+    ps.snd_data = rd32(r, 0x88);
+    ps.snd_size = rd32(r, 0x8C);
     img_table = rd32(r, 0x24);
     walk(&ps, rd32(r, 0x10), -1, -1);
     if (ps.failed) {
@@ -360,6 +387,7 @@ void rco_free(rco *r)
     free(r->objects);
     free(r->anims);
     free(r->steps);
+    free(r->sounds);
     memset(r, 0, sizeof(*r));
 }
 
@@ -375,6 +403,14 @@ int rco_find_anim(const rco *r, const char *name)
 {
     for (int i = 0; i < r->anim_count; i++)
         if (r->anims[i].name && strcmp(r->anims[i].name, name) == 0)
+            return i;
+    return -1;
+}
+
+int rco_find_sound(const rco *r, const char *name)
+{
+    for (int i = 0; i < r->sound_count; i++)
+        if (r->sounds[i].name && strcmp(r->sounds[i].name, name) == 0)
             return i;
     return -1;
 }

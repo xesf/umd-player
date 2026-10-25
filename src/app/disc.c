@@ -10,6 +10,7 @@
 #include "menu.h"
 #include "player.h"
 #include "resume.h"
+#include "sfx.h"
 
 #define DISC_SPRITES 512
 #define LAYER_W     960
@@ -305,6 +306,15 @@ static void d_log(void *user, const char *msg)
     plat_log("%s\n", msg);
 }
 
+static void d_sound(void *user, const int16_t *stereo, int frames)
+{
+    (void)user;
+    if (stereo)
+        sfx_play(stereo, frames);
+    else
+        sfx_stop();
+}
+
 /* ---- public ---- */
 
 /* "title pos audio subtitle" of the title the disc was left in, then the menus' state. */
@@ -381,6 +391,7 @@ disc *disc_open(const char *iso_path)
     mp.set_subtitle = d_subtitle;
     mp.set_window = d_window;
     mp.log = d_log;
+    mp.sound = d_sound;
     plat_language(lang);
     if (!d->layer.rgba || (d->m = menu_open(&mp, lang)) == NULL) {
         disc_close(d);
@@ -628,6 +639,7 @@ void disc_close(disc *d)
         return;
     if (d->m)
         save_state(d);
+    sfx_stop();
     player_close(d->pl);
     menu_close(d->m);
     free(d->layer.rgba);

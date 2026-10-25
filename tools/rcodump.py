@@ -24,7 +24,7 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 UMDINFO = os.path.join(HERE, '..', 'build', 'host', 'umdinfo')
 
-TYPES = {1: 'main', 2: 'script', 3: 'text', 4: 'image', 5: 'sound', 6: 'model', 7: 'font', 8: 'object', 9: 'anim'}
+TYPES = {1: 'main', 2: 'script', 3: 'text', 4: 'image', 5: 't5', 6: 'sound', 7: 'font', 8: 'object', 9: 'anim'}
 
 # Script opcodes. The ones marked (?) are inferred from how they are used, not confirmed.
 OPS = {

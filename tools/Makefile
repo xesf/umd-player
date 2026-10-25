@@ -20,7 +20,7 @@ $(BIN)/umddemux: umddemux.c host_source.c $(CORE)/disc_image.c $(CORE)/png.c $(C
 $(BIN)/at3pdec: at3pdec.c $(AT3P) $(wildcard $(CORE)/atrac3p/*.h) | $(BIN)
 	$(CC) $(CFLAGS) $(AT3P_CFLAGS) -o $@ at3pdec.c $(AT3P) -lm
 
-MENU_SRC = menutest.c host_source.c ../src/app/menu.c $(CORE)/rco.c $(CORE)/vsmx.c $(CORE)/png.c $(CORE)/canvas.c \
+MENU_SRC = menutest.c host_source.c ../src/app/menu.c $(CORE)/rco.c $(CORE)/vag.c $(CORE)/vsmx.c $(CORE)/png.c $(CORE)/canvas.c \
            $(CORE)/font8x8.c $(CORE)/iso9660.c $(CORE)/umdv.c $(CORE)/disc_image.c $(CORE)/jpeg.c
 $(BIN)/menutest: $(MENU_SRC) ../src/app/menu.h $(CORE)/rco.h $(CORE)/vsmx.h | $(BIN)
 	$(CC) $(CFLAGS) -o $@ $(MENU_SRC) -lm
@@ -37,10 +37,10 @@ $(BIN)/pngdec: pngdec.c $(CORE)/png.c $(CORE)/jpeg.c | $(BIN)
 
 PLAYER_CORE = $(CORE)/disc_image.c $(CORE)/iso9660.c $(CORE)/umdv.c $(CORE)/mpeg_ps.c $(CORE)/demux.c $(CORE)/h264.c $(CORE)/vtiming.c \
               $(CORE)/png.c $(CORE)/canvas.c $(CORE)/font8x8.c $(CORE)/cropdetect.c $(CORE)/sfo.c $(CORE)/icons.c \
-              $(CORE)/rco.c $(CORE)/vsmx.c $(CORE)/jpeg.c $(CORE)/yuv.c $(CORE)/hash.c $(H264DEC)
-$(BIN)/playtest: playtest.c ../src/app/main.c ../src/app/library.c ../src/app/backdrop.c ../src/app/backdrop_png.c ../src/app/manual.c ../src/app/manual_png.c ../src/app/settings.c ../src/app/intro.c ../src/app/disc.c ../src/app/menu.c ../src/app/player.c ../src/app/screen.c ../src/app/osd.c ../src/app/resume.c ../src/app/infosheet.c ../src/platform/null/null_platform.c \
+              $(CORE)/rco.c $(CORE)/vag.c $(CORE)/vsmx.c $(CORE)/jpeg.c $(CORE)/yuv.c $(CORE)/hash.c $(H264DEC)
+$(BIN)/playtest: playtest.c ../src/app/main.c ../src/app/library.c ../src/app/backdrop.c ../src/app/backdrop_png.c ../src/app/manual.c ../src/app/manual_png.c ../src/app/settings.c ../src/app/intro.c ../src/app/disc.c ../src/app/menu.c ../src/app/sfx.c ../src/app/player.c ../src/app/screen.c ../src/app/osd.c ../src/app/resume.c ../src/app/infosheet.c ../src/platform/null/null_platform.c \
                  $(PLAYER_CORE) $(AT3P) $(wildcard ../src/app/*.h ../src/core/*.h) | $(BIN)
-	$(CC) $(CFLAGS) $(AT3P_CFLAGS) -o $@ playtest.c ../src/app/main.c ../src/app/library.c ../src/app/backdrop.c ../src/app/backdrop_png.c ../src/app/manual.c ../src/app/manual_png.c ../src/app/settings.c ../src/app/intro.c ../src/app/disc.c ../src/app/menu.c ../src/app/player.c ../src/app/screen.c ../src/app/osd.c ../src/app/resume.c ../src/app/infosheet.c \
+	$(CC) $(CFLAGS) $(AT3P_CFLAGS) -o $@ playtest.c ../src/app/main.c ../src/app/library.c ../src/app/backdrop.c ../src/app/backdrop_png.c ../src/app/manual.c ../src/app/manual_png.c ../src/app/settings.c ../src/app/intro.c ../src/app/disc.c ../src/app/menu.c ../src/app/sfx.c ../src/app/player.c ../src/app/screen.c ../src/app/osd.c ../src/app/resume.c ../src/app/infosheet.c \
 	    ../src/platform/null/null_platform.c $(PLAYER_CORE) $(AT3P) -lm -lpthread
 
 $(BIN):

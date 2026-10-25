@@ -296,6 +296,11 @@ static void sim_window(void *user, float x, float y, float w, float h)
     printf("%8.2f s  WINDOW %g,%g %gx%g\n", ((sim *)user)->now / 1e6, x, y, w, h);
 }
 
+static void sim_sound(void *user, const int16_t *stereo, int frames)
+{
+    printf("%8.2f s  SOUND %s%.2f s\n", ((sim *)user)->now / 1e6, stereo ? "" : "stop ", frames / 48000.0);
+}
+
 static void sim_log(void *user, const char *msg)
 {
     printf("%8.2f s  %s\n", ((sim *)user)->now / 1e6, msg);
@@ -360,7 +365,7 @@ static int run_disc(int argc, char **argv)
     iso_entry e;
     uint8_t *buf;
     menu_player mp = {&s, sim_read, sim_play, sim_stop, sim_resume, sim_status, sim_audio, sim_subtitle, sim_window,
-                      sim_log};
+                      sim_log, sim_sound};
     menu *m;
     double seconds = argc > 3 ? atof(argv[3]) : 30;
     const char *outdir = NULL, *state = NULL;

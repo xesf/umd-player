@@ -10,6 +10,7 @@
 #include "../core/png.h"
 #include "../core/rco.h"
 #include "../core/umdv.h"
+#include "../core/vag.h"
 #include "../core/vsmx.h"
 #include "../platform/platform.h"
 
@@ -80,7 +81,9 @@ typedef struct res {
     rco r;
     vsmx *vm;
     wstate *w;
-    ref *wref, *aref, *iref;
+    ref *wref, *aref, *iref, *sref;
+    int16_t **snd_pcm;        /* each sound decoded to 48 kHz stereo on its first play */
+    int *snd_frames;
     uint8_t **rgba;           /* decoded images, on first use */
     int *img_w, *img_h;
     uint8_t *img_fill;        /* one colour, or a one-way gradient: a fill that stretches to its widget */
@@ -1121,18 +1124,74 @@ static int anim_get(vsmx *vm, void *host, const char *key, vs_value *out)
     return 0;
 }
 
-/* resource.soundtable.<name>: menu sound effects. They are not played; play and stop do
-   nothing, so the scripts that call them carry on. */
-NATIVE(sound_nothing)
+/* A sound decoded to 48 kHz stereo, as the player's audio: a mono sound plays on both sides. */
+static int16_t *sound_pcm(res *r, int i, int *frames)
 {
-    (void)vm; (void)user; (void)self; (void)args; (void)argc; (void)ret;
+    const rco_sound *sd = &r->r.sounds[i];
+    int16_t *ch[2] = {NULL, NULL}, *out = NULL;
+    int count[2] = {0, 0}, rate = 0, n;
+
+    if (r->snd_pcm[i]) {
+        *frames = r->snd_frames[i];
+        return r->snd_pcm[i];
+    }
+    for (int c = 0; c < sd->channels; c++)
+        if (sd->data[c])
+            ch[c] = vag_decode(sd->data[c], sd->size[c], &count[c], &rate);
+    if (!ch[1]) {
+        ch[1] = ch[0];
+        count[1] = count[0];
+    }
+    n = count[0] < count[1] ? count[0] : count[1];
+    if (ch[0] && rate > 0 && n > 0) {
+        int len = (int)((int64_t)n * 48000 / rate);
+        if (len > 0 && (out = malloc((size_t)len * 4)) != NULL)
+            for (int k = 0; k < len; k++) {   /* linear between samples: 16 to 48 kHz on the discs */
+                int64_t pos = (int64_t)k * rate * 256 / 48000;
+                int at = (int)(pos >> 8), fr = (int)(pos & 255), nx = at + 1 < n ? at + 1 : at;
+                out[k * 2] = (int16_t)((ch[0][at] * (256 - fr) + ch[0][nx] * fr) >> 8);
+                out[k * 2 + 1] = (int16_t)((ch[1][at] * (256 - fr) + ch[1][nx] * fr) >> 8);
+            }
+        r->snd_frames[i] = out ? len : 0;
+    }
+    if (ch[1] != ch[0])
+        free(ch[1]);
+    free(ch[0]);
+    r->snd_pcm[i] = out;
+    *frames = r->snd_frames[i];
+    return out;
+}
+
+/* resource.soundtable.<name>.play() and stop(): menu sound effects, mixed over the video's
+   sound. Kill Bill Vol. 2 plays sndOne as the selection moves and sndTwo on a press. A name
+   the table lacks plays nothing, so the script carries on. */
+NATIVE(sound_play)
+{
+    ref *rf = user;
+    int frames = 0;
+    const int16_t *pcm;
+    (void)vm; (void)self; (void)args; (void)argc; (void)ret;
+    if (rf->index < 0 || !rf->m->p.sound || (pcm = sound_pcm(rf->m->res, rf->index, &frames)) == NULL)
+        return;
+    rf->m->p.sound(rf->m->p.user, pcm, frames);
+}
+
+NATIVE(sound_stop)
+{
+    ref *rf = user;
+    (void)vm; (void)self; (void)args; (void)argc; (void)ret;
+    if (rf->index >= 0 && rf->m->p.sound)
+        rf->m->p.sound(rf->m->p.user, NULL, 0);
 }
 
 static int sound_get(vsmx *vm, void *host, const char *key, vs_value *out)
 {
-    if (strcmp(key, "play") != 0 && strcmp(key, "stop") != 0)
+    if (strcmp(key, "play") == 0)
+        *out = vs_new_native(vm, sound_play, host);
+    else if (strcmp(key, "stop") == 0)
+        *out = vs_new_native(vm, sound_stop, host);
+    else
         return 0;
-    *out = vs_new_native(vm, sound_nothing, host);
     return 1;
 }
 
@@ -1149,7 +1208,8 @@ static int table_get(vsmx *vm, void *host, const char *key, vs_value *out)
     (void)vm;
     *out = vs_undef();
     if (rf->index == 3) {
-        *out = vs_new_host(vm, &sound_class, rf->m);
+        i = rco_find_sound(&r->r, key);
+        *out = vs_new_host(vm, &sound_class, &r->sref[i >= 0 ? i : r->r.sound_count]);
         return 1;
     }
     if (rf->index == 0) {
@@ -1585,6 +1645,11 @@ static void free_res(res *r)
     free(r->wref);
     free(r->aref);
     free(r->iref);
+    for (int i = 0; r->snd_pcm && i < r->r.sound_count; i++)
+        free(r->snd_pcm[i]);
+    free(r->snd_pcm);
+    free(r->snd_frames);
+    free(r->sref);
     free(r->focus);
     rco_free(&r->r);
     free(r->file);
@@ -1615,6 +1680,9 @@ static res *load_res(menu *m, const char *name)
     r->focus = calloc((size_t)r->r.object_count + 1, sizeof(int));
     r->aref = calloc((size_t)r->r.anim_count + 1, sizeof(ref));
     r->iref = calloc((size_t)r->r.image_count + 1, sizeof(ref));
+    r->sref = calloc((size_t)r->r.sound_count + 1, sizeof(ref));
+    r->snd_pcm = calloc((size_t)r->r.sound_count + 1, sizeof(int16_t *));
+    r->snd_frames = calloc((size_t)r->r.sound_count + 1, sizeof(int));
     r->rgba = calloc((size_t)r->r.image_count + 1, sizeof(uint8_t *));
     r->img_w = calloc((size_t)r->r.image_count + 1, sizeof(int));
     r->img_h = calloc((size_t)r->r.image_count + 1, sizeof(int));
@@ -1626,7 +1694,7 @@ static res *load_res(menu *m, const char *name)
     r->occ = calloc((size_t)r->r.image_count + 1, sizeof(uint8_t *));
     r->img_id = calloc((size_t)r->r.image_count + 1, sizeof(uint32_t));
     r->vm = vs_create(r->r.script, r->r.script_size, vm_log, m);
-    if (!r->w || !r->wref || !r->focus || !r->aref || !r->iref || !r->rgba || !r->img_w || !r->img_h || !r->img_fill || !r->img_plain || !r->img_clear ||
+    if (!r->w || !r->wref || !r->focus || !r->aref || !r->iref || !r->sref || !r->snd_pcm || !r->snd_frames || !r->rgba || !r->img_w || !r->img_h || !r->img_fill || !r->img_plain || !r->img_clear ||
         !r->own_size || !r->label_k || !r->occ || !r->img_id || !r->vm) {
         free_res(r);
         return NULL;
@@ -1650,6 +1718,10 @@ static res *load_res(menu *m, const char *name)
     for (int i = 0; i < r->r.image_count; i++) {
         r->iref[i].m = m;
         r->iref[i].index = i;
+    }
+    for (int i = 0; i <= r->r.sound_count; i++) {   /* and one for a name the table lacks */
+        r->sref[i].m = m;
+        r->sref[i].index = i < r->r.sound_count ? i : -1;
     }
     vs_set_global(r->vm, "\001widgets", widgets);
     vs_set_global(r->vm, "movieplayer", vs_new_host(r->vm, &movieplayer_class, m));

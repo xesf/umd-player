@@ -18,6 +18,7 @@
 #include "resume.h"
 #include "settings.h"
 #include "screen.h"
+#include "sfx.h"
 
 #define VQ_BYTES      (4 * 1024 * 1024)  /* queued video access units */
 #define VQ_MAX        512
@@ -596,6 +597,7 @@ static void audio_fill(void *user, int16_t *out, int frames)
     plat_cond_broadcast(p->cond);
     plat_mutex_unlock(p->lock);
     memset(out + n * 2, 0, (size_t)(frames - n) * 4);
+    sfx_mix(out, frames);         /* the menus' sound effects over the title's sound */
 }
 
 /* ---- main thread ---- */

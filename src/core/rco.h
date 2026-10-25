@@ -78,6 +78,13 @@ typedef struct rco_image {
     uint32_t size;
 } rco_image;
 
+/* A sound effect: one VAG file per channel (resource.soundtable.sndOne in Kill Bill Vol. 2). */
+typedef struct rco_sound {
+    const char *name;
+    int channels;             /* 1 or 2 */
+    const uint8_t *data[2];   /* VAG */
+    uint32_t size[2];
+} rco_sound;
 typedef struct rco {
     const uint8_t *file;
     uint32_t file_size;
@@ -91,6 +98,8 @@ typedef struct rco {
     int anim_count;
     rco_step *steps;
     int step_count;
+    rco_sound *sounds;
+    int sound_count;
 } rco;
 
 /* Returns 0 on success. data must outlive r. */
@@ -99,5 +108,6 @@ void rco_free(rco *r);
 
 int rco_find_object(const rco *r, const char *name);
 int rco_find_anim(const rco *r, const char *name);
+int rco_find_sound(const rco *r, const char *name);
 
 #endif
