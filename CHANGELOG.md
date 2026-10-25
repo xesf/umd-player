@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.8.6 (2026-10-25)
+
+- Fixed First Blood's crosshair not moving to the chosen subtitle when its subtitle menu opens.
+- Fixed Superbad (eng, fra, spa) drawing its subtitle options too big; they now match its audio page.
+- Fixed Brave Story leaving the selection icon of the last menu on screen for a moment when changing menus. The BFG and Unlocking DaVinci's Code open their menus sooner for the same reason.
+
 ## v0.8.5 (2026-10-24)
 
 - Fixed Appleseed's subtitle options opening low and jumping to the centre when you moved.
