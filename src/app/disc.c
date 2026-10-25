@@ -193,16 +193,23 @@ static void d_play(void *user, int playlist, int chapter, int audio, int subtitl
     /* Another title of the clip playing: a seek in the open player. Starship Troopers plays
        each scene's preview as a title of the movie's clip, and reopening the player for each
        stalled its scene list as it scrolled. */
-    if (d->pl && player_switch_title(d->pl, playlist - 1, chapter, audio, to_substream(subtitle), one_chapter) != UINT64_MAX) {
+    if (d->pl) {
+        uint64_t jump = player_switch_title(d->pl, playlist - 1, chapter, audio, to_substream(subtitle), one_chapter);
+        if (jump == UINT64_MAX)
+            goto reopen;
+        /* A short jump is no seek, as for the same title: Brave Story changes menus with
+           0.5 s stills of one clip and opens the new page on the still's first chapter, which
+           waited out the still and left the last page up. */
         d->title = playlist;
         d->last_chapter = 0;
         d->first_chapter = 0;
         d->catching_up = 0;
         d->end_sent = 0;
-        d->seek_until = plat_time_us() + SEEK_US;
+        d->seek_until = jump > SEEK_NEAR ? plat_time_us() + SEEK_US : 0;
         d->left_title = 0;
         return;
     }
+reopen:
     d->one_chapter = one_chapter;
     start(d, playlist, chapter, 0);
     d->one_chapter = 0;

@@ -209,6 +209,17 @@ static void sim_play(void *user, int playlist, int chapter, int audio, int subti
             uint64_t cur = s->title_end > s->now ? len - (s->title_end - s->now) : len;
             if ((cur > from ? cur - from : from - cur) <= 10000000)
                 seek = 0;
+        } else if (s->st.playlist >= 1 && s->st.playlist <= s->pl.title_count && s->st.playlist != playlist) {
+            /* another title of the clip playing, or just ended, seeks in it, as
+               src/app/player.c does */
+            const umdv_title *c = &s->pl.titles[s->st.playlist - 1];
+            const umdv_item *ci = &s->pl.items[c->first_item], *ni = &s->pl.items[t->first_item];
+            uint64_t clen = (uint64_t)(c->end_pts - c->start_pts) * 100 / 9;
+            uint64_t cur = (uint64_t)ci->start_pts * 100 / 9 + (s->title_end > s->now ? clen - (s->title_end - s->now) : clen);
+            uint64_t to = (uint64_t)ni->start_pts * 100 / 9 + from;
+            if (c->item_count == 1 && t->item_count == 1 && strcmp(ci->clip, ni->clip) == 0 &&
+                (cur > to ? cur - to : to - cur) <= 10000000)
+                seek = 0;
         } else if (!s->st.playing && s->left_playlist == playlist && chapter <= 1 &&
                    s->left_pos <= 10000000) {
             seek = 0;                /* played again from its start, from near there */
