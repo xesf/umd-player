@@ -975,10 +975,15 @@ static void get_values(vsmx *vm, ref *rf, int prop, vs_value *ret)
            reads (0, 0, 0). Feel the Noise, To Die For and Memoirs of a Geisha keep Y and Z
            from it to aim their drum's next turn; given the stored angles they turned to the
            wrong item on Up. Products keep their signed zeros as on the PSP (0 * cos(2pi/3) is
-           -0, and atan2 of -0 is -pi). */
+           -0, and atan2 of -0 is -pi). With X at a quarter turn the matrix cannot tell Y
+           from Z, and the PSP reads both as 0: a drum of four, Deuce Bigalow's,
+           stands at -pi/2 after one step, and read as (-pi, -pi) from the cosine's float
+           error (-4e-8), its next step, aimed with them, turned the drum back instead of on. */
         float sx = sinf(v[0]), cx = cosf(v[0]), sy = sinf(v[1]), cy = cosf(v[1]);
         float sz = sinf(v[2]), cz = cosf(v[2]);
         float e[3] = {asinf(sx < -1 ? -1 : sx > 1 ? 1 : sx), atan2f(sy * cx, cy * cx), atan2f(cx * sz, cx * cz)};
+        if (fabsf(cx) < 1e-6f)
+            e[1] = e[2] = 0;
         mlog(m, "rot: %s.getRotate() = %.3f %.3f %.3f (stored %.3f %.3f %.3f)", wname(m, rf->index), e[0], e[1], e[2],
              v[0], v[1], v[2]);
         *ret = array3(vm, e, 3);
