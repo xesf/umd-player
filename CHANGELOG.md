@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.8.8 (2026-10-26)
+
+- Fixed Deuce Bigalow's and Dirty's rotating menus turning back instead of on at their second step, up or down, and Deuce Bigalow's sub menu list opening upside down.
+- Fixed Eight Below's middle dog stopping short of the bottom of the screen.
+- Fixed Dragon Wars' French audio option drawing larger than English, and its Subtitles title running outside its box.
+
 ## v0.8.7 (2026-10-25)
 
 - Disc menus play their sound effects: 265 of the 709 test discs have them (Kill Bill Vol. 2 plays one as the selection moves and one on a press).
