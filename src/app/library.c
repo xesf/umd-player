@@ -51,6 +51,10 @@
 #define HOLD_RAMP      2.0f            /* seconds to reach STICK_FAST */
 #define LETTER_REPEAT  250000          /* L or R held: another letter this often, after HOLD_DELAY */
 #define LETTER_SHOW    700000          /* how long a jump's letter stays on screen */
+#define STRIP_W        44              /* the alphabet strip on the right edge: width, */
+#define STRIP_TOP      70              /* top and bottom (above the hints) */
+#define STRIP_BOTTOM   (UI_H - 96)
+#define STRIP_SHOW     1500000         /* how long it stays after the last jump or scroll */
 #define AU_MAX         4096
 #define PMF_MAX        (2 * 1024 * 1024)
 #define SND_MAX        (4 * 1024 * 1024)
@@ -154,6 +158,10 @@ struct library {
     uint64_t letter_next_us;         /* when a held L or R jumps again */
     uint64_t letter_us;              /* when the last jump by letter showed its letter */
     int letter_shown;                /* the jump's letter is on screen */
+    uint64_t strip_us;               /* when the alphabet strip was last wanted */
+    int strip_shown;                 /* it is on screen */
+    int strip_touch;                 /* a finger is on it */
+    int strip_target;                /* the disc the finger points at, or -1 */
     /* Where the GPU draws (plat_draws_sprites): the pictures as sprites, the background first
        and under the icon video, and the text, panels and icon corners on the transparent ui
        layer, redrawn only when what it shows changes (front_key). */
@@ -1253,6 +1261,8 @@ static void draw_no_icon(canvas *c, int x, int y, int w, int h)
 /* Everything over the pictures: the selected icon's corners, the panels, the name, the hints
    and the progress. */
 static void draw_letter(library *l);
+static void draw_strip(library *l);
+static int strip_disc(const library *l, int y);
 
 static void draw_front(library *l)
 {
@@ -1261,8 +1271,10 @@ static void draw_front(library *l)
     fill_icon_corners(l);
     draw_info(l);
     draw_settings(l);
-    if (!l->settings_open)
+    if (!l->settings_open) {
         draw_letter(l);
+        draw_strip(l);
+    }
     /* On the backdrop (a disc without PIC1), keep clear of its film strips. */
     draw_app_name(c, l->bg ? 18 : 72);
     if (!l->settings_open)
@@ -1333,7 +1345,7 @@ static void front_key(library *l, unsigned char *key, size_t size)
     struct {
         const void *bg;
         int show_info, bare, settings_open, settings_row, keys, scanning, count, scan_total;
-        int sheet_shown, sheet_done, sheet_total, letter_shown;
+        int sheet_shown, sheet_done, sheet_total, letter_shown, strip_shown;
         app_settings settings;
         const lib_disc *disc;
         lib_disc shown;
@@ -1354,6 +1366,7 @@ static void front_key(library *l, unsigned char *key, size_t size)
     k.scan_total = l->scan_total;
     k.sheet_shown = l->sheet_shown;
     k.letter_shown = l->letter_shown;
+    k.strip_shown = l->strip_shown;
     k.sheet_done = l->sheet_done;
     k.sheet_total = l->sheet_total;
     k.settings = *settings_get();
@@ -1775,6 +1788,7 @@ library *library_open(const char *dir)
     if (!l)
         return NULL;
     snprintf(l->dirs, sizeof(l->dirs), "%s", dir);
+    l->strip_target = -1;
     l->lock = plat_mutex_create();
     l->at3p = malloc(at3p_decoder_size());
     l->ui.w = UI_W;
@@ -1896,6 +1910,16 @@ static uint32_t touch_buttons(library *l)
         l->touch_x0 = x;
         l->touch_y0 = l->touch_step_y = y;
         l->touch_moved = 0;
+        l->strip_touch = !l->settings_open && x >= UI_W - STRIP_W - 16 && y >= STRIP_TOP - 20 && y < STRIP_BOTTOM + 20;
+    }
+    if (down && l->strip_touch) {                /* on the alphabet strip: the letter under the finger */
+        l->strip_target = strip_disc(l, y);
+        return 0;
+    }
+    if (!down && l->strip_touch) {
+        l->strip_touch = 0;
+        l->touch_down = 0;
+        return 0;
     }
     if (down) {
         if (abs(x - l->touch_x0) > TAP_MOVE || abs(y - l->touch_y0) > TAP_MOVE)
@@ -2074,6 +2098,56 @@ static void draw_letter(library *l)
     canvas_text(c, x - w / 2, y - 4 * scale, scale, RGBA(255, 255, 255, 255), s);
 }
 
+/* The letters the discs are listed under, in order, with the first disc of each. */
+static int disc_letters(const library *l, char *letters, int *first)
+{
+    int n = 0;
+
+    for (int i = 0; i < l->count; i++) {
+        char c = disc_letter(&l->discs[i]);
+        if (n == 0 || letters[n - 1] != c) {
+            letters[n] = c;
+            first[n++] = i;
+        }
+    }
+    return n;
+}
+
+/* The alphabet strip: the letters that have discs, down the right edge, the selected disc's
+   letter brighter. A finger on it (or the mouse) jumps to the letter under it. */
+static void draw_strip(library *l)
+{
+    canvas *c = &l->ui;
+    char letters[27];
+    int first[27], n = disc_letters(l, letters, first), row, scale;
+    char at = disc_letter(&l->discs[l->sel]);
+
+    if (!l->strip_shown || n == 0)
+        return;
+    row = (STRIP_BOTTOM - STRIP_TOP) / n;
+    scale = row >= 18 ? 2 : 1;
+    canvas_round_darken(c, UI_W - STRIP_W, STRIP_TOP - 6, STRIP_W - 6, row * n + 12, 10, 150);
+    for (int k = 0; k < n; k++) {
+        char s[2] = {letters[k], 0};
+        int w = canvas_text_width(s, scale);
+        canvas_text(c, UI_W - STRIP_W / 2 - 3 - w / 2, STRIP_TOP + k * row + (row - 8 * scale) / 2, scale,
+                    letters[k] == at ? RGBA(255, 255, 255, 255) : TEXT_DIM, s);
+    }
+}
+
+/* The disc whose letter is at height y on the strip. */
+static int strip_disc(const library *l, int y)
+{
+    char letters[27];
+    int first[27], n = disc_letters(l, letters, first), k;
+
+    if (n == 0)
+        return -1;
+    k = (y - STRIP_TOP) / ((STRIP_BOTTOM - STRIP_TOP) / n);
+    k = k < 0 ? 0 : k >= n ? n - 1 : k;
+    return first[k];
+}
+
 int library_update(library *l, uint32_t pressed)
 {
     int present = 0;
@@ -2140,6 +2214,12 @@ int library_update(library *l, uint32_t pressed)
         /* Up and Down a disc each, and the left stick as many as stick_steps says; on Windows
            and Linux the stick is the D-pad too, so its presses are left out. */
         int to = l->settings_open ? l->sel : letter_jump(l, pressed);
+        if (l->strip_target >= 0 && l->strip_target != to) {
+            to = l->strip_target;
+            l->letter_us = plat_time_us();
+            l->letter_shown = 1;
+        }
+        l->strip_target = -1;
         to += l->settings_open ? 0 : stick_steps(l) + hold_steps(l, pressed);
         if (l->stick_on)
             pressed &= ~(uint32_t)(PLAT_BTN_UP | PLAT_BTN_DOWN);
@@ -2161,9 +2241,20 @@ int library_update(library *l, uint32_t pressed)
     }
     if (pressed || l->worker_paused)
         tell_worker(l, 0);
-    if (l->letter_shown && plat_time_us() - l->letter_us >= LETTER_SHOW) {
+    if (l->letter_shown && plat_time_us() - l->letter_us >= LETTER_SHOW && !l->strip_touch) {
         l->letter_shown = 0;
         l->ui_dirty = 1;
+    }
+    /* The strip shows with a jump by letter, a finger on it, and fast scrolling (a held
+       direction or the stick), and stays STRIP_SHOW after. */
+    if (l->letter_shown || l->strip_touch || l->stick_on || (l->hold_dir && plat_time_us() - l->hold_since > HOLD_DELAY))
+        l->strip_us = plat_time_us();
+    {
+        int shown = l->count > 0 && !l->settings_open && plat_time_us() - l->strip_us < STRIP_SHOW;
+        if (shown != l->strip_shown) {
+            l->strip_shown = shown;
+            l->ui_dirty = 1;
+        }
     }
     uint64_t t0 = plat_time_us(), t1, t2, t3, t4;
     if (!l->perf.since)
