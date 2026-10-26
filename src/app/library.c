@@ -49,6 +49,8 @@
 #define HOLD_DELAY     350000          /* Up or Down held this long starts repeating */
 #define HOLD_SLOW      6.0f            /* discs a second as it starts */
 #define HOLD_RAMP      2.0f            /* seconds to reach STICK_FAST */
+#define LETTER_REPEAT  250000          /* L or R held: another letter this often, after HOLD_DELAY */
+#define LETTER_SHOW    700000          /* how long a jump's letter stays on screen */
 #define AU_MAX         4096
 #define PMF_MAX        (2 * 1024 * 1024)
 #define SND_MAX        (4 * 1024 * 1024)
@@ -148,6 +150,10 @@ struct library {
     float hold_acc;
     float stick_acc;                 /* discs owed to the stick, a fraction of one */
     uint64_t stick_us;
+    uint32_t letter_dir;             /* PLAT_BTN_L or PLAT_BTN_R held, or 0 */
+    uint64_t letter_next_us;         /* when a held L or R jumps again */
+    uint64_t letter_us;              /* when the last jump by letter showed its letter */
+    int letter_shown;                /* the jump's letter is on screen */
     /* Where the GPU draws (plat_draws_sprites): the pictures as sprites, the background first
        and under the icon video, and the text, panels and icon corners on the transparent ui
        layer, redrawn only when what it shows changes (front_key). */
@@ -311,9 +317,55 @@ static void on_entry(void *user, const char *name, int is_dir)
     snprintf(c->discs[c->count++].path, sizeof(c->discs[0].path), "%s/%s", c->dir, name);
 }
 
+/* The name a disc sorts by: its file name without leading spaces and punctuation ("...As
+   If") and without a leading "The ", "A " or "An ", so "The Matrix" sorts with "Matrix
+   Revolutions, The". */
+static const char *sort_name(const char *name)
+{
+    static const char *const articles[] = {"the ", "a ", "an "};
+
+    while (*name && !((*name >= '0' && *name <= '9') || ((*name | 0x20) >= 'a' && (*name | 0x20) <= 'z')) &&
+           (unsigned char)*name < 0x80)
+        name++;
+    for (unsigned i = 0; i < sizeof(articles) / sizeof(articles[0]); i++) {
+        size_t n = strlen(articles[i]), k = 0;
+        while (k < n && (name[k] | 0x20) == articles[i][k])
+            k++;
+        if (k == n && name[n])
+            return name + n;
+    }
+    return name;
+}
+
+/* The letter a disc is listed under: A to Z, or # for a digit or anything else. */
+static char disc_letter(const lib_disc *d)
+{
+    char c = (char)(*sort_name(file_name(d->path)) | 0x20);
+    return c >= 'a' && c <= 'z' ? (char)(c - 0x20) : '#';
+}
+
 static int compare_discs(const void *a, const void *b)
 {
-    return strcmp(file_name(((const lib_disc *)a)->path), file_name(((const lib_disc *)b)->path));
+    const lib_disc *da = a, *db = b;
+    char la = disc_letter(da), lb = disc_letter(db);
+    const char *sa = sort_name(file_name(da->path)), *sb = sort_name(file_name(db->path));
+    const char *ea = strrchr(sa, '.'), *eb = strrchr(sb, '.');   /* the extension does not count */
+
+    if (la != lb)
+        return la == '#' ? -1 : lb == '#' ? 1 : la - lb;
+    if (!ea)
+        ea = sa + strlen(sa);
+    if (!eb)
+        eb = sb + strlen(sb);
+    for (; sa < ea && sb < eb; sa++, sb++) {
+        int ca = *sa >= 'A' && *sa <= 'Z' ? *sa | 0x20 : (unsigned char)*sa;
+        int cb = *sb >= 'A' && *sb <= 'Z' ? *sb | 0x20 : (unsigned char)*sb;
+        if (ca != cb)
+            return ca - cb;
+    }
+    if ((sa < ea) != (sb < eb))
+        return sa < ea ? 1 : -1;
+    return strcmp(file_name(da->path), file_name(db->path));
 }
 
 /* Reads the title and ICON0.PNG of every disc; the rest loads when a disc is selected. */
@@ -1175,13 +1227,15 @@ static void draw_app_name(canvas *c, int y)
 /* At the bottom right: the buttons that open the settings and the manual. */
 static void draw_hints(canvas *c, int y)
 {
-    const char *key = plat_keyboard_ui() ? "F1" : "START";
+    const char *key = plat_keyboard_ui() ? "F1" : "START", *lr = plat_keyboard_ui() ? "Q/E" : "L/R";
     int w = osd_button_width(ICON_BUTTON_TRIANGLE, 1) + 6 + canvas_text_width("Settings", 1);
     int mw = osd_key_width(key) + 6 + canvas_text_width("Manual", 1);
+    int lw = osd_key_width(lr) + 6 + canvas_text_width("Letter", 1);
     int x = UI_W - 20 - w;
 
     osd_draw_hint(c, x, y - 4, ICON_BUTTON_TRIANGLE, "Settings");
     osd_draw_key_hint(c, x - 24 - mw, y - 4, key, "Manual");
+    osd_draw_key_hint(c, x - 48 - mw - lw, y - 4, lr, "Letter");
 }
 
 /* A disc without ICON0 or ICON1 (Monster Hunter Portable Rookie's Guide, which shows none on a
@@ -1198,6 +1252,8 @@ static void draw_no_icon(canvas *c, int x, int y, int w, int h)
 
 /* Everything over the pictures: the selected icon's corners, the panels, the name, the hints
    and the progress. */
+static void draw_letter(library *l);
+
 static void draw_front(library *l)
 {
     canvas *c = &l->ui;
@@ -1205,6 +1261,8 @@ static void draw_front(library *l)
     fill_icon_corners(l);
     draw_info(l);
     draw_settings(l);
+    if (!l->settings_open)
+        draw_letter(l);
     /* On the backdrop (a disc without PIC1), keep clear of its film strips. */
     draw_app_name(c, l->bg ? 18 : 72);
     if (!l->settings_open)
@@ -1275,7 +1333,7 @@ static void front_key(library *l, unsigned char *key, size_t size)
     struct {
         const void *bg;
         int show_info, bare, settings_open, settings_row, keys, scanning, count, scan_total;
-        int sheet_shown, sheet_done, sheet_total;
+        int sheet_shown, sheet_done, sheet_total, letter_shown;
         app_settings settings;
         const lib_disc *disc;
         lib_disc shown;
@@ -1295,6 +1353,7 @@ static void front_key(library *l, unsigned char *key, size_t size)
     k.count = l->count;
     k.scan_total = l->scan_total;
     k.sheet_shown = l->sheet_shown;
+    k.letter_shown = l->letter_shown;
     k.sheet_done = l->sheet_done;
     k.sheet_total = l->sheet_total;
     k.settings = *settings_get();
@@ -1958,6 +2017,63 @@ static int hold_steps(library *l, uint32_t pressed)
     return held == PLAT_BTN_UP ? -n : n;
 }
 
+/* L and R jump a letter: R to the first disc of the next letter, L to the first disc of this
+   letter, or of the one before when already there. Held, they go on after HOLD_DELAY, a letter
+   every LETTER_REPEAT. */
+static int letter_jump(library *l, uint32_t pressed)
+{
+    uint32_t held = plat_buttons() & (PLAT_BTN_L | PLAT_BTN_R);
+    uint64_t now = plat_time_us();
+    uint32_t dir = 0;
+    int i = l->sel;
+
+    if (pressed & (PLAT_BTN_L | PLAT_BTN_R)) {
+        dir = pressed & PLAT_BTN_R ? PLAT_BTN_R : PLAT_BTN_L;
+        l->letter_dir = dir;
+        l->letter_next_us = now + HOLD_DELAY;
+    } else if (held && held == l->letter_dir && now >= l->letter_next_us) {
+        dir = held;
+        l->letter_next_us = now + LETTER_REPEAT;
+    } else if (held != l->letter_dir) {
+        l->letter_dir = 0;
+    }
+    if (!dir || l->count == 0)
+        return l->sel;
+    if (dir == PLAT_BTN_R) {
+        char at = disc_letter(&l->discs[i]);
+        while (i < l->count - 1 && disc_letter(&l->discs[i]) == at)
+            i++;
+    } else {
+        if (i > 0 && disc_letter(&l->discs[i - 1]) == disc_letter(&l->discs[i])) {
+            char at = disc_letter(&l->discs[i]);
+            while (i > 0 && disc_letter(&l->discs[i - 1]) == at)
+                i--;
+        } else if (i > 0) {
+            char at = disc_letter(&l->discs[i - 1]);
+            i--;
+            while (i > 0 && disc_letter(&l->discs[i - 1]) == at)
+                i--;
+        }
+    }
+    l->letter_us = now;
+    l->letter_shown = 1;
+    l->ui_dirty = 1;
+    return i;
+}
+
+/* The letter of the selected disc, large over its icon, while a jump by letter is recent. */
+static void draw_letter(library *l)
+{
+    canvas *c = &l->ui;
+    char s[2] = {disc_letter(&l->discs[l->sel]), 0};
+    int scale = 10, w = canvas_text_width(s, scale), x = BIG_X + ICON_W, y = BIG_Y + ICON_H;
+
+    if (!l->letter_shown)
+        return;
+    canvas_round_darken(c, x - 70, y - 70, 140, 140, 16, 160);
+    canvas_text(c, x - w / 2, y - 4 * scale, scale, RGBA(255, 255, 255, 255), s);
+}
+
 int library_update(library *l, uint32_t pressed)
 {
     int present = 0;
@@ -2023,7 +2139,8 @@ int library_update(library *l, uint32_t pressed)
     {
         /* Up and Down a disc each, and the left stick as many as stick_steps says; on Windows
            and Linux the stick is the D-pad too, so its presses are left out. */
-        int to = l->sel + (l->settings_open ? 0 : stick_steps(l) + hold_steps(l, pressed));
+        int to = l->settings_open ? l->sel : letter_jump(l, pressed);
+        to += l->settings_open ? 0 : stick_steps(l) + hold_steps(l, pressed);
         if (l->stick_on)
             pressed &= ~(uint32_t)(PLAT_BTN_UP | PLAT_BTN_DOWN);
         if (pressed & PLAT_BTN_UP)
@@ -2044,6 +2161,10 @@ int library_update(library *l, uint32_t pressed)
     }
     if (pressed || l->worker_paused)
         tell_worker(l, 0);
+    if (l->letter_shown && plat_time_us() - l->letter_us >= LETTER_SHOW) {
+        l->letter_shown = 0;
+        l->ui_dirty = 1;
+    }
     uint64_t t0 = plat_time_us(), t1, t2, t3, t4;
     if (!l->perf.since)
         l->perf.since = t0;
