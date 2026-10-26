@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.9.0 (2026-10-26)
 
 - Library: L and R jump to the previous or next letter, and an alphabet strip on the right edge jumps to a letter by touch. Discs sort without case, leading punctuation or a leading "The", "A" or "An".
 
