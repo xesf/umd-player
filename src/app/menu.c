@@ -2497,11 +2497,15 @@ static void same_size_labels(menu *m, res *r)
 
     for (int i = 0; i < rc->object_count; i++) {
         const rco_object *o = &rc->objects[i];
-        int iw, ih;
+        int iw, ih, rule;
         if (o->kind != RCO_BUTTON || o->image < 0 || r->own_size[i] ||
             png_info(rc->images[o->image].data, rc->images[o->image].size, &iw, &ih) < 0)
             continue;
-        if (stretch_rule(iw, ih, o->size[0], o->size[1], 0) != OVER)
+        /* A label at its own size in a widget three times its width or more (Dragon Wars' audio
+           page: English 52x21 in 246x30) sets the size for its row too: French, 48x15 in a 111x34
+           widget of nearly its shape, stretched to 2.3 times the size of English. */
+        rule = stretch_rule(iw, ih, o->size[0], o->size[1], 0);
+        if (rule != OVER && !(rule == OWN && o->size[0] >= 3.0f * (float)iw))
             continue;
         for (int j = 0; j < rc->object_count; j++) {
             const rco_object *b = &rc->objects[j];
@@ -2611,6 +2615,19 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
                Ultraviolet's 304x275 panel in a 450x275 widget keeps its size as it unfolds. */
             if (w->has_crop && w->size[0] > 0 && w->size[1] > 0 && ((float)iw > width || (float)ih > height))
                 rule = STRETCH;
+            /* A title fits inside the box it sits in: Dragon Wars' 123x16 "Subtitles" in a 214x27
+               widget, scaled up evenly, was 208 wide on a 184x149 parchment; it keeps its size,
+               as the audio page's title does. */
+            {
+                int pa = r->r.objects[i].parent, pw, ph;
+                int pimg = pa >= 0 ? r->w[pa].image : -1;
+                float k = width / (float)iw < height / (float)ih ? width / (float)iw : height / (float)ih;
+                float drawn = rule == FIT ? (float)iw * k : width;
+                if ((rule == FIT || rule == STRETCH) && r->label_k[i] == 0 && pimg >= 0 && r->r.objects[pa].kind == RCO_PLANE &&
+                    r->w[pa].size[0] <= 0 && png_info(r->r.images[pimg].data, r->r.images[pimg].size, &pw, &ph) == 0 &&
+                    iw <= pw && drawn > 1.03f * (float)iw && drawn > (float)pw)
+                    rule = OWN;
+            }
             if (r->label_k[i] > 0) {
                 width = (float)iw * r->label_k[i];
                 height = (float)ih * r->label_k[i];
