@@ -155,7 +155,7 @@ def main():
 
     p = Page(base, 3, 'The library')
     put_half(p.c, os.path.join(shots, 'library.png'), W - LEFT - 480, p.y)
-    p.rows([('Up/Down', 'Choose a disc'), ('Cross', 'Play, from where you stopped'),
+    p.rows([('Up/Down', 'Choose a disc'), ('L/R', 'Next letter'), ('Cross', 'Play, from where you stopped'),
             ('Square', 'Play from Beginning'), ('Select', 'Disc name and resume point'),
             ('Triangle', 'Settings'), ('Start', 'This manual'), ('Touch', 'Drag; tap to play'),
             ('PS', 'Leave the app')],

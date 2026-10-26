@@ -31,12 +31,15 @@ With no movies, the library says where to copy them. Press ✕ to look again aft
 
 ![The library with three discs](manual/library.png)
 
+Discs are sorted by name, without a leading "The", "A" or "An": "The Matrix" is under M. Names starting with a digit or a sign are listed first, under #.
+
 The selected disc is the large icon on the left. On a PSP-authored disc, the background, the animated icon and the music come from the disc. The other discs are listed under and above it.
 
 | Button | What it does |
 |---|---|
 | Up, Down | Choose a disc; hold to scroll, faster the longer you hold |
 | Left stick | Scroll the list: the further you push it, the faster it goes |
+| L, R | Jump to the previous or next letter. The letter shows over the icon, and the letters with discs show down the right edge; touch one there to jump to it. |
 | ✕ | Play the disc (from where you left it, if you watched it before) |
 | □ | Play from Beginning: forget where you stopped the disc, keeping its settings, and play it from the start. With disc menus, it starts as if inserted for the first time. |
 | Select | Show or hide the disc's name and resume point |

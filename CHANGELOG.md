@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Library: L and R jump to the previous or next letter, and an alphabet strip on the right edge jumps to a letter by touch. Discs sort without case, leading punctuation or a leading "The", "A" or "An".
+
 ## v0.8.8 (2026-10-26)
 
 - Fixed Deuce Bigalow's and Dirty's rotating menus turning back instead of on at their second step, up or down, and Deuce Bigalow's sub menu list opening upside down.
