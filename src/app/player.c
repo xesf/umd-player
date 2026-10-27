@@ -207,6 +207,14 @@ struct player {
     uint64_t drain_us, drain_pts;        /* when the title's audio ran out, and the clock then */
     uint64_t wall_base_us, wall_base_pts;
     uint64_t last_report_us;
+    /* Playback timing for the log, one line every 2 s (see report_timing). */
+    struct {
+        uint64_t since, last_shown_us, last_update_us;
+        uint64_t decode_us, present_us, update_us;     /* time spent in decode_ahead, present, player_update */
+        uint32_t intervals[256], n;                    /* us between pictures shown */
+        uint32_t worst_update_us, late_at_start;
+        uint32_t shown_at_start;
+    } tm;
     uint64_t last_awake_us;
     uint64_t last_frame_us, last_stall_log_us;   /* for the stall log */
     int stall_retries;               /* stall restarts since the last frame shown */
@@ -1970,10 +1978,53 @@ fail:
     return NULL;
 }
 
+static int cmp_u32(const void *a, const void *b)
+{
+    uint32_t x = *(const uint32_t *)a, y = *(const uint32_t *)b;
+    return x < y ? -1 : x > y;
+}
+
+/* One line for each 2 s of playback: how fast pictures reached the screen (rate, and the spread
+   of the time between them), where player_update spent its time, and the state that changes the
+   speed. A film played through on the Vita leaves a log to read as a graph. */
+static void report_timing(player *p)
+{
+    uint64_t now = plat_time_us(), span = p->tm.since ? now - p->tm.since : 0;
+    uint32_t n = p->tm.n, avg = 0, p95 = 0, worst = 0, late = p->frames_late - p->tm.late_at_start;
+    double nominal = p->sps.num_units_in_tick ? (double)p->sps.time_scale / (2.0 * p->sps.num_units_in_tick) : 0;
+
+    if (n) {
+        uint64_t sum = 0;
+        for (uint32_t i = 0; i < n; i++)
+            sum += p->tm.intervals[i];
+        avg = (uint32_t)(sum / n);
+        qsort(p->tm.intervals, n, sizeof(p->tm.intervals[0]), cmp_u32);
+        p95 = p->tm.intervals[(n * 95 + 99) / 100 - 1];
+        worst = p->tm.intervals[n - 1];
+    }
+    if (span)
+        plat_log("fps: %.1f of %.2f  picture every %.1f ms (95%% %.1f, worst %.1f)  skipped %u  "
+                 "per second: decode %.0f ms, present %.0f ms, update %.0f ms, slowest update %.1f ms  "
+                 "cpu %s  audio %s  t %.1f s\n",
+                 span ? (double)(p->frames_shown - p->tm.shown_at_start) * 1e6 / (double)span : 0.0, nominal,
+                 avg / 1000.0, p95 / 1000.0, worst / 1000.0, late,
+                 (double)p->tm.decode_us * 1e6 / (double)span / 1000.0, (double)p->tm.present_us * 1e6 / (double)span / 1000.0,
+                 (double)p->tm.update_us * 1e6 / (double)span / 1000.0, p->tm.worst_update_us / 1000.0,
+                 p->power_full || p->layer ? "full" : "playback", p->has_audio ? "on" : "none",
+                 (double)(p->shown_pts - p->title->start_pts) / 90000.0);
+    p->tm.since = now;
+    p->tm.n = 0;
+    p->tm.decode_us = p->tm.present_us = p->tm.update_us = 0;
+    p->tm.worst_update_us = 0;
+    p->tm.late_at_start = p->frames_late;
+    p->tm.shown_at_start = p->frames_shown;
+}
+
 int player_update(player *p, uint32_t pressed)
 {
     uint64_t now;
     int best = -1, done;
+    uint64_t update_start = plat_time_us();
 
     if (!p->video && !p->video_disabled) {
         int have, eof;
@@ -2014,10 +2065,13 @@ int player_update(player *p, uint32_t pressed)
         p->last_awake_us = plat_time_us();
         plat_keep_awake();
     }
-    if (p->video_disabled)
+    if (p->video_disabled) {
         drain_video(p);
-    else
+    } else {
+        uint64_t t = plat_time_us();
         decode_ahead(p);
+        p->tm.decode_us += plat_time_us() - t;
+    }
     maybe_start(p);
     {
         uint32_t underruns;
@@ -2055,6 +2109,9 @@ int player_update(player *p, uint32_t pressed)
             p->seeking = 0;
             p->last_frame_us = plat_time_us();
             p->frames_shown++;
+            if (p->tm.last_shown_us && p->tm.n < 256)
+                p->tm.intervals[p->tm.n++] = (uint32_t)(p->last_frame_us - p->tm.last_shown_us);
+            p->tm.last_shown_us = p->last_frame_us;
             p->stall_retries = 0;
             /* The disc menus draw in software: full speed while they show. */
             plat_set_power(p->power_full || p->layer ? PLAT_POWER_FULL : PLAT_POWER_PLAYBACK);
@@ -2074,6 +2131,7 @@ int player_update(player *p, uint32_t pressed)
                    p->frames_shown, p->frames_late, p->frame_count, p->vq_count, p->pcm_count / 48000.0,
                    p->wait_empty, p->wait_pending, p->reader_wait_pcm, p->reader_wait_vq);
             plat_mutex_unlock(p->lock);
+            report_timing(p);
         }
     }
     /* Stall log: while playing, if no new frame has been shown for a second, say why once a
@@ -2108,8 +2166,11 @@ int player_update(player *p, uint32_t pressed)
     detect_borders(p);
     if (update_osd(p))
         p->dirty = 1;
-    if (p->dirty)
+    if (p->dirty) {
+        uint64_t t = plat_time_us();
         present(p);
+        p->tm.present_us += plat_time_us() - t;
+    }
 
     plat_mutex_lock(p->lock);
     done = p->eof && p->vq_count == 0 && p->pcm_count == 0;
@@ -2127,6 +2188,12 @@ int player_update(player *p, uint32_t pressed)
     }
     if (!p->paused && !p->seeking && p->shown && plat_time_us() - p->last_save_us > SAVE_US)
         save_resume(p);
+    {
+        uint64_t spent = plat_time_us() - update_start;
+        p->tm.update_us += spent;
+        if (spent > p->tm.worst_update_us)
+            p->tm.worst_update_us = (uint32_t)spent;
+    }
     return 1;
 }
 
