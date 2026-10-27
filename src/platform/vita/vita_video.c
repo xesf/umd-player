@@ -6,11 +6,11 @@
 
    Field-coded discs: with interlaced mode on, each output of a field pair holds both fields as
    two half-height pictures, one above the other (checked with frame dumps on hardware). They are
-   decoded into a scratch buffer and copied into two framebuffers, one per field, each line
-   doubled ("bob"). Many such discs (Cabin Fever, Doom) code most pictures as frames and only
+   decoded into a scratch buffer and the first field is copied into a framebuffer, each line
+   doubled ("bob"): one picture per pair, 29.97 a second. Many such discs (Cabin Fever, Doom) code most pictures as frames and only
    some as field pairs; a frame picture comes out whole and is copied as it is. The player says
-   which an access unit is (PLAT_AU_FIELD), and the output carries its time. The second field is shown one field period (1/59.94 s) after the first.
-   The copy uses the GPU transfer engine: one strided copy per field and line parity, 4 per frame.
+   which an access unit is (PLAT_AU_FIELD), and the output carries its time.
+   The copy uses the GPU transfer engine: one strided copy per line parity, 2 per picture.
    (Per-line sceDmacMemcpy took 47 ms per frame on hardware, too slow for 30 frames a second.) */
 #include "../platform.h"
 #include "vita_video.h"
@@ -36,7 +36,6 @@
 #define REF_FRAMES 5
 #define ES_SIZE  (1024 * 1024)
 #define ALIGN(x, a) (((x) + ((a) - 1)) & ~((a) - 1))
-#define FIELD_TICKS 1501      /* one field at 59.94 Hz in 90 kHz ticks */
 #define PIC_W 720
 #define FIELD_H 240
 #define SENT_MAX 32           /* access units remembered, to know what an output was */
@@ -330,17 +329,18 @@ static int decode_into(plat_video *v, const SceAvcdecAu *in)
             return 1;
         }
         if (v->interlaced) {
-            plat_frame *second = pool_get(target);
             int first_bottom = pic.info.picStruct[0] == 2;
             uint64_t t0 = sceKernelGetProcessTimeWide();
 
-            if (hidden || !second || v->out_count + 2 > POOL)
+            if (hidden || v->out_count + 1 > POOL)
                 return 0;
             if (v->last_kind != 1 && v->kind_logs++ < 20)
-                plat_log("field pair: picStruct %u %u\n", pic.info.picStruct[0], pic.info.picStruct[1]);
+                plat_log("field pair: picStruct %u %u, one picture per pair\n", pic.info.picStruct[0], pic.info.picStruct[1]);
             v->last_kind = 1;
+            /* One picture for each field pair, the first field line-doubled: 29.97 pictures a
+               second. Both fields, 59.94 a second, were more than the Vita's loop shows (about
+               44 a second on Lara Croft Tomb Raider, 17 a second dropped unevenly). */
             bob_field(target, scratch, first_bottom);
-            bob_field(second, scratch + (size_t)FIELD_H * SCREEN_W * 4, !first_bottom);
             if (gxm_ready)
                 sceGxmTransferFinish();   /* the scratch buffer is reused by the next decode */
             bob_us_total += sceKernelGetProcessTimeWide() - t0;
@@ -348,11 +348,8 @@ static int decode_into(plat_video *v, const SceAvcdecAu *in)
                 plat_log("field split (%s): %.2f ms per frame\n", gxm_ready ? "GPU" : "DMA",
                          bob_us_total / 1000.0 / bob_count);
             target->app_ref = 1;
-            second->app_ref = 1;
             v->out[v->out_count].frame = target;
             v->out[v->out_count++].pts = out_pts;
-            v->out[v->out_count].frame = second;
-            v->out[v->out_count++].pts = out_pts + FIELD_TICKS;
             return 1;
         }
         target->app_ref = 1;
