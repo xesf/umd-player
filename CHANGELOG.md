@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.9.2 (2026-10-27)
 
 - Playback: the time bar and the options panel are drawn on their own thread. Drawing them took about 50 ms on the Vita, so one or two pictures ran late each second the bar was on screen.
 - Playback: a picture up to 60 ms late is shown, in order, instead of being dropped with the one behind it. A stall of one or two pictures no longer costs a picture.
