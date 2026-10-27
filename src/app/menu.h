@@ -106,6 +106,8 @@ int menu_has_focus(const menu *m);
 /* An animation holds a lock on the menus that ends within 5 s: disc mode holds chapter events
    meanwhile. */
 int menu_locked(const menu *m);
+/* An animation holds the menus' input locked, for as long as it runs. */
+int menu_input_locked(const menu *m);
 /* The active page (a widget index), or -1; it changes when a page opens. */
 int menu_active_page(const menu *m);
 

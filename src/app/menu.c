@@ -524,8 +524,12 @@ static void play_anim(menu *m, int anim, int target)
             run = &m->runs[i];
     if (!run)
         return;
+    /* An animation that plays itself again keeps its lock through the restart: House on Haunted
+       Hill locks keys for its warning with a lock, a delay of 1 s and the same animation again,
+       and a press in the frame between the loops reached the menu button. */
+    if (!(run->active && run->anim == anim))
+        run->locked = 0;
     run->active = 1;
-    run->locked = 0;
     run->anim = anim;
     run->target = target;
     run->step = 0;
@@ -2124,6 +2128,11 @@ int menu_locked(const menu *m)
             return 1;
     }
     return 0;
+}
+
+int menu_input_locked(const menu *m)
+{
+    return m->lock > 0;
 }
 
 int menu_has_focus(const menu *m)

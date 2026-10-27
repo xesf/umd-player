@@ -457,6 +457,19 @@ static void to_main_menu(disc *d)
         menu_start(d->m);
         return;
     }
+    /* A clip that locks the menus' input (a warning, a logo) ends as the +10 s skip would end
+       it, and the script goes on from its own end of the clip: House on Haunted Hill locks
+       keys for its warning and unlocks them, and closes the page that holds the lock, when
+       the warning ends; its menu button starts the menu with the lock still on, and nothing
+       on the menu took a key. */
+    if (d->pl && !player_title_ended(d->pl) && menu_input_locked(d->m) && !menu_title_resumable(d->m, d->title)) {
+        plat_log("disc: the menu button during a locked clip, ending the clip\n");
+        player_close(d->pl);
+        d->pl = NULL;
+        d->menu_video = 0;
+        d->pending_end = d->title;
+        return;
+    }
     /* Again while the movie still plays under a page the press opened: Saw and Valiant show
        their chapter list over the movie first. Whether the page shows something is only known
        once it is drawn, so a newly active page with buttons counts. */
