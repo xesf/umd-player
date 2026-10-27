@@ -46,7 +46,7 @@
 #define UI_H          544
 #define TOAST_US      2500000
 #define SCRUB_DELAY   400000             /* us left or right is held before scrubbing starts */
-#define DETECT_US     500000             /* border detection interval */
+#define DETECT_US     5000000            /* border detection interval */
 #define MENU_ROWS     4
 #define CATCH_UP      5400               /* 90 kHz: a picture this late is still shown, not dropped (60 ms) */
 #define LATE_TICKS    4050               /* a picture shown this late counts as running late (45 ms) */
@@ -218,6 +218,7 @@ struct player {
         uint64_t decode_us, present_us, update_us;     /* time spent in decode_ahead, present, player_update */
         uint32_t intervals[256], n;                    /* us between pictures shown */
         uint32_t worst_update_us, late_at_start;
+        uint32_t worst_detect_us, worst_osd_us;        /* border detection, the on-screen display */
         uint32_t worst_decode_us, worst_present_us, worst_save_us, caught_up;   /* slowest single calls; pictures shown late, in order */
         uint32_t shown_at_start;
     } tm;
@@ -2016,19 +2017,19 @@ static void report_timing(player *p)
     if (span)
         plat_log("fps: %.1f of %.2f  picture every %.1f ms (95%% %.1f, worst %.1f)  skipped %u  "
                  "per second: decode %.0f ms, present %.0f ms, update %.0f ms, slowest update %.1f ms  "
-                 "worst call: decode %.1f ms, present %.1f ms, save %.1f ms  caught up %u  "
+                 "worst call: decode %.1f ms, present %.1f ms, save %.1f ms, borders %.1f ms, osd %.1f ms  caught up %u  "
                  "cpu %s  audio %s  t %.1f s\n",
                  span ? (double)(p->frames_shown - p->tm.shown_at_start) * 1e6 / (double)span : 0.0, nominal,
                  avg / 1000.0, p95 / 1000.0, worst / 1000.0, late,
                  (double)p->tm.decode_us * 1e6 / (double)span / 1000.0, (double)p->tm.present_us * 1e6 / (double)span / 1000.0,
                  (double)p->tm.update_us * 1e6 / (double)span / 1000.0, p->tm.worst_update_us / 1000.0,
-                 p->tm.worst_decode_us / 1000.0, p->tm.worst_present_us / 1000.0, p->tm.worst_save_us / 1000.0, p->tm.caught_up,
+                 p->tm.worst_decode_us / 1000.0, p->tm.worst_present_us / 1000.0, p->tm.worst_save_us / 1000.0, p->tm.worst_detect_us / 1000.0, p->tm.worst_osd_us / 1000.0, p->tm.caught_up,
                  p->power_full || p->layer ? "full" : "playback", p->has_audio ? "on" : "none",
                  (double)(p->shown_pts - p->title->start_pts) / 90000.0);
     p->tm.since = now;
     p->tm.n = 0;
     p->tm.decode_us = p->tm.present_us = p->tm.update_us = 0;
-    p->tm.worst_update_us = p->tm.worst_decode_us = p->tm.worst_present_us = p->tm.worst_save_us = p->tm.caught_up = 0;
+    p->tm.worst_update_us = p->tm.worst_decode_us = p->tm.worst_present_us = p->tm.worst_save_us = p->tm.caught_up = p->tm.worst_detect_us = p->tm.worst_osd_us = 0;
     p->tm.late_at_start = p->frames_late;
     p->tm.shown_at_start = p->frames_shown;
 }
@@ -2204,9 +2205,17 @@ int player_update(player *p, uint32_t pressed)
             p->last_frame_us = plat_time_us();
         }
     }
-    detect_borders(p);
-    if (update_osd(p))
-        p->dirty = 1;
+    {
+        uint64_t t = plat_time_us(), u;
+        detect_borders(p);
+        u = plat_time_us();
+        if (u - t > p->tm.worst_detect_us)
+            p->tm.worst_detect_us = (uint32_t)(u - t);
+        if (update_osd(p))
+            p->dirty = 1;
+        if (plat_time_us() - u > p->tm.worst_osd_us)
+            p->tm.worst_osd_us = (uint32_t)(plat_time_us() - u);
+    }
     if (p->dirty) {
         uint64_t t = plat_time_us();
         present(p);

@@ -13,7 +13,7 @@ LINE = re.compile(
     r'worst (?P<worst>[\d.]+)\)\s+skipped (?P<skipped>\d+)\s+'
     r'per second: decode (?P<decode>\d+) ms, present (?P<present>\d+) ms, update (?P<update>\d+) ms, '
     r'slowest update (?P<slow>[\d.]+) ms\s+'
-    r'(?:worst call: decode (?P<wdec>[\d.]+) ms, present (?P<wpres>[\d.]+) ms, save (?P<wsave>[\d.]+) ms\s+'
+    r'(?:worst call: decode (?P<wdec>[\d.]+) ms, present (?P<wpres>[\d.]+) ms, save (?P<wsave>[\d.]+) ms(?:, borders (?P<wbord>[\d.]+) ms, osd (?P<wosd>[\d.]+) ms)?\s+'
     r'caught up (?P<caught>\d+)\s+)?cpu (?P<cpu>\w+)\s+audio (?P<audio>\w+)\s+t (?P<t>[\d.]+) s')
 
 
@@ -27,8 +27,9 @@ def summary(rows, limit_arg):
           % (sum(rate) / len(rate), min(rate), sum(int(r['skipped']) for r in rows), sum(int(r['caught'] or 0) for r in rows)))
     w = max(rows, key=lambda r: float(r['worst']))
     print('worst gap between pictures: %s ms at t %s s' % (w['worst'], w['t']))
-    print('slowest update: %s ms; slowest decode %.1f ms, present %.1f ms, save %.1f ms'
-          % (max(f('slow')), max(f('wdec') or [0]), max(f('wpres') or [0]), max(f('wsave') or [0])))
+    print('slowest update: %s ms; slowest decode %.1f ms, present %.1f ms, save %.1f ms, borders %.1f ms, osd %.1f ms'
+          % (max(f('slow')), max(f('wdec') or [0]), max(f('wpres') or [0]), max(f('wsave') or [0]),
+             max(f('wbord') or [0]), max(f('wosd') or [0])))
     modes = {}
     for r in rows:
         modes[r['cpu']] = modes.get(r['cpu'], 0) + 1
