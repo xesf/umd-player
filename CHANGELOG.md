@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.9.1 (2026-10-27)
+
+- Fixed Full Metal Panic! The Second Raid's menu labels drawing stretched beyond reading.
+- Fixed House on Haunted Hill's menu taking no keys after ○ during its warning: ○ now ends a clip that holds the keys locked, as the +10 s skip does.
+
 ## v0.9.0 (2026-10-26)
 
 - Library: L and R jump to the previous or next letter, and an alphabet strip on the right edge jumps to a letter by touch. Discs sort without case, leading punctuation or a leading "The", "A" or "An".
