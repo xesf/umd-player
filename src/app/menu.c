@@ -2433,6 +2433,12 @@ static int stretch_rule(int iw, int ih, float width, float height, int fill)
 
     if (strip || fill || width <= 0 || height <= 0)
         return STRETCH;
+    /* A widget one unit wide or high is a unit plane the script sizes by its scale: Full Metal
+       Panic's labels are 162x1 with a y scale of 30, their image's height. Judged by the
+       widget's size alone they looked 160 times too tall for their shape and kept the image's
+       size, which the scale then multiplied by 30. */
+    if (width <= 2.0f || height <= 2.0f)
+        return STRETCH;
     shape = (width / height) / ((float)iw / (float)ih);
     /* cards and backgrounds match within 3% (Austin Powers' 427x240 mask in 854x490).
        A full-screen background stretches whatever its size (The Matrix's 214x120 scene
