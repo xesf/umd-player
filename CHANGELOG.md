@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Playback: the time bar and the options panel are drawn on their own thread. Drawing them took about 50 ms on the Vita, so one or two pictures ran late each second the bar was on screen.
+- Playback: a picture up to 60 ms late is shown, in order, instead of being dropped with the one behind it. A stall of one or two pictures no longer costs a picture.
+- Playback: full CPU speed, switched on by a late picture, ends after 30 s of clean playback and the player returns to the lower speed. It waits twice as long each time it is needed again, up to 10 minutes. Before, one late picture at the start kept the high speed for the whole film.
+- Vita: a film coded in fields (Lara Croft Tomb Raider) shows one picture for each pair of fields, a steady 29.97 a second. It tried to show all 59.94 and managed about 44, dropping 17 a second unevenly.
+- Playback: the picture area is checked every 5 seconds, not every half second. It reads the picture back from video memory.
+- Log: an `fps:` line every 2 seconds gives the picture rate against the film's, the average, 95th percentile and worst time between pictures, the pictures skipped and shown late, where the time goes, and the slowest decode, present, save, border and display calls. `tools/fpslog.py` summarises a log.
+
 ## v0.9.1 (2026-10-27)
 
 - Fixed Full Metal Panic! The Second Raid's menu labels drawing stretched beyond reading.
