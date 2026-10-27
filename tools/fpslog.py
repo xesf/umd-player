@@ -2,7 +2,7 @@
 """Summarises the "fps:" lines of a player log (ux0:data/umdplayer/log.txt on the Vita).
     fpslog.py log.txt [threshold]
 Prints the overall rate, the worst picture gap, the stretches below the threshold (default 95% of
-the film's frame rate) with their film time, and the CPU mode they were in. Standard library only."""
+the typical rate, since the stream's own timing can be 29.97 for a 24 fps film with pulldown) with their film time, and the CPU mode they were in. Standard library only."""
 import re
 import sys
 
@@ -20,9 +20,10 @@ def main():
         sys.exit('no "fps:" lines in the log')
     rate = [float(r[0]) for r in rows]
     nominal = float(rows[0][1])
-    limit = float(sys.argv[2]) if len(sys.argv) > 2 else nominal * 0.95
+    typical = sorted(rate)[len(rate) // 2]
+    limit = float(sys.argv[2]) if len(sys.argv) > 2 else typical * 0.97
     skipped = sum(int(r[5]) for r in rows)
-    print('%d intervals of 2 s, film %.2f fps' % (len(rows), nominal))
+    print('%d intervals of 2 s, stream timing %.2f fps, typical rate %.2f fps' % (len(rows), nominal, typical))
     print('mean %.2f fps, lowest %.2f fps, skipped pictures %d' % (sum(rate) / len(rate), min(rate), skipped))
     print('worst gap between pictures: %.1f ms at t %s s' % max((float(r[4]), r[12]) for r in rows))
     print('slowest update: %.1f ms' % max(float(r[9]) for r in rows))
