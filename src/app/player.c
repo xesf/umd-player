@@ -48,6 +48,9 @@
 #define SCRUB_DELAY   400000             /* us left or right is held before scrubbing starts */
 #define DETECT_US     500000             /* border detection interval */
 #define MENU_ROWS     4
+#define CATCH_UP      5400               /* 90 kHz: a picture this late is still shown, not dropped (60 ms) */
+#define LATE_TICKS    4050               /* a picture shown this late counts as running late (45 ms) */
+#define CALM_US       30000000           /* clean playback before going back to the lower CPU speed */
 #define SAVE_US       10000000           /* save the resume point every 10 s while playing */
 #define MIN_TITLE     (60 * 90000)       /* L and R skip shorter titles: menus, logos, warnings */
 #define RESUME_TAIL   (30 * 90000)       /* within 30 s of the end, start over next time */
@@ -134,6 +137,8 @@ struct player {
     uint32_t underruns;              /* audio callbacks the PCM ring could not fill while playing */
     uint32_t underruns_seen;         /* the count when the main thread last checked */
     int power_full;                  /* stay at full CPU speed: playback ran short or late at the lower one */
+    uint64_t late_us;                /* when playback last ran late or short */
+    uint64_t calm_us;                /* clean playback needed to drop back to the lower speed */
     uint64_t silence_frames;         /* frames of silence the callback produced: not on the clock */
 
     /* Reader thread only. */
@@ -213,6 +218,7 @@ struct player {
         uint64_t decode_us, present_us, update_us;     /* time spent in decode_ahead, present, player_update */
         uint32_t intervals[256], n;                    /* us between pictures shown */
         uint32_t worst_update_us, late_at_start;
+        uint32_t worst_decode_us, worst_present_us, worst_save_us, caught_up;   /* slowest single calls; pictures shown late, in order */
         uint32_t shown_at_start;
     } tm;
     uint64_t last_awake_us;
@@ -690,9 +696,14 @@ static void decode_ahead(player *p)
         e = p->vq[p->vq_first];
         plat_mutex_unlock(p->lock);
 
-        if (e.state == AU_READY || e.ref)
+        if (e.state == AU_READY || e.ref) {
+            uint64_t t = plat_time_us();
             plat_video_decode(p->video, p->vq_data + e.off, e.size, e.state == AU_READY ? e.pts : PLAT_PTS_HIDDEN,
                               e.field ? PLAT_AU_FIELD : 0);
+            t = plat_time_us() - t;
+            if (t > p->tm.worst_decode_us)
+                p->tm.worst_decode_us = (uint32_t)t;
+        }
 
         plat_mutex_lock(p->lock);
         p->vq_first = (p->vq_first + 1) % VQ_MAX;
@@ -2005,17 +2016,19 @@ static void report_timing(player *p)
     if (span)
         plat_log("fps: %.1f of %.2f  picture every %.1f ms (95%% %.1f, worst %.1f)  skipped %u  "
                  "per second: decode %.0f ms, present %.0f ms, update %.0f ms, slowest update %.1f ms  "
+                 "worst call: decode %.1f ms, present %.1f ms, save %.1f ms  caught up %u  "
                  "cpu %s  audio %s  t %.1f s\n",
                  span ? (double)(p->frames_shown - p->tm.shown_at_start) * 1e6 / (double)span : 0.0, nominal,
                  avg / 1000.0, p95 / 1000.0, worst / 1000.0, late,
                  (double)p->tm.decode_us * 1e6 / (double)span / 1000.0, (double)p->tm.present_us * 1e6 / (double)span / 1000.0,
                  (double)p->tm.update_us * 1e6 / (double)span / 1000.0, p->tm.worst_update_us / 1000.0,
+                 p->tm.worst_decode_us / 1000.0, p->tm.worst_present_us / 1000.0, p->tm.worst_save_us / 1000.0, p->tm.caught_up,
                  p->power_full || p->layer ? "full" : "playback", p->has_audio ? "on" : "none",
                  (double)(p->shown_pts - p->title->start_pts) / 90000.0);
     p->tm.since = now;
     p->tm.n = 0;
     p->tm.decode_us = p->tm.present_us = p->tm.update_us = 0;
-    p->tm.worst_update_us = 0;
+    p->tm.worst_update_us = p->tm.worst_decode_us = p->tm.worst_present_us = p->tm.worst_save_us = p->tm.caught_up = 0;
     p->tm.late_at_start = p->frames_late;
     p->tm.shown_at_start = p->frames_shown;
 }
@@ -2080,6 +2093,7 @@ int player_update(player *p, uint32_t pressed)
         plat_mutex_unlock(p->lock);
         if (underruns != p->underruns_seen) {
             p->underruns_seen = underruns;
+            p->late_us = plat_time_us();
             if (!p->power_full) {
                 plat_log("audio ran short: staying at full CPU speed\n");
                 p->power_full = 1;
@@ -2091,6 +2105,20 @@ int player_update(player *p, uint32_t pressed)
     if (!p->paused && clock_now(p, &now)) {
         for (int i = 0; i < p->frame_count && p->frames[i].pts <= now; i++)
             best = i;
+        /* A picture up to CATCH_UP late is shown, in order, and the ones behind it on the next
+           updates, 16 ms apart: a stall of one or two pictures (a slow decode or present, 40 to
+           90 ms on the Vita) cost a dropped picture each. Later than that, the newest due
+           picture shows and the older ones are dropped. */
+        if (best > 0 && now - p->frames[0].pts <= CATCH_UP && !p->seeking)
+            best = 0;
+        if (best >= 0 && now - p->frames[best].pts > LATE_TICKS && !p->seeking) {
+            p->tm.caught_up++;
+            p->late_us = plat_time_us();
+            if (!p->power_full) {
+                plat_log("video ran late: staying at full CPU speed\n");
+                p->power_full = 1;
+            }
+        }
         if (best >= 0) {
             for (int i = 0; i < best; i++) {
                 plat_frame_release(p->frames[i].frame);
@@ -2098,9 +2126,12 @@ int player_update(player *p, uint32_t pressed)
             }
             /* A frame dropped for lateness (Spider-Man's action scenes at 333 MHz): full speed
                from here on, as for audio that runs short. */
-            if (best > 0 && !p->power_full && !p->seeking) {
-                plat_log("video ran late: staying at full CPU speed\n");
-                p->power_full = 1;
+            if (best > 0 && !p->seeking) {
+                p->late_us = plat_time_us();
+                if (!p->power_full) {
+                    plat_log("video ran late: staying at full CPU speed\n");
+                    p->power_full = 1;
+                }
             }
             if (p->shown)
                 plat_frame_release(p->shown);
@@ -2114,6 +2145,16 @@ int player_update(player *p, uint32_t pressed)
             p->tm.last_shown_us = p->last_frame_us;
             p->stall_retries = 0;
             /* The disc menus draw in software: full speed while they show. */
+            /* Full speed holds until playback has run clean for a while, then back to the lower
+               one: a late picture while the film started latched it for the whole film. Each
+               time it is needed again the wait doubles, so it cannot flap. */
+            if (p->power_full && !p->layer && plat_time_us() - p->late_us > (p->calm_us ? p->calm_us : CALM_US)) {
+                p->power_full = 0;
+                p->calm_us = (p->calm_us ? p->calm_us : CALM_US) * 2;
+                if (p->calm_us > 20 * CALM_US)
+                    p->calm_us = 20 * CALM_US;
+                plat_log("playback ran clean: back to the lower CPU speed\n");
+            }
             plat_set_power(p->power_full || p->layer ? PLAT_POWER_FULL : PLAT_POWER_PLAYBACK);
             memmove(&p->frames[0], &p->frames[best + 1], (size_t)(p->frame_count - best - 1) * sizeof(p->frames[0]));
             p->frame_count -= best + 1;
@@ -2169,7 +2210,10 @@ int player_update(player *p, uint32_t pressed)
     if (p->dirty) {
         uint64_t t = plat_time_us();
         present(p);
-        p->tm.present_us += plat_time_us() - t;
+        t = plat_time_us() - t;
+        p->tm.present_us += t;
+        if (t > p->tm.worst_present_us)
+            p->tm.worst_present_us = (uint32_t)t;
     }
 
     plat_mutex_lock(p->lock);
@@ -2186,8 +2230,13 @@ int player_update(player *p, uint32_t pressed)
         save_resume(p);
         return 0;
     }
-    if (!p->paused && !p->seeking && p->shown && plat_time_us() - p->last_save_us > SAVE_US)
+    if (!p->paused && !p->seeking && p->shown && plat_time_us() - p->last_save_us > SAVE_US) {
+        uint64_t t = plat_time_us();
         save_resume(p);
+        t = plat_time_us() - t;
+        if (t > p->tm.worst_save_us)
+            p->tm.worst_save_us = (uint32_t)t;
+    }
     {
         uint64_t spent = plat_time_us() - update_start;
         p->tm.update_us += spent;
