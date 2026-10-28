@@ -173,17 +173,8 @@ struct player {
     uint64_t last_detect_us;
 
     /* On-screen display. */
-    /* The OSD is drawn by a worker into one of two canvases while the other is shown: drawing the
-       time bar took 50 ms on the Vita, a late picture or two each second the bar was up. */
-    canvas ui_buf[2];
-    int ui_front;                    /* the canvas the platform shows, or -1 */
-    osd_view osd_drawn;              /* what the UI layer holds now, or is being drawn */
-    plat_thread *osd_thread;
-    plat_mutex *osd_lock;
-    plat_cond *osd_cond;
-    osd_view osd_job;
-    int osd_pending, osd_quit, osd_ready, osd_ready_buf;   /* a job waits; stop; a canvas is drawn, which */
-    uint32_t osd_gen, osd_job_gen, osd_ready_gen;   /* each wanted view; the job's; the finished one's */
+    canvas ui;
+    osd_view osd_drawn;              /* what the UI layer holds now */
     int menu_open, menu_row, menu_chapter;
     char toast[64];
     icon_id toast_icon;
@@ -1217,74 +1208,22 @@ static int update_osd(player *p)
         return changed;
     }
 
-    int changed = 0;
-
     build_osd(p, &v);
-    if (memcmp(&v, &p->osd_drawn, sizeof(v)) != 0) {
-        p->osd_drawn = v;
-        plat_mutex_lock(p->osd_lock);
-        p->osd_gen++;
-        if (osd_visible(&v)) {
-            p->osd_job = v;
-            p->osd_job_gen = p->osd_gen;
-            p->osd_pending = 1;
-            plat_cond_broadcast(p->osd_cond);
-        } else {
-            p->osd_pending = 0;
-            p->osd_ready = 0;
-        }
-        plat_mutex_unlock(p->osd_lock);
-        if (!osd_visible(&v)) {
-            p->present.ui_rgba = NULL;
-            p->ui_front = -1;
-            changed = 1;
-        }
-    }
-    /* A finished canvas of the view wanted now takes the screen. */
-    plat_mutex_lock(p->osd_lock);
-    if (p->osd_ready && p->osd_ready_gen == p->osd_gen) {
-        p->ui_front = p->osd_ready_buf;
-        p->osd_ready = 0;
+    if (memcmp(&v, &p->osd_drawn, sizeof(v)) == 0)
+        return 0;
+    p->osd_drawn = v;
+    if (osd_visible(&v)) {
+        osd_draw(&v, &p->ui);
         p->present.ui_sprites = NULL;
-        p->present.ui_rgba = p->ui_buf[p->ui_front].rgba;
-        p->present.ui_w = p->ui_buf[p->ui_front].w;
-        p->present.ui_h = p->ui_buf[p->ui_front].h;
-        p->present.ui_stride = p->ui_buf[p->ui_front].stride;
+        p->present.ui_rgba = p->ui.rgba;
+        p->present.ui_w = p->ui.w;
+        p->present.ui_h = p->ui.h;
+        p->present.ui_stride = p->ui.stride;
         p->present.ui_id++;
-        changed = 1;
     } else {
-        p->osd_ready = 0;
+        p->present.ui_rgba = NULL;
     }
-    plat_mutex_unlock(p->osd_lock);
-    return changed;
-}
-
-/* Draws each wanted OSD view into the canvas that is not shown. */
-static void osd_worker(void *user)
-{
-    player *p = user;
-
-    plat_mutex_lock(p->osd_lock);
-    while (!p->osd_quit) {
-        osd_view v;
-        uint32_t gen;
-        int back;
-        if (!p->osd_pending) {
-            plat_cond_wait(p->osd_cond, p->osd_lock);
-            continue;
-        }
-        v = p->osd_job;
-        gen = p->osd_job_gen;
-        p->osd_pending = 0;
-        back = p->ui_front == 0 ? 1 : 0;
-        plat_mutex_unlock(p->osd_lock);
-        osd_draw(&v, &p->ui_buf[back]);
-        plat_mutex_lock(p->osd_lock);
-        p->osd_ready = 1;
-        p->osd_ready_gen = gen;
-        p->osd_ready_buf = back;
-    }
-    plat_mutex_unlock(p->osd_lock);
+    return 1;
 }
 
 /* Looks for black borders in the shown frame and grows the known picture area. */
@@ -2009,24 +1948,18 @@ player *player_open(const player_options *opt)
     p->at3p = malloc(at3p_decoder_size());
     p->sub_rgba = malloc(VIDEO_W * VIDEO_H * 4);
     p->sub_work = malloc((VIDEO_W * 8 + 1) * VIDEO_H);
-    for (int k = 0; k < 2; k++) {
-        p->ui_buf[k].w = UI_W;
-        p->ui_buf[k].h = UI_H;
-        p->ui_buf[k].stride = UI_W * 4;
-        p->ui_buf[k].rgba = malloc(UI_W * UI_H * 4);
-    }
-    p->ui_front = -1;
-    p->osd_lock = plat_mutex_create();
-    p->osd_cond = plat_cond_create();
+    p->ui.w = UI_W;
+    p->ui.h = UI_H;
+    p->ui.stride = UI_W * 4;
+    p->ui.rgba = malloc(UI_W * UI_H * 4);
     p->mode = (screen_mode)settings_get()->screen;
     if (have_resume && resume.screen >= 0 && resume.screen < SCREEN_MODES)
         p->mode = (screen_mode)resume.screen;
     if (alloc_audio_queues(p) < 0)
         goto fail;
-    if (!p->lock || !p->cond || !p->io_lock || !p->vq_data || !p->pcm || !p->dmx || !p->at3p || !p->sub_rgba || !p->sub_work || !p->ui_buf[0].rgba || !p->ui_buf[1].rgba || !p->osd_lock || !p->osd_cond)
+    if (!p->lock || !p->cond || !p->io_lock || !p->vq_data || !p->pcm || !p->dmx || !p->at3p || !p->sub_rgba || !p->sub_work || !p->ui.rgba)
         goto fail;
     at3p_init_tables();
-    p->osd_thread = plat_thread_start(osd_worker, p, "osd");
     if (p->has_audio && plat_audio_open(AUDIO_RATE, audio_fill, p) < 0) {
         plat_log("cannot open audio output\n");
         p->has_audio = 0;
@@ -2336,13 +2269,6 @@ void player_close(player *p)
         plat_mutex_unlock(p->lock);
     }
     plat_thread_join(p->reader);
-    if (p->osd_lock) {
-        plat_mutex_lock(p->osd_lock);
-        p->osd_quit = 1;
-        plat_cond_broadcast(p->osd_cond);
-        plat_mutex_unlock(p->osd_lock);
-    }
-    plat_thread_join(p->osd_thread);
     if (p->has_audio)
         plat_audio_close();
     for (int i = 0; i < p->frame_count; i++)
@@ -2358,18 +2284,13 @@ void player_close(player *p)
     plat_cond_destroy(p->cond);
     plat_mutex_destroy(p->lock);
     plat_mutex_destroy(p->io_lock);
-    if (p->osd_cond)
-        plat_cond_destroy(p->osd_cond);
-    if (p->osd_lock)
-        plat_mutex_destroy(p->osd_lock);
     free(p->vq_data);
     free(p->pcm);
     free(p->dmx);
     free(p->at3p);
     free(p->sub_rgba);
     free(p->sub_work);
-    free(p->ui_buf[0].rgba);
-    free(p->ui_buf[1].rgba);
+    free(p->ui.rgba);
     for (int i = 0; i < DEMUX_AUDIO_TRACKS; i++)
         free(p->aq[i].frames);
     free(p->clp_buf);

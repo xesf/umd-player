@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.9.3 (2026-10-28)
+
+- Fixed the time bar and the options panel: v0.9.2 drew them on their own thread, which broke them, so they are drawn on the playback thread again. The late pictures while the bar is on screen come back until a faster way is found.
+
 ## v0.9.2 (2026-10-27)
 
 - Playback: the time bar and the options panel are drawn on their own thread. Drawing them took about 50 ms on the Vita, so one or two pictures ran late each second the bar was on screen.
