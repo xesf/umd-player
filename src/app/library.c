@@ -74,6 +74,7 @@ typedef struct lib_disc {
     int resume_disc;                 /* played through its menus: has_resume is the disc state */
     int interactive;                 /* UMD-PG: an interactive movie, played through its menus */
     int incomplete;                  /* the image ends before the disc's files do */
+    int no_movie;                    /* no UMD_VIDEO/PLAYLIST.UMD: nothing to play */
     uint64_t resume_pos, resume_start, resume_end;   /* 90 kHz; start and end are 0 for 0.1.0 entries */
     uint32_t icon_id;                /* icon0's id for the GPU (plat_sprite), 0 until drawn */
 } lib_disc;
@@ -199,6 +200,9 @@ struct library {
     plat_present_info info;
     int ui_dirty;
     int show_info;                   /* SELECT toggles the title and resume panel */
+    char notice[64];                 /* a message above the hints, until notice_until */
+    uint64_t notice_until;
+    unsigned notice_seq;
     int touch_down, touch_x0, touch_y0, touch_step_y, touch_moved;   /* a finger on the screen */
     int scroll;                      /* mouse wheel steps not yet taken, positive down the list */
     uint64_t scroll_us;              /* when the wheel was last read */
@@ -466,6 +470,13 @@ static void read_disc_info(lib_disc *disc)
             disc->incomplete = 1;
             plat_log("library: %s is incomplete: its files need %u sectors, the image has %u\n", disc->title,
                      end, d.src.sector_count);
+        }
+    }
+    {
+        iso_entry e;
+        if (iso_find(&d.vol, "UMD_VIDEO/PLAYLIST.UMD", &e) < 0) {
+            disc->no_movie = 1;
+            plat_log("library: %s has no UMD_VIDEO/PLAYLIST.UMD: no movie to play\n", disc->title);
         }
     }
     disc->interactive = is_interactive(&d);
@@ -943,7 +954,10 @@ static void draw_info(library *l)
             canvas_text(c, x, y + ICON_H - 8 - (lines - 1) * 11 + 22, 2, RGBA(255, 255, 255, 255), title2);
         return;
     }
-    if (d->incomplete)
+    if (d->no_movie)
+        canvas_text(&l->ui, x, y + 2 * ICON_H - 16, 1, RGBA(255, 120, 100, 255),
+                    "No movie in this image: PLAYLIST.UMD is missing");
+    else if (d->incomplete)
         canvas_text(&l->ui, x, y + 2 * ICON_H - 16, 1, RGBA(255, 120, 100, 255),
                     "Incomplete image: some videos are missing");
     if (osd_button_width(ICON_BUTTON_SQUARE, 2) > bw)
@@ -1290,6 +1304,12 @@ static void draw_front(library *l)
     draw_app_name(c, l->bg ? 18 : 72);
     if (!l->settings_open)
         draw_hints(c, l->bg ? UI_H - 18 : UI_H - 72);
+    if (l->notice[0] && !l->settings_open) {
+        int y = (l->bg ? UI_H - 18 : UI_H - 72) - 30 - (l->scanning || l->sheet_shown >= 0 ? 34 : 0);
+        int w = canvas_text_width(l->notice, 1);
+        canvas_round_darken(c, UI_W - 28 - w, y - 6, w + 16, 22, 6, 160);
+        canvas_text(c, UI_W - 20 - w, y, 1, RGBA(255, 120, 100, 255), l->notice);
+    }
     if (l->scanning || l->sheet_shown >= 0) {
         /* above the hints: discs still being read or sheets being written, with a bar under
            the count */
@@ -1357,6 +1377,7 @@ static void front_key(library *l, unsigned char *key, size_t size)
         const void *bg;
         int show_info, bare, settings_open, settings_row, keys, scanning, count, scan_total;
         int sheet_shown, sheet_done, sheet_total, letter_shown, strip_shown;
+        unsigned notice_seq;
         app_settings settings;
         const lib_disc *disc;
         lib_disc shown;
@@ -1380,6 +1401,7 @@ static void front_key(library *l, unsigned char *key, size_t size)
     k.strip_shown = l->strip_shown;
     k.sheet_done = l->sheet_done;
     k.sheet_total = l->sheet_total;
+    k.notice_seq = l->notice[0] ? l->notice_seq : 0;
     k.settings = *settings_get();
     if (k.show_info || k.bare) {
         k.disc = d;
@@ -2159,9 +2181,22 @@ static int strip_disc(const library *l, int y)
     return first[k];
 }
 
+void library_notice(library *l, const char *text)
+{
+    snprintf(l->notice, sizeof(l->notice), "%s", text);
+    l->notice_until = plat_time_us() + 5000000;
+    l->notice_seq++;
+    l->ui_dirty = 1;
+}
+
 int library_update(library *l, uint32_t pressed)
 {
     int present = 0;
+
+    if (l->notice[0] && plat_time_us() >= l->notice_until) {
+        l->notice[0] = 0;
+        l->ui_dirty = 1;
+    }
 
     if (plat_keyboard_ui() != l->keys_shown) {   /* keys or a gamepad: redraw the hints */
         l->keys_shown = plat_keyboard_ui();
@@ -2206,6 +2241,10 @@ int library_update(library *l, uint32_t pressed)
         l->settings_row = 0;
         l->ui_dirty = 1;
         pressed = 0;
+    }
+    if ((pressed & PLAT_BTN_CROSS) && l->discs[l->sel].no_movie) {
+        library_notice(l, "No movie in this image: UMD_VIDEO/PLAYLIST.UMD is missing");
+        pressed &= ~PLAT_BTN_CROSS;
     }
     if (pressed & PLAT_BTN_CROSS)
         return l->sel;

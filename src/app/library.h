@@ -29,6 +29,8 @@ int library_interactive(const library *l, int index);
 
 /* Stops the icon animation and sound (before playing a disc); library_update starts them again. */
 void library_suspend(library *l);
+/* A message for a few seconds above the hints ("cannot play this disc image"). */
+void library_notice(library *l, const char *text);
 
 void library_close(library *l);
 

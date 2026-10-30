@@ -192,8 +192,10 @@ int app_frame(void)
             return 1;
         intro_count = 0;
         current = player_open(&opt);
-        if (!current)
+        if (!current) {
             plat_log("cannot play %s\n", opt.iso_path);
+            library_notice(lib, "Cannot play this disc image: see log.txt");
+        }
     }
     return 1;
 }
