@@ -101,6 +101,7 @@ typedef struct res {
     int active;               /* page that takes input, or -1 */
     int focus_page;           /* page of the button the script focused last, or -1 (input_page) */
     int *focus;               /* per page: the focused button, or -1 */
+    int focused;              /* the button that had the focus-in last, on any page, or -1 */
 } res;
 
 struct menu {
@@ -621,6 +622,30 @@ static void step_anims(menu *m)
 
 /* ---- focus and input ---- */
 
+static int page_open(const res *r, int page)
+{
+    for (int p = 0; p < r->page_count; p++)
+        if (r->pages[p] == page)
+            return 1;
+    return 0;
+}
+
+/* The screen has one focus: a button taking it on another page (a submenu opening, the menu
+   it returns to) takes it from the button that had it, which gets its focus-out. That button
+   stays its page's focus, for the page's return. High Tension keeps the item it opens large as
+   the submenu's heading by skipping the next focus-out, the one its page's buttons taking the
+   focus give; without it the item it returned to skipped the shrink of the next move. */
+static void take_focus(menu *m, int widget)
+{
+    res *r = m->res;
+    int old = r->focused, page = page_of(r, old);
+
+    r->focused = widget;
+    if (old < 0 || old == widget || page < 0 || page == page_of(r, widget) || !page_open(r, page) || r->focus[page] != old)
+        return;
+    do_action_named(m, &r->r.objects[old].action[RCO_BTN_FOCUS_OUT], old, "onFocusOut");
+}
+
 static void set_focus(menu *m, int widget)
 {
     res *r = m->res;
@@ -636,8 +661,13 @@ static void set_focus(menu *m, int widget)
         return;
     r->focus[page] = widget;
     m->dirty = 1;
-    if (old >= 0)
+    if (old >= 0) {
+        if (r->focused == old)
+            r->focused = -1;
         do_action_named(m, &r->r.objects[old].action[RCO_BTN_FOCUS_OUT], old, "onFocusOut");
+    }
+    if (m->res == r)
+        take_focus(m, widget);
     if (m->res == r)
         do_action_named(m, &r->r.objects[widget].action[RCO_BTN_FOCUS_IN], widget, "onFocusIn");
 }
@@ -846,8 +876,11 @@ NATIVE(w_activate)
     do_action(rf->m, &r->r.objects[rf->index].action[RCO_PAGE_ACTIVATE], rf->index);
     /* A page made active again gives its focused button its focus-in: First Blood moves its
        crosshair back to the chosen item there on return from its scene and subtitle pages. */
-    if (was != rf->index && focus >= 0 && rf->m->res == r && r->focus[rf->index] == focus)
-        do_action_named(rf->m, &r->r.objects[focus].action[RCO_BTN_FOCUS_IN], focus, "onFocusIn");
+    if (was != rf->index && focus >= 0 && rf->m->res == r && r->focus[rf->index] == focus) {
+        take_focus(rf->m, focus);
+        if (rf->m->res == r)
+            do_action_named(rf->m, &r->r.objects[focus].action[RCO_BTN_FOCUS_IN], focus, "onFocusIn");
+    }
     if (focus < 0) {
         r->activated = rf->index;
         r->activated_at = rf->m->now;
@@ -880,9 +913,11 @@ NATIVE(w_set_focus)
     /* The script focusing the widget that has the focus still gets its focus-in: Austin
        Powers restarts its pulse and records the selected item there on return from a
        submenu. */
-    if (page >= 0 && r->focus[page] == target)
-        do_action_named(rf->m, &r->r.objects[target].action[RCO_BTN_FOCUS_IN], target, "onFocusIn");
-    else
+    if (page >= 0 && r->focus[page] == target) {
+        take_focus(rf->m, target);
+        if (rf->m->res == r)
+            do_action_named(rf->m, &r->r.objects[target].action[RCO_BTN_FOCUS_IN], target, "onFocusIn");
+    } else
         set_focus(rf->m, target);
 }
 
@@ -1720,6 +1755,7 @@ static res *load_res(menu *m, const char *name)
     }
     r->active = -1;
     r->focus_page = -1;
+    r->focused = -1;
     r->activated = -1;
     same_size_labels(m, r);
     widgets = vs_new_array(r->vm, r->r.object_count);
