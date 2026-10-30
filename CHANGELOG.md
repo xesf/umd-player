@@ -8,6 +8,7 @@
 - Library: a disc image with no movie in it (In Just One Play, which has no `UMD_VIDEO/PLAYLIST.UMD`) shows "No movie in this image" instead of doing nothing when you press ✕. A disc that fails to open shows "Cannot play this disc image" for a few seconds.
 - Fixed High Tension's scene titles: some drew far too big, stretched to fill their box. All now draw at one size, under the SCENE INDEX heading.
 - Fixed High Tension's main menu item staying large after you return from a submenu and move to another item.
+- Fixed Arsène Lupin's chapter title staying on the main menu after ○ from the chapter list.
 - Fixed Last Exile's audio and subtitle menus: the arrows skipped chapters and 10 s in the video behind them instead of moving the selection.
 
 ## v0.9.3 (2026-10-28)

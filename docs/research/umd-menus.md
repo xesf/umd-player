@@ -187,6 +187,9 @@ Every disc uses `movieplayer.play`, `stop`, `resume` and `getPlayerStatus`, the 
 - **A page left active by the close of the page above it** does not get its first button focused until the script activates it. Escaflowne opens its set-up page during a transition and activates it when the transition video ends.
 - **A value set on a widget wins over the first steps of an animation** played on it, or on a group that contains it, just before in the same moment. Appleseed places its subtitle labels with `animSUBS_SetMoveIn` on the page, then sets where they go. Starship Troopers (eng) plays `animSSChapFocusIn` on the chosen scene and then sets its colour to grey.
 - **Opening a page that is already open does not reset its widgets.** Batman Returns and 24 reopen pages and rely on their state. Their backgrounds keep a script-set scale of 1.78.
+- **Back (○) runs `controller.onMenu` before an `onCancel` the script set on the button.** The order is the page's `onCancel` action, then `controller.onMenu`. A script-set `onCancel` runs only on a disc without `onMenu`. On a PSP, Back from Arsène Lupin's chapter list hides the chapter's title: its `onMenu` closes the menu pages and opens them again, while its `Nav2.onCancel` returns to the main menu with the title still shown. Up in Smoke and Rhyme and Reason, made the same way, set `onCancel` on their `Nav` buttons too.
+- **One focus on the screen.** A button taking the focus on another page gives the button that had it its focus-out. High Tension skips that focus-out to keep the item it opened large as the submenu's heading.
+- **An animation a handler plays on a widget does not stop the animation whose event step called the handler.** Last Exile's `animAUStart` plays a language marker in its `IndiAU` step, then activates the page in its next step.
 
 ## Playback and timing
 

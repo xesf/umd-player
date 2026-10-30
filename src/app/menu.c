@@ -746,8 +746,13 @@ static void do_input(menu *m, uint32_t pressed)
         return;
     if (pressed & PLAT_BTN_CIRCLE) {
         /* The focused widget's script handler, then the page's. A page with neither (Saw's
-           title descriptions) leaves Back to the disc's menu event, as the menu button. */
-        if (!script_handler(m, focus, "onCancel") &&
+           title descriptions) leaves Back to the disc's menu event, as the menu button. A
+           handler the script set on the widget goes only to a disc without that event: on a
+           PSP, Back from Arsene Lupin's chapter list runs controller.onMenu, which closes the
+           menu pages and opens them again, and the chapter's title goes with them. Nav2's
+           onCancel, set by the script, returns to the main menu with the title still shown. */
+        int menu_event = vs_is_function(vs_get(r->vm, vs_global(r->vm, "controller"), vs_intern(r->vm, "onMenu")));
+        if (!(!menu_event && script_handler(m, focus, "onCancel")) &&
             !do_action_named(m, &r->r.objects[page].action[RCO_PAGE_CANCEL], page, "onCancel"))
             menu_menu_button(m);
         return;
