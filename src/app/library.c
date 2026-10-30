@@ -1155,7 +1155,7 @@ static void fill_icon_corners(library *l)
 
 /* ---- the settings panel (△) ---- */
 
-enum { SET_START, SET_SCREEN, SET_AUDIO, SET_SUBS, SET_SCANLINES, SET_SHEETS, SET_LOGS, SET_ROWS };
+enum { SET_START, SET_SCREEN, SET_AUDIO, SET_SUBS, SET_SHEETS, SET_LOGS, SET_ROWS };
 
 static int lang_index(const char *code)
 {
@@ -1200,8 +1200,6 @@ static void settings_input(library *l, uint32_t pressed)
     } else if (dir && l->settings_row == SET_SHEETS) {
         s->info_sheets = !s->info_sheets;
         l->sheet_finished = 0;        /* on again: look for discs added since */
-    } else if (dir && l->settings_row == SET_SCANLINES) {
-        s->scanlines = !s->scanlines;
     } else if (dir && l->settings_row == SET_LOGS) {
         s->logs = !s->logs;
         plat_set_log_file(s->logs);
@@ -1241,9 +1239,6 @@ static void draw_settings(library *l)
     v.rows[SET_SHEETS].icon = ICON_CHAPTERS;
     snprintf(v.rows[SET_SHEETS].label, sizeof(v.rows[0].label), "Info sheets");
     snprintf(v.rows[SET_SHEETS].value, sizeof(v.rows[0].value), "%s", s->info_sheets ? "On" : "Off");
-    v.rows[SET_SCANLINES].icon = ICON_SCREEN;
-    snprintf(v.rows[SET_SCANLINES].label, sizeof(v.rows[0].label), "Scanlines");
-    snprintf(v.rows[SET_SCANLINES].value, sizeof(v.rows[0].value), "%s", s->scanlines ? "On" : "Off");
     v.rows[SET_LOGS].icon = ICON_CHAPTERS;
     snprintf(v.rows[SET_LOGS].label, sizeof(v.rows[0].label), "Logs");
     snprintf(v.rows[SET_LOGS].value, sizeof(v.rows[0].value), "%s", s->logs ? "On" : "Off");

@@ -3,7 +3,7 @@
 ## Unreleased
 
 - Playback: the time bar and the options panel no longer make pictures late. While the bar was up, the whole screen layer was drawn again and copied to the GPU (2 MB) for each picture, because the bar's position changed with every picture. Now only the parts that changed are drawn, and only their rows are copied: a tick of the clock copies 82 rows of 544.
-- Library: new "Scanlines" setting (off by default) draws thin dark lines across the picture, like an old TV.
+- Playback: a new "Scanlines" row in the options panel (△) draws thin dark lines across the picture, like an old TV. It is off by default and kept for every disc.
 - Library: new "Logs" setting (on by default). Off stops writing `log.txt`.
 - Library: a disc image with no movie in it (In Just One Play, which has no `UMD_VIDEO/PLAYLIST.UMD`) shows "No movie in this image" instead of doing nothing when you press ✕. A disc that fails to open shows "Cannot play this disc image" for a few seconds.
 - Fixed High Tension's scene titles: some drew far too big, stretched to fill their box. All now draw at one size, under the SCENE INDEX heading.

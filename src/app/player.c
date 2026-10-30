@@ -47,7 +47,7 @@
 #define TOAST_US      2500000
 #define SCRUB_DELAY   400000             /* us left or right is held before scrubbing starts */
 #define DETECT_US     5000000            /* border detection interval */
-#define MENU_ROWS     4
+#define MENU_ROWS     5
 #define CATCH_UP      5400               /* 90 kHz: a picture this late is still shown, not dropped (60 ms) */
 #define LATE_TICKS    4050               /* a picture shown this late counts as running late (45 ms) */
 #define CALM_US       30000000           /* clean playback before going back to the lower CPU speed */
@@ -55,7 +55,7 @@
 #define MIN_TITLE     (60 * 90000)       /* L and R skip shorter titles: menus, logos, warnings */
 #define RESUME_TAIL   (30 * 90000)       /* within 30 s of the end, start over next time */
 #define PTS_REORDER   90000              /* the reader stops this far past a title's end */
-enum { ROW_AUDIO, ROW_SUBTITLES, ROW_SCREEN, ROW_CHAPTER };
+enum { ROW_AUDIO, ROW_SUBTITLES, ROW_SCREEN, ROW_SCANLINES, ROW_CHAPTER };
 
 enum { AU_PENDING, AU_READY, AU_DROP };
 
@@ -1144,6 +1144,7 @@ static void build_osd(player *p, osd_view *v)
         v->rows[ROW_AUDIO].icon = ICON_AUDIO;
         v->rows[ROW_SUBTITLES].icon = ICON_SUBTITLES;
         v->rows[ROW_SCREEN].icon = ICON_SCREEN;
+        v->rows[ROW_SCANLINES].icon = ICON_SCREEN;
         v->rows[ROW_CHAPTER].icon = ICON_CHAPTERS;
         snprintf(v->rows[ROW_AUDIO].label, sizeof(v->rows[0].label), "Audio");
         stream_name(p, UMDV_STREAM_AUDIO, p->has_audio ? p->want_audio : DEMUX_NONE, v->rows[ROW_AUDIO].value,
@@ -1155,6 +1156,8 @@ static void build_osd(player *p, osd_view *v)
                  stream_name(p, UMDV_STREAM_SUBTITLE, p->sub_sub, a, sizeof(a)));
         snprintf(v->rows[ROW_SCREEN].label, sizeof(v->rows[0].label), "Screen");
         snprintf(v->rows[ROW_SCREEN].value, sizeof(v->rows[0].value), "%s", screen_mode_name(p->mode));
+        snprintf(v->rows[ROW_SCANLINES].label, sizeof(v->rows[0].label), "Scanlines");
+        snprintf(v->rows[ROW_SCANLINES].value, sizeof(v->rows[0].value), "%s", settings_get()->scanlines ? "On" : "Off");
         snprintf(v->rows[ROW_CHAPTER].label, sizeof(v->rows[0].label), "Chapter");
         {
             uint64_t at = p->playlist.chapters[p->title->first_chapter + p->menu_chapter].pts;
@@ -1397,6 +1400,11 @@ static void menu_input(player *p, uint32_t pressed)
         case ROW_AUDIO: cycle_audio(p, dir); break;
         case ROW_SUBTITLES: cycle_subtitles(p, dir); break;
         case ROW_SCREEN: cycle_screen(p, dir); break;
+        case ROW_SCANLINES:
+            settings_get()->scanlines = !settings_get()->scanlines;   /* for every disc, kept */
+            settings_save();
+            p->dirty = 1;
+            break;
         default:
             p->menu_chapter = (p->menu_chapter + dir + p->title->chapter_count) % p->title->chapter_count;
             break;
