@@ -8,7 +8,7 @@
    time bar, and the clock and battery. The player fills an osd_view; osd_draw renders it into
    the UI layer. */
 
-#define OSD_ROWS 5
+#define OSD_ROWS 7
 
 typedef struct osd_row {
     icon_id icon;

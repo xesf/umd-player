@@ -54,6 +54,7 @@ app_settings *settings_get(void)
     loaded = 1;
     s.screen = SCREEN_ZOOM;
     s.start_disc = 1;                 /* a disc plays as on a PSP: logos, warnings, menus */
+    s.logs = 1;
     snprintf(s.audio, sizeof(s.audio), "en");
     snprintf(s.subs, sizeof(s.subs), SUBS_SYSTEM);
     if ((n = plat_data_load(FILE_NAME, buf, (int)sizeof(buf) - 1)) <= 0)
@@ -72,6 +73,10 @@ app_settings *settings_get(void)
             s.start_disc = strcmp(value, "disc") == 0;
         else if (strcmp(key, "sheets") == 0)
             s.info_sheets = strcmp(value, "on") == 0;
+        else if (strcmp(key, "scanlines") == 0)
+            s.scanlines = strcmp(value, "on") == 0;
+        else if (strcmp(key, "logs") == 0)
+            s.logs = strcmp(value, "on") == 0;
         else if (strcmp(key, "subtitles") == 0 && strlen(value) <= 3)
             snprintf(s.subs, sizeof(s.subs), "%s", value);
     }
@@ -81,9 +86,10 @@ app_settings *settings_get(void)
 void settings_save(void)
 {
     const app_settings *s = settings_get();
-    char buf[128];
-    int n = snprintf(buf, sizeof(buf), "screen %d\naudio %s\nsubtitles %s\nstart %s\nsheets %s\n", s->screen, s->audio,
-                     s->subs, s->start_disc ? "disc" : "movie", s->info_sheets ? "on" : "off");
+    char buf[192];
+    int n = snprintf(buf, sizeof(buf), "screen %d\naudio %s\nsubtitles %s\nstart %s\nsheets %s\nscanlines %s\nlogs %s\n",
+                     s->screen, s->audio, s->subs, s->start_disc ? "disc" : "movie", s->info_sheets ? "on" : "off",
+                     s->scanlines ? "on" : "off", s->logs ? "on" : "off");
 
     if (plat_data_save(FILE_NAME, buf, n) < 0)
         plat_log("cannot save the settings\n");

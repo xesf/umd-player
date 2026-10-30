@@ -17,7 +17,8 @@
 static uint32_t held_buttons;
 static int touch_down, touch_x, touch_y;   /* the mouse stands in for the touch screen */
 static double scroll_acc;                  /* wheel distance not yet given out as steps */
-static CALayer *video_layer, *overlay_layer, *ui_layer;
+static CALayer *video_layer, *scan_layer, *overlay_layer, *ui_layer;
+static int scan_rows;          /* the window height in pixels scan_layer's image was made for */
 static uint32_t overlay_id, ui_id;
 static NSView *content_view;
 
@@ -96,6 +97,10 @@ static uint32_t button_for_key(unsigned short code)
     video_layer.contentsGravity = kCAGravityResize;
     video_layer.magnificationFilter = kCAFilterLinear;
     [content_view.layer addSublayer:video_layer];
+    scan_layer = [CALayer layer];
+    scan_layer.contentsGravity = kCAGravityResize;
+    scan_layer.magnificationFilter = kCAFilterNearest;
+    [content_view.layer addSublayer:scan_layer];
     overlay_layer = [CALayer layer];
     overlay_layer.contentsGravity = kCAGravityResize;
     [content_view.layer addSublayer:overlay_layer];
@@ -198,6 +203,29 @@ void plat_present(plat_frame *frame, const plat_present_info *info)
                                               1 - (CGFloat)(info->src_y + info->src_h) / info->video_h,
                                               (CGFloat)info->src_w / info->video_w, (CGFloat)info->src_h / info->video_h);
         video_layer.frame = screen_rect(info->dst);
+    }
+    if (!frame || !info->scanlines) {
+        scan_layer.contents = nil;
+        scan_rows = 0;
+    } else {
+        /* A column one pixel wide and as high as the window, a line pair per 2 rows of a
+           544-row screen, cut to the video's rows. */
+        CGFloat scale = content_view.window ? content_view.window.backingScaleFactor : 1;
+        int rows = (int)(content_view.bounds.size.height * scale + 0.5);
+        if (rows > 0 && rows != scan_rows) {
+            uint8_t *px = calloc((size_t)rows, 4);
+            if (px) {
+                for (int y = 0; y < rows; y++)
+                    px[y * 4 + 3] = (int)((long)y * 544 / rows) % 2 ? 96 : 0;
+                CGImageRef img = image_from_rgba(px, 1, rows, 4);
+                scan_layer.contents = (__bridge id)img;
+                CGImageRelease(img);
+                free(px);
+                scan_rows = rows;
+            }
+        }
+        scan_layer.frame = screen_rect(info->dst);
+        scan_layer.contentsRect = CGRectMake(0, 1 - info->dst.y - info->dst.h, 1, info->dst.h);
     }
     if (!frame || !info->overlay_rgba) {
         overlay_layer.contents = nil;

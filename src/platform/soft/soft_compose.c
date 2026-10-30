@@ -192,6 +192,20 @@ void soft_compose(uint8_t *out, int w, int h, int stride, plat_frame *frame, con
                     memcpy(out + y * stride + vx0 * 4, cache + ((size_t)y * w + vx0) * 4, (size_t)(vx1 - vx0) * 4);
             }
         }
+        if (info->scanlines) {
+            /* As many line pairs as a 544-row screen has (a pair per 2 rows there), from the
+               top of the window; the dark half at five eighths. */
+            box v = to_box(info->dst, w, h);
+            int vx0 = v.x0 < 0 ? 0 : v.x0, vx1 = v.x1 > w ? w : v.x1;
+            for (int y = v.y0 < 0 ? 0 : v.y0; y < v.y1 && y < h && vx1 > vx0; y++) {
+                uint8_t *row = out + y * stride;
+                if ((int)((long)y * 544 / h) % 2 == 0)
+                    continue;
+                for (int x = vx0 * 4; x < vx1 * 4; x++)
+                    if ((x & 3) != 3)
+                        row[x] = (uint8_t)(row[x] * 5 >> 3);
+            }
+        }
         if (info->overlay_rgba)
             draw_rgba(out, w, h, stride, info->overlay_rgba, info->overlay_w, info->overlay_h, info->overlay_stride,
                       to_box(info->overlay_dst, w, h));

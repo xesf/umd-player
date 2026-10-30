@@ -264,6 +264,13 @@ uint64_t plat_time_us(void)
 
 /* ---- logging and system state ---- */
 
+static int log_file_on = 1;
+
+void plat_set_log_file(int on)
+{
+    log_file_on = on;
+}
+
 void plat_log(const char *fmt, ...)
 {
     char buf[1024];
@@ -284,7 +291,7 @@ void plat_log(const char *fmt, ...)
             if (data_path(path, sizeof(path), "log.txt") == 0)
                 file = open_file(path, L"w");
         }
-        if (file) {
+        if (file && log_file_on) {
             fputs(buf, file);
             fflush(file);
         }

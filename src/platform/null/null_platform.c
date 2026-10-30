@@ -55,6 +55,8 @@ void plat_iso_close(umd_source *src)
     fclose((FILE *)file.user);
 }
 
+void plat_set_log_file(int on) { (void)on; }
+
 void plat_log(const char *fmt, ...)
 {
     va_list ap;

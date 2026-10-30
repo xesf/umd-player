@@ -165,11 +165,21 @@ static void log_writer(void *user)
     }
 }
 
+static volatile int log_file_on = 1;
+
+void plat_set_log_file(int on)
+{
+    log_file_on = on;
+}
+
 void plat_log(const char *fmt, ...)
 {
     char line[512];
     va_list ap;
     int n;
+
+    if (!log_file_on)
+        return;           /* the log file is the only place lines go on the Vita */
 
     va_start(ap, fmt);
     n = vsnprintf(line, sizeof(line), fmt, ap);

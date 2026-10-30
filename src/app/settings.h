@@ -14,10 +14,12 @@ typedef struct app_settings {
     char subs[4];             /* SUBS_OFF, SUBS_SYSTEM, or an ISO 639-1 language */
     int start_disc;           /* 1: play the disc's intros before the movie; 0: the movie only */
     int info_sheets;          /* 1: write an info sheet for each disc that has none (infosheet.h) */
+    int scanlines;            /* 1: dark lines over the video, like a CRT */
+    int logs;                 /* 1: write log.txt in the data folder */
 } app_settings;
 
 /* The settings, loaded on first use (defaults: Zoom, English audio, subtitles in the system
-   language). */
+   language, no scanlines, logs on). */
 app_settings *settings_get(void);
 void settings_save(void);
 

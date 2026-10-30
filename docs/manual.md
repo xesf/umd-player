@@ -64,7 +64,9 @@ Press △ in the library. Use Up and Down to choose a row, Left and Right to cha
 | Screen | Fit, Zoom, Fill, Stretch | The picture size for discs you have not played yet. |
 | Audio | 16 languages | The audio language for new discs. A disc without it plays its first track. |
 | Subtitles | Off, System, 16 languages | The subtitle language for new discs. System uses the Vita's language. |
+| Scanlines | Off, On | On draws thin dark lines across the picture, like an old TV. Off is the default. |
 | Info sheets | Off, On | On writes an info sheet for each disc that has none. Off (the default) writes nothing. |
+| Logs | On, Off | On (the default) writes what the player does to `log.txt` in the data folder (`ux0:data/umdplayer` on the Vita). Send this file with a bug report. |
 
 A disc you have watched keeps its own audio, subtitle and screen choices.
 

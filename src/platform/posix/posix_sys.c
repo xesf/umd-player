@@ -137,6 +137,13 @@ static int data_path(char *path, size_t size, const char *name);
 
 /* To the terminal, and to log.txt in the data folder (~/.umdplayer on macOS), started anew
    each run: an app opened from the Finder has no terminal. */
+static int log_file_on = 1;
+
+void plat_set_log_file(int on)
+{
+    log_file_on = on;
+}
+
 void plat_log(const char *fmt, ...)
 {
     static FILE *file;
@@ -153,7 +160,7 @@ void plat_log(const char *fmt, ...)
     vprintf(fmt, ap);
     va_end(ap);
     fflush(stdout);
-    if (file) {
+    if (file && log_file_on) {
         va_start(ap, fmt);
         vfprintf(file, fmt, ap);
         va_end(ap);

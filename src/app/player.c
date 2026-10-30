@@ -1303,6 +1303,7 @@ static void present(player *p)
         p->present.dst = (plat_rect){p->window[0], p->window[1], p->window[2], p->window[3]};
     if (p->present.overlay_rgba)
         p->present.overlay_dst = screen_map(&g, p->sub_x, p->sub_y, p->present.overlay_w, p->present.overlay_h);
+    p->present.scanlines = settings_get()->scanlines;
     plat_present(p->shown, &p->present);
     p->dirty = 0;
 }

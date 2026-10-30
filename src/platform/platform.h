@@ -19,6 +19,8 @@ void plat_iso_close(umd_source *src);
 
 /* ---- Logging: stdout on macOS, ux0:data/umdplayer/log.txt on the Vita ---- */
 void plat_log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+/* 0 stops writing log.txt (the settings' Logs: Off); on by default. */
+void plat_set_log_file(int on);
 
 /* Calls fn for each entry of a directory, hidden ones left out (plat_hidden_entry); is_dir is
    1 for a folder, or a link to one. Returns 0, or -1 if it cannot be read. */
@@ -129,6 +131,8 @@ typedef struct plat_present_info {
     int src_x, src_y, src_w, src_h;     /* the part of the picture to show */
     plat_rect dst;                      /* where it goes */
     int deinterlace;                    /* blend the two fields (macOS only; the Vita uses bob) */
+    int scanlines;                      /* darken every other line over the video, like a CRT: a line
+                                           pair per 2 pixels of a 544-pixel-high screen */
     /* Subtitle overlay: RGBA, straight alpha. NULL for none; id changes when the image changes. */
     const uint8_t *overlay_rgba;
     int overlay_w, overlay_h, overlay_stride;

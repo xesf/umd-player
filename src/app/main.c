@@ -38,6 +38,7 @@ int app_init(int argc, char **argv)
     const char *path = NULL;
 
     canvas_set_glyph_source(plat_glyph);   /* titles in Japanese, accents, ... */
+    plat_set_log_file(settings_get()->logs);
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-t") == 0 && i + 1 < argc)

@@ -23,7 +23,7 @@
 #define PATCHER_USSE   (64 * 1024)
 #define OVERLAY_MAX_W  720
 #define OVERLAY_MAX_H  480
-#define VERTICES       12             /* 4 per layer: video, subtitle, UI */
+#define VERTICES       16             /* 4 per layer: video, scanlines, subtitle, UI */
 #define SPRITES_MAX    512            /* menu pictures drawn in one frame */
 #define TEX_CACHE      384            /* menu pictures kept in GPU memory */
 #define TEX_IDLE       300            /* frames unused before a picture's copy is dropped */
@@ -63,6 +63,7 @@ typedef struct layer_tex {
 } layer_tex;
 
 static layer_tex sub_tex, ui_tex;
+static uint8_t *scan_mem;        /* 8x2: a clear row and a dark one, repeated down the video */
 static const SceGxmProgramParameter *wvp_param;
 static uint8_t *display[DISPLAY_BUFFERS];
 static SceGxmColorSurface surface[DISPLAY_BUFFERS];
@@ -250,6 +251,12 @@ int vita_gfx_init(void)
     ui_tex.mem = gpu_alloc(SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW, FB_BYTES, 256 * 1024, SCE_GXM_MEMORY_ATTRIB_READ, 1);
     ui_tex.max_w = SCREEN_W;
     ui_tex.max_h = SCREEN_H;
+    scan_mem = gpu_alloc(SCE_KERNEL_MEMBLOCK_TYPE_USER_RW_UNCACHE, 8 * 2 * 4, 4096, SCE_GXM_MEMORY_ATTRIB_READ, 1);
+    if (scan_mem) {
+        memset(scan_mem, 0, 8 * 2 * 4);
+        for (int x = 0; x < 8; x++)
+            scan_mem[(8 + x) * 4 + 3] = 96;
+    }
     indices = gpu_alloc(SCE_KERNEL_MEMBLOCK_TYPE_USER_RW_UNCACHE, 4 * sizeof(uint16_t), 4096, SCE_GXM_MEMORY_ATTRIB_READ, 1);
     if (!vertices || !sprite_vertices || !indices || !sub_tex.mem || !ui_tex.mem)
         return -1;
@@ -457,6 +464,16 @@ int vita_gfx_present(const uint8_t *image, int image_w, int image_h, int pic_x, 
         quad(&vertices[0], info->dst, (float)(pic_x + info->src_x) / image_w, (float)(pic_y + info->src_y) / image_h,
              (float)(pic_x + info->src_x + info->src_w) / image_w, (float)(pic_y + info->src_y + info->src_h) / image_h);
         draw(fprog, &tex, &vertices[0]);
+        if (info->scanlines && scan_mem &&
+            sceGxmTextureInitLinear(&tex, scan_mem, SCE_GXM_TEXTURE_FORMAT_A8B8G8R8, 8, 2, 0) == 0) {
+            sceGxmTextureSetMinFilter(&tex, SCE_GXM_TEXTURE_FILTER_POINT);
+            sceGxmTextureSetMagFilter(&tex, SCE_GXM_TEXTURE_FILTER_POINT);
+            sceGxmTextureSetUAddrMode(&tex, SCE_GXM_TEXTURE_ADDR_REPEAT);
+            sceGxmTextureSetVAddrMode(&tex, SCE_GXM_TEXTURE_ADDR_REPEAT);
+            /* One texture row per screen row, counted from the top of the screen. */
+            quad(&vertices[12], info->dst, 0, info->dst.y * SCREEN_H / 2, 1, (info->dst.y + info->dst.h) * SCREEN_H / 2);
+            draw(fprog_blend, &tex, &vertices[12]);
+        }
     }
     if (image && info->overlay_rgba &&
         upload(&sub_tex, info->overlay_rgba, info->overlay_w, info->overlay_h, info->overlay_stride, info->overlay_id, 0, 0,
