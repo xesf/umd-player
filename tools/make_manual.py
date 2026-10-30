@@ -170,11 +170,10 @@ def main():
            chars=25)
     p.rows([('Start', 'Disc: logos, menus. Movie: at once.'),
             ('Screen', 'Picture size'), ('Audio', 'Language'), ('Subs', 'Off, System or a language'),
-            ('Sheets', 'Info sheets in metadata/')],
+            ('Sheets', 'Info sheets in metadata/'), ('Logs', 'Write log.txt')],
            key_w=116, chars=15)
     p.y = max(p.y, BAND + 74 + 272 + 16)
-    p.para('Screen, Audio and Subtitles apply to discs you have not played yet. A disc you watched '
-           'keeps its own choices.')
+    p.para('Screen, Audio, Subs: for discs not played yet. A watched disc keeps its own.')
     p.save(out, 4)
 
     p = Page(base, 5, 'Watching a movie')
@@ -191,7 +190,7 @@ def main():
     put_half(p.c, os.path.join(shots, 'player-options.png'), W - LEFT - 480, p.y)
     p.para('The time bar shows the disc, the position and the length.', chars=25)
     p.para('The options panel (Triangle) changes audio and subtitles while the movie plays, the '
-           'screen mode and the chapter.', chars=25)
+           'screen mode, scanlines and the chapter.', chars=25)
     p.y = max(p.y, BAND + 74 + 272 + 16)
     p.para('Up/Down: row. Left/Right: change. Cross on Chapter: go there. Circle: close. The panel '
            'also shows the date, time and battery.')

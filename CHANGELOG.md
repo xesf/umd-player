@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.9.4 (2026-10-30)
 
 - Playback: the time bar and the options panel no longer make pictures late. While the bar was up, the whole screen layer was drawn again and copied to the GPU (2 MB) for each picture, because the bar's position changed with every picture. Now only the parts that changed are drawn, and only their rows are copied: a tick of the clock copies 82 rows of 544.
 - Playback: a new "Scanlines" row in the options panel (△) draws thin dark lines across the picture, like an old TV. It is off by default and kept for every disc.
