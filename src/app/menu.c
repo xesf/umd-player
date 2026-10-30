@@ -36,6 +36,7 @@ typedef struct wstate {
     float fade;               /* fade steps (RCO step 6): an opacity apart from the colour's alpha */
     float view_rot[3];        /* while a rotation turns: the orientation drawn, the short way */
     int view_rot_on;
+    int script_image;         /* the script set its texture */
 } wstate;
 
 typedef struct tween {
@@ -195,6 +196,7 @@ static void reset_widget(res *r, int i)
     memcpy(w->scale, o->scale, sizeof(w->scale));
     memset(w->rot, 0, sizeof(w->rot));
     w->image = o->image;
+    w->script_image = 0;
     w->has_crop = 0;
     w->hidden = 0;
     w->fade = 1;
@@ -1079,6 +1081,7 @@ static int widget_set(vsmx *vm, void *host, const char *key, vs_value value)
     if (strcmp(key, "texture") == 0) {
         ref *t = vs_host(value, &texture_class);
         r->w[rf->index].image = t ? t->index : -1;
+        r->w[rf->index].script_image = 1;
         rf->m->dirty = 1;
         return 1;
     }
@@ -2643,6 +2646,17 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
                     iw <= pw && drawn > 1.03f * (float)iw && drawn > (float)pw)
                     rule = OWN;
             }
+            /* A plane the script gives pictures of different sizes shows them all at one
+               magnification, their own: High Tension's scene titles, 55x17 to 163x14 and one
+               127x40 of two lines, go in turn into one 326x80 plane, the box around them all
+               at twice their size. Judged one by one, the short ones stretched to fill it as
+               strips, others doubled and some kept their size. At their own size the two-line
+               title ends just under the SCENE INDEX heading. Pictures of the plane's shape
+               (a highlight swapped for another) still fill it. */
+            if (w->script_image && r->r.objects[i].kind == RCO_PLANE && !r->img_fill[image] &&
+                (rule == FIT || rule == STRETCH) && width < 0.9f * UNITS_W && height < 0.9f * UNITS_H &&
+                fabsf((width / height) / ((float)iw / (float)ih) - 1.0f) > 0.03f)
+                rule = OWN;
             if (r->label_k[i] > 0) {
                 width = (float)iw * r->label_k[i];
                 height = (float)ih * r->label_k[i];
