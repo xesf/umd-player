@@ -12,6 +12,8 @@ typedef struct canvas {
 #define RGBA(r, g, b, a) ((uint32_t)(r) << 24 | (uint32_t)(g) << 16 | (uint32_t)(b) << 8 | (uint32_t)(a))
 
 void canvas_clear(canvas *c);
+/* Clears rows y0 to y1 - 1. */
+void canvas_clear_rows(canvas *c, int y0, int y1);
 /* Overwrites the rectangle (clipped to the canvas). */
 void canvas_rect(canvas *c, int x, int y, int w, int h, uint32_t rgba);
 /* Draws UTF-8 text 8 * scale pixels high with a 1-pixel shadow and returns the width drawn.

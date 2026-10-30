@@ -40,6 +40,9 @@ void osd_draw_menu(const osd_view *v, canvas *c);
 /* Returns 1 if anything is visible. */
 int osd_visible(const osd_view *v);
 void osd_draw(const osd_view *v, canvas *c);
+/* Brings c from showing old to showing v, redrawing only the parts that changed (old NULL:
+   all of it). Returns 0 when nothing changed, else 1 with the changed rows in *from to *to - 1. */
+int osd_redraw(const osd_view *v, const osd_view *old, canvas *c, int *from, int *to);
 
 /* The clock and battery box, also used by the library. Returns its width. */
 int osd_draw_status(canvas *c, int right, int top, const char *clock, int battery, int charging);

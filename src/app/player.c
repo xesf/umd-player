@@ -174,7 +174,12 @@ struct player {
 
     /* On-screen display. */
     canvas ui;
-    osd_view osd_drawn;              /* what the UI layer holds now */
+    osd_view osd_drawn;              /* what the UI canvas holds, when osd_valid */
+    int osd_valid;
+    /* Each change to the canvas gets an id; the rows changed since the last one handed to the
+       platform go with the next, so a second's tick of the time bar copies 82 rows, not 544. */
+    uint32_t osd_id, osd_shown_id;
+    int osd_dirty_from, osd_dirty_to;
     int menu_open, menu_row, menu_chapter;
     char toast[64];
     icon_id toast_icon;
@@ -1205,25 +1210,44 @@ static int update_osd(player *p)
         p->present.ui_id = p->layer_id | 0x40000000u;
         p->present.ui_sprites = p->layer_sprites;
         p->present.ui_sprite_count = p->layer_sprite_count;
+        p->present.ui_prev_id = 0;
+        p->present.ui_rows_from = p->present.ui_rows_to = 0;
         return changed;
     }
 
     build_osd(p, &v);
-    if (memcmp(&v, &p->osd_drawn, sizeof(v)) == 0)
-        return 0;
-    p->osd_drawn = v;
-    if (osd_visible(&v)) {
-        osd_draw(&v, &p->ui);
+    {
+        int from, to, vis = osd_visible(&v);
+        const uint8_t *want = vis ? p->ui.rgba : NULL;
+
+        if (osd_redraw(&v, p->osd_valid ? &p->osd_drawn : NULL, &p->ui, &from, &to)) {
+            p->osd_id = 0x08000000u | ((p->osd_id + 1) & 0x07FFFFFFu);   /* apart from the menu layer's ids */
+            if (p->osd_dirty_to <= p->osd_dirty_from) {
+                p->osd_dirty_from = from;
+                p->osd_dirty_to = to;
+            } else {
+                p->osd_dirty_from = from < p->osd_dirty_from ? from : p->osd_dirty_from;
+                p->osd_dirty_to = to > p->osd_dirty_to ? to : p->osd_dirty_to;
+            }
+        } else if (p->present.ui_rgba == want && !p->present.ui_sprites && (!vis || p->present.ui_id == p->osd_id)) {
+            return 0;
+        }
+        p->osd_drawn = v;
+        p->osd_valid = 1;
         p->present.ui_sprites = NULL;
-        p->present.ui_rgba = p->ui.rgba;
-        p->present.ui_w = p->ui.w;
-        p->present.ui_h = p->ui.h;
-        p->present.ui_stride = p->ui.stride;
-        p->present.ui_id++;
-    } else {
-        p->present.ui_rgba = NULL;
+        p->present.ui_rgba = want;
+        if (vis) {
+            p->present.ui_w = p->ui.w;
+            p->present.ui_h = p->ui.h;
+            p->present.ui_stride = p->ui.stride;
+            p->present.ui_prev_id = p->osd_shown_id;
+            p->present.ui_rows_from = p->osd_shown_id ? p->osd_dirty_from : 0;
+            p->present.ui_rows_to = p->osd_shown_id ? p->osd_dirty_to : 0;
+            p->present.ui_id = p->osd_shown_id = p->osd_id;
+            p->osd_dirty_from = p->osd_dirty_to = 0;
+        }
+        return 1;
     }
-    return 1;
 }
 
 /* Looks for black borders in the shown frame and grows the known picture area. */
@@ -1558,7 +1582,7 @@ void player_set_layer(player *p, const uint8_t *rgba, int w, int h, int stride, 
     p->layer_h = h;
     p->layer_stride = stride;
     p->layer_id = id;
-    memset(&p->osd_drawn, 0xFF, sizeof(p->osd_drawn));   /* redraw the OSD when the layer goes */
+    p->osd_shown_id = 0;      /* the layer may have taken the platform's copy: the next OSD goes whole */
     p->dirty = 1;
 }
 

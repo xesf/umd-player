@@ -13,6 +13,12 @@ void canvas_clear(canvas *c)
         memset(c->rgba + (size_t)y * c->stride, 0, (size_t)c->w * 4);
 }
 
+void canvas_clear_rows(canvas *c, int y0, int y1)
+{
+    for (int y = y0 < 0 ? 0 : y0; y < y1 && y < c->h; y++)
+        memset(c->rgba + (size_t)y * c->stride, 0, (size_t)c->w * 4);
+}
+
 void canvas_rect(canvas *c, int x, int y, int w, int h, uint32_t rgba)
 {
     uint8_t px[4] = {(uint8_t)(rgba >> 24), (uint8_t)(rgba >> 16), (uint8_t)(rgba >> 8), (uint8_t)rgba};

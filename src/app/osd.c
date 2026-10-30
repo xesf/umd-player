@@ -155,6 +155,11 @@ void osd_bar_area(int w, int h, int *top, int *x0, int *x1)
     *x1 = w - 32;
 }
 
+static int bar_fill(const osd_view *v, int bw)
+{
+    return (int)(bw * (v->progress < 0 ? 0 : v->progress > 1 ? 1 : v->progress));
+}
+
 static void draw_bar(const osd_view *v, canvas *c)
 {
     int h = PAD + ICON + 10 + 8 + PAD, y = c->h - h, bw = c->w - 2 * 32;
@@ -165,12 +170,11 @@ static void draw_bar(const osd_view *v, canvas *c)
     canvas_text(c, c->w - 32 - canvas_text_width(v->time_text, SCALE), y + PAD + (ICON - LINE) / 2, SCALE, TEXT,
                 v->time_text);
     canvas_rect(c, 32, y + PAD + ICON + 10, bw, 8, BAR_BG);
-    canvas_rect(c, 32, y + PAD + ICON + 10, (int)(bw * (v->progress < 0 ? 0 : v->progress > 1 ? 1 : v->progress)), 8, BAR_FG);
+    canvas_rect(c, 32, y + PAD + ICON + 10, bar_fill(v, bw), 8, BAR_FG);
 }
 
-void osd_draw(const osd_view *v, canvas *c)
+static void draw_top(const osd_view *v, canvas *c)
 {
-    canvas_clear(c);
     if (v->toast[0]) {
         int w = (v->toast_icon != ICON_NONE ? ICON + 12 : 0) + canvas_text_width(v->toast, SCALE) + 2 * PAD;
         canvas_rect(c, 24, 24, w, ICON + 16, BG);
@@ -181,8 +185,115 @@ void osd_draw(const osd_view *v, canvas *c)
     }
     if (v->show_status)
         osd_draw_status(c, c->w - 24, 24, v->clock, v->battery, v->charging);
+}
+
+void osd_draw(const osd_view *v, canvas *c)
+{
+    canvas_clear(c);
+    draw_top(v, c);
     if (v->menu_open)
         osd_draw_menu(v, c);
     if (v->show_bar)
         draw_bar(v, c);
+}
+
+/* The OSD is drawn in three bands of rows that do not meet: the message and the clock at the
+   top, the options panel, and the time bar. */
+enum { BAND_TOP, BAND_MENU, BAND_BAR, BANDS };
+
+/* The rows band b of v covers (with the text shadow), or 0 when it shows nothing. */
+static int band_rows(const osd_view *v, int b, int ch, int *y0, int *y1)
+{
+    switch (b) {
+    case BAND_TOP:
+        *y0 = 24;
+        *y1 = 24 + (ICON + 16 > LINE + 24 ? ICON + 16 : LINE + 24) + 2;
+        return v->toast[0] || v->show_status;
+    case BAND_MENU: {
+        int h = PAD + LINE + (v->subheader[0] ? 14 : 0) + PAD + v->row_count * ROW_H + PAD + 2 * 20 + PAD;
+        *y0 = (ch - h) / 2 - 10;
+        *y1 = *y0 + h;
+        return v->menu_open;
+    }
+    default:
+        *y0 = ch - (PAD + ICON + 10 + 8 + PAD);
+        *y1 = ch;
+        return v->show_bar;
+    }
+}
+
+static int band_same(const osd_view *a, const osd_view *b, int band, int cw)
+{
+    switch (band) {
+    case BAND_TOP:
+        if (strcmp(a->toast, b->toast) != 0 || (a->toast[0] && a->toast_icon != b->toast_icon) ||
+            a->show_status != b->show_status)
+            return 0;
+        return !a->show_status ||
+               (strcmp(a->clock, b->clock) == 0 && a->battery == b->battery && a->charging == b->charging);
+    case BAND_MENU:
+        if (a->menu_open != b->menu_open)
+            return 0;
+        if (!a->menu_open)
+            return 1;
+        return a->menu_row == b->menu_row && a->row_count == b->row_count && strcmp(a->header, b->header) == 0 &&
+               strcmp(a->subheader, b->subheader) == 0 && strcmp(a->cross_hint, b->cross_hint) == 0 &&
+               memcmp(a->rows, b->rows, sizeof(a->rows[0]) * (size_t)(a->row_count < OSD_ROWS ? a->row_count : OSD_ROWS)) == 0;
+    default:
+        if (a->show_bar != b->show_bar)
+            return 0;
+        /* The bar's fill is compared in pixels: the position moves with every picture. */
+        return !a->show_bar || (a->paused == b->paused && strcmp(a->title, b->title) == 0 &&
+                                strcmp(a->time_text, b->time_text) == 0 &&
+                                bar_fill(a, cw - 2 * 32) == bar_fill(b, cw - 2 * 32));
+    }
+}
+
+int osd_redraw(const osd_view *v, const osd_view *old, canvas *c, int *from, int *to)
+{
+    int lo = c->h, hi = 0, y0[BANDS][2], y1[BANDS][2], on[BANDS][2];
+
+    *from = *to = 0;
+    if (!old) {
+        osd_draw(v, c);
+        *to = c->h;
+        return 1;
+    }
+    for (int b = 0; b < BANDS; b++) {
+        on[b][0] = band_rows(old, b, c->h, &y0[b][0], &y1[b][0]);
+        on[b][1] = band_rows(v, b, c->h, &y0[b][1], &y1[b][1]);
+    }
+    /* Bands that would meet (a long options list): everything again. */
+    for (int b = 0; b + 1 < BANDS; b++)
+        for (int k = 0; k < 2; k++)
+            for (int j = 0; j < 2; j++)
+                if (on[b][k] && on[b + 1][j] && y1[b][k] > y0[b + 1][j]) {
+                    osd_draw(v, c);
+                    *to = c->h;
+                    return 1;
+                }
+    for (int b = 0; b < BANDS; b++) {
+        if (band_same(v, old, b, c->w))
+            continue;
+        for (int k = 0; k < 2; k++)
+            if (on[b][k]) {
+                lo = y0[b][k] < lo ? y0[b][k] : lo;
+                hi = y1[b][k] > hi ? y1[b][k] : hi;
+            }
+        if (on[b][0])
+            canvas_clear_rows(c, y0[b][0], y1[b][0]);
+        if (on[b][1]) {
+            if (b == BAND_TOP)
+                draw_top(v, c);
+            else if (b == BAND_MENU)
+                osd_draw_menu(v, c);
+            else
+                draw_bar(v, c);
+        }
+    }
+    if (hi <= lo)
+        return 0;
+    *from = lo < 0 ? 0 : lo;
+    *to = hi > c->h ? c->h : hi;
+    return 1;
 }
