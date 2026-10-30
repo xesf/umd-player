@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Playback: the time bar and the options panel no longer make pictures late. While the bar was up, the whole screen layer was drawn again and copied to the GPU (2 MB) for each picture, because the bar's position changed with every picture. Now only the parts that changed are drawn, and only their rows are copied: a tick of the clock copies 82 rows of 544.
+- Library: new "Scanlines" setting (off by default) draws thin dark lines across the picture, like an old TV.
+- Library: new "Logs" setting (on by default). Off stops writing `log.txt`.
+- Library: a disc image with no movie in it (In Just One Play, which has no `UMD_VIDEO/PLAYLIST.UMD`) shows "No movie in this image" instead of doing nothing when you press ✕. A disc that fails to open shows "Cannot play this disc image" for a few seconds.
+- Fixed High Tension's scene titles: some drew far too big, stretched to fill their box. All now draw at one size, under the SCENE INDEX heading.
+- Fixed High Tension's main menu item staying large after you return from a submenu and move to another item.
+- Fixed Last Exile's audio and subtitle menus: the arrows skipped chapters and 10 s in the video behind them instead of moving the selection.
+
 ## v0.9.3 (2026-10-28)
 
 - Fixed the time bar and the options panel: v0.9.2 drew them on their own thread, which broke them, so they are drawn on the playback thread again. The late pictures while the bar is on screen come back until a faster way is found.
