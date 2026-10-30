@@ -114,6 +114,7 @@ struct menu {
     int poll_widget, poll_prop, poll_count;   /* get_values: one moving value read again and again */
     uint64_t poll_now;
     anim_run runs[MAX_RUNS];
+    const anim_run *stepping;      /* the animation whose event step runs now */
     mtimer timers[MAX_TIMERS];
     int next_timer;
     int lock;                 /* animations holding an input lock */
@@ -519,7 +520,7 @@ static void play_anim(menu *m, int anim, int target)
             continue;
         if (m->runs[i].anim == anim)
             run = &m->runs[i];
-        else if (m->runs[i].started < m->now)
+        else if (m->runs[i].started < m->now && &m->runs[i] != m->stepping)
             m->runs[i].active = 0;
     }
     for (int i = 0; !run && i < MAX_RUNS; i++)
@@ -580,8 +581,18 @@ static int step_run(menu *m, anim_run *run)
             }
             if (!s->event)
                 break;
-            /* "this" is the widget the animation runs on (postBlink switches on this.name) */
-            call_event(m, s->event, run->target);
+            /* "this" is the widget the animation runs on (postBlink switches on this.name).
+               An animation the handler plays on that widget runs beside this one, which goes
+               on: Last Exile's audio page opens with animAUStart, whose IndiAU step plays
+               animAUEngIndi on the page and whose next step, PageActivate, gives the page
+               its focus. Stopped there, the page took no keys and the arrows went to the
+               video behind it. */
+            {
+                const anim_run *outer = m->stepping;
+                m->stepping = run;
+                call_event(m, s->event, run->target);
+                m->stepping = outer;
+            }
             if (m->res != r)
                 return 0; /* the event changed the resource */
             /* The handler played an animation on this widget again: it starts next frame.
