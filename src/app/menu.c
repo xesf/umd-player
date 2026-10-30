@@ -573,8 +573,19 @@ static int step_run(menu *m, anim_run *run)
         case RCO_STEP_EVENT:
             if (s->anim >= 0) {
                 /* Another animation, on the same widget. Playing this one again restarts
-                   it; from the next frame, so a loop without a delay cannot spin. */
-                int again = s->anim == run->anim;
+                   it; from the next frame, so a loop without a delay cannot spin. An
+                   animation a handler of this one started on the widget since has taken it
+                   over, and this one ends: Freddy vs. Jason's rootBtnFadeUp handler plays
+                   rootBtnFadeDown on the button, and the fades take turns. */
+                int again = s->anim == run->anim, taken = 0;
+                for (int i = 0; i < MAX_RUNS; i++)
+                    taken |= m->runs[i].active && &m->runs[i] != run && m->runs[i].target == run->target &&
+                             run->target >= 0 && m->runs[i].started > run->started;
+                if (taken) {
+                    run->active = 0;
+                    run->locked = 0;
+                    break;
+                }
                 play_anim(m, s->anim, run->target);
                 if (again)
                     run->wait_until = m->now + 1;
