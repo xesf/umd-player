@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Fixed In Just One Play's menus playing their opening animation again before taking a choice.
+
 ## v0.9.4 (2026-10-30)
 
 - Playback: the time bar and the options panel no longer make pictures late. While the bar was up, the whole screen layer was drawn again and copied to the GPU (2 MB) for each picture, because the bar's position changed with every picture. Now only the parts that changed are drawn, and only their rows are copied: a tick of the clock copies 82 rows of 544.

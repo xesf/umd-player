@@ -1369,11 +1369,19 @@ NATIVE(mp_play)
         mlog(m, "menu: play title %d: holding the picture", playlist);
         return;
     }
-    mlog(m, "menu: play title %d chapter %d audio %d subtitle %d", playlist, chapter, m->audio_id,
-         m->sub_on ? m->sub_id : -1);
     {
         menu_status st;
         m->p.status(m->p.user, &st);
+        /* play(1, 1, title) with no chapter, for the title that is playing: it plays on.
+           In Just One Play calls this as chapter 2 of a menu's opening video begins, and turns
+           the menu's buttons on; restarting the video from chapter 1 played the opening again. */
+        if (argc < 4 && st.playing && st.playlist == playlist) {
+            m->menu_mode = vs_truthy(arg(args, argc, 1));
+            mlog(m, "menu: play title %d with no chapter: it plays on", playlist);
+            return;
+        }
+        mlog(m, "menu: play title %d chapter %d audio %d subtitle %d", playlist, chapter, m->audio_id,
+             m->sub_on ? m->sub_id : -1);
         if (st.playing && !m->menu_mode && st.playlist != playlist && menu_title_resumable(m, st.playlist)) {   /* as a stop: getResumeInfo */
             m->resume_playlist = st.playlist;
             m->resume_chapter = st.chapter;
