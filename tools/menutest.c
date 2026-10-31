@@ -205,10 +205,13 @@ static void sim_play(void *user, int playlist, int chapter, int audio, int subti
     {
         /* as src/app/disc.c: a new title or a jump over 10 s waits 1 s for the drive's seek */
         uint64_t seek = 1000000;
+        int still = 0;
         if (s->st.playing && s->st.playlist == playlist) {
             uint64_t cur = s->title_end > s->now ? len - (s->title_end - s->now) : len;
-            if ((cur > from ? cur - from : from - cur) <= 10000000)
+            if ((cur > from ? cur - from : from - cur) <= 10000000) {
                 seek = 0;
+                still = s->seek_until > s->now;   /* as src/app/disc.c: the seek under way goes on */
+            }
         } else if (s->st.playlist >= 1 && s->st.playlist <= s->pl.title_count && s->st.playlist != playlist) {
             /* another title of the clip playing, or just ended, seeks in it, as
                src/app/player.c does */
@@ -225,7 +228,8 @@ static void sim_play(void *user, int playlist, int chapter, int audio, int subti
             seek = 0;                /* played again from its start, from near there */
         }
         s->left_playlist = 0;
-        s->seek_until = s->now + seek;
+        if (!still)
+            s->seek_until = s->now + seek;
     }
     s->st.playing = 1;
     s->st.paused = 0;

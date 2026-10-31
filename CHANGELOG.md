@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Fixed In Just One Play's menus playing their opening animation again before taking a choice.
+- Fixed Kill Bill Vol. 1's scene selection not showing the first scene's number until you moved.
 - Fixed Enter the Dragon's Play Movie showing a black screen with sound and taking no keys the first time; Underworld Evolution started its film the same way.
 
 ## v0.9.4 (2026-10-30)

@@ -181,12 +181,19 @@ static void d_play(void *user, int playlist, int chapter, int audio, int subtitl
         }
         /* A jump far into the title is a seek; a short one (Monty Python loops a 0.3 s chapter
            of its menu video) is not, and its chapters come at once. */
-        uint64_t jump = player_restart(d->pl, chapter, one_chapter);
+        uint64_t jump = player_restart(d->pl, chapter, one_chapter), now = plat_time_us();
         d->last_chapter = 0;
         d->first_chapter = 0;
         d->catching_up = 0;
         d->end_sent = 0;
-        d->seek_until = jump > SEEK_NEAR ? plat_time_us() + SEEK_US : 0;
+        /* A short jump adds no wait, but the drive's seek to the title, if still under way, goes
+           on: Kill Bill Vol. 1 plays a scene's preview and again 0.25 s later, and fades the
+           scene's number out in onChapter. Coming at once, it hid the number of the first
+           scene before it showed. */
+        if (jump > SEEK_NEAR)
+            d->seek_until = now + SEEK_US;
+        else if (d->seek_until <= now)
+            d->seek_until = 0;
         return;
     }
     d->audio = audio;
