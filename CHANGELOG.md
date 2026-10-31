@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Fixed In Just One Play's menus playing their opening animation again before taking a choice.
+- Fixed Enter the Dragon's Play Movie showing a black screen with sound and taking no keys the first time; Underworld Evolution started its film the same way.
 
 ## v0.9.4 (2026-10-30)
 

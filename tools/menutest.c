@@ -576,9 +576,12 @@ static int run_rco(int argc, char **argv)
     for (int i = 0; i < r.anim_count; i++) {
         const rco_anim *a = &r.anims[i];
         printf("anim %-26s %d steps:", nm(a->name), a->step_count);
-        for (int k = 0; k < a->step_count && k < 6; k++) {
+        /* MENUTEST_STEPS=1: every step with its values; otherwise the first six */
+        for (int k = 0; k < a->step_count && (k < 6 || getenv("MENUTEST_STEPS")); k++) {
             const rco_step *s = &r.steps[a->first_step + k];
             printf(" %d(%s %g)", s->kind, s->object >= 0 ? nm(r.objects[s->object].name) : nm(s->event), s->duration);
+            if (getenv("MENUTEST_STEPS"))
+                printf("[%g %g %g %g]", s->value[0], s->value[1], s->value[2], s->value[3]);
         }
         printf("\n");
     }

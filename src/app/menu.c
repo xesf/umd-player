@@ -91,6 +91,7 @@ typedef struct res {
     uint8_t *img_clear;       /* some pixels fully transparent: a frame or an overlay, not a card */
     uint8_t *img_plain;       /* a filled black box: four fifths solid, every visible pixel black */
     uint8_t *own_size;        /* per widget: draw the image at its own size (same_size_labels) */
+    uint8_t *under_movie;     /* per page: open when the movie started, hidden until opened or activated again */
     float *label_k;           /* per widget: or this many times its size, as its neighbours (0: no) */
     uint8_t **occ;            /* per image: its 8x8 blocks with a visible pixel (see blit) */
     uint32_t *img_id;         /* per image: unique while decoded, for the GPU's copy of it */
@@ -852,6 +853,7 @@ NATIVE(w_open)
     mlog(rf->m, "menu: open page %s", r->r.objects[rf->index].name ? r->r.objects[rf->index].name : "?");
     if (r->page_count < MAX_PAGES) {
         reset_tree(r, rf->index);
+        r->under_movie[rf->index] = 0;
         preload(r, rf->index);
         r->focus[rf->index] = -1;
         r->pages[r->page_count++] = rf->index;
@@ -900,6 +902,7 @@ NATIVE(w_activate)
     *ret = self;
     r->active = rf->index;
     r->active_left = 0;
+    r->under_movie[rf->index] = 0;
     do_action(rf->m, &r->r.objects[rf->index].action[RCO_PAGE_ACTIVATE], rf->index);
     /* A page made active again gives its focused button its focus-in: First Blood moves its
        crosshair back to the chosen item there on return from its scene and subtitle pages. */
@@ -1388,6 +1391,16 @@ NATIVE(mp_play)
         }
     }
     m->menu_mode = vs_truthy(arg(args, argc, 1));
+    /* The movie, played in normal mode, shows over the pages open now: Enter the Dragon opens
+       PlayResume, a black cover holding the keys, before it plays the film. It fades the
+       cover out when resume() continues the film, and leaves it when the film starts from the
+       beginning; drawn, the film was black and took no keys. Only pages with buttons: The
+       Goonies and Saw cover the first seconds of the film with a black page of no buttons,
+       and remove it themselves. A page opened or activated from here on (Saw's scene list
+       over the movie) shows, and a menu video shows them all. */
+    for (int p = 0; p < m->res->page_count; p++)
+        m->res->under_movie[m->res->pages[p]] = !m->menu_mode && menu_title_resumable(m, playlist) &&
+                                                 first_button(m->res, m->res->pages[p]) >= 0;
     m->p.play(m->p.user, playlist, chapter, m->audio_id, m->sub_on ? m->sub_id : -1, m->menu_mode,
               args[0].type == VS_NUM && vs_number(args[0]) == 1);
 }
@@ -1729,6 +1742,7 @@ static void free_res(res *r)
     free(r->img_plain);
     free(r->img_clear);
     free(r->own_size);
+    free(r->under_movie);
     free(r->label_k);
     free(r->w);
     free(r->wref);
@@ -1779,12 +1793,13 @@ static res *load_res(menu *m, const char *name)
     r->img_plain = calloc((size_t)r->r.image_count + 1, 1);
     r->img_clear = calloc((size_t)r->r.image_count + 1, 1);
     r->own_size = calloc((size_t)r->r.object_count + 1, 1);
+    r->under_movie = calloc((size_t)r->r.object_count + 1, 1);
     r->label_k = calloc((size_t)r->r.object_count + 1, sizeof(float));
     r->occ = calloc((size_t)r->r.image_count + 1, sizeof(uint8_t *));
     r->img_id = calloc((size_t)r->r.image_count + 1, sizeof(uint32_t));
     r->vm = vs_create(r->r.script, r->r.script_size, vm_log, m);
     if (!r->w || !r->wref || !r->focus || !r->aref || !r->iref || !r->sref || !r->snd_pcm || !r->snd_frames || !r->rgba || !r->img_w || !r->img_h || !r->img_fill || !r->img_plain || !r->img_clear ||
-        !r->own_size || !r->label_k || !r->occ || !r->img_id || !r->vm) {
+        !r->own_size || !r->under_movie || !r->label_k || !r->occ || !r->img_id || !r->vm) {
         free_res(r);
         return NULL;
     }
@@ -2214,7 +2229,7 @@ int menu_has_focus(const menu *m)
     /* A page without buttons takes no input: Saw leaves pageWaitDummy, a lone picture, active
        while the movie plays, and the player keeps its buttons. */
     int page = input_page(m->res);
-    return page >= 0 && first_button(m->res, page) >= 0;
+    return page >= 0 && !m->res->under_movie[page] && first_button(m->res, page) >= 0;
 }
 
 /* ---- drawing ---- */
@@ -2858,7 +2873,7 @@ void menu_draw(menu *m, canvas *c)
     for (int i = 0; i < r->r.object_count; i++)
         if (r->r.objects[i].kind == RCO_PAGE)
             for (int p = 0; p < r->page_count; p++)
-                if (r->pages[p] == i)
+                if (r->pages[p] == i && !r->under_movie[i])
                     collect(r, c, i, &root, now, &n);
     /* The region to redraw: every sprite that differs from the last picture, where it was
        and where it is now. A new resource or canvas starts from a full redraw. */
@@ -2903,7 +2918,7 @@ int menu_sprites(menu *m, plat_sprite *out, int max, int *shown)
     for (int i = 0; i < r->r.object_count; i++)
         if (r->r.objects[i].kind == RCO_PAGE)
             for (int p = 0; p < r->page_count; p++)
-                if (r->pages[p] == i)
+                if (r->pages[p] == i && !r->under_movie[i])
                     collect(r, &c, i, &root, list, &n);
     *shown = 0;
     for (int k = 0; k < n && count < max; k++) {
