@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.9.5 (2026-10-31)
 
 - Fixed In Just One Play's menus playing their opening animation again before taking a choice.
 - Fixed Kill Bill Vol. 1's scene selection not showing the first scene's number until you moved.
