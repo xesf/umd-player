@@ -127,7 +127,16 @@ jobs:
             echo "VITA_SECRET is not set: skipping VitaDB"
             exit 0
           fi
-          curl --fail-with-body --show-error -X POST \
-            -F "secret=$VITADB_SECRET" \
-            -F "vpk_url=https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/umdplayer-$GITHUB_REF_NAME.vpk" \
-            https://www.rinnegatamante.eu/vitadb/publish_nightly.php
+          # VitaDB's server sometimes fails to reach GitHub ("Could not resolve host"): try
+          # again a few times before failing the release.
+          for try in 1 2 3 4 5; do
+            if curl --fail-with-body --show-error -X POST \
+                -F "secret=$VITADB_SECRET" \
+                -F "vpk_url=https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/umdplayer-$GITHUB_REF_NAME.vpk" \
+                https://www.rinnegatamante.eu/vitadb/publish_nightly.php; then
+              exit 0
+            fi
+            echo "VitaDB attempt $try failed; waiting before the next"
+            sleep 60
+          done
+          exit 1
