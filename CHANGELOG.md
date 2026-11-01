@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Fixed Enter the Dragon's menu items not flipping round as the selection moves, and not swinging in as the menu opens.
+
 ## v0.9.5 (2026-10-31)
 
 - Fixed In Just One Play's menus playing their opening animation again before taking a choice.

@@ -2321,6 +2321,9 @@ static const uint8_t *image_rgba(res *r, int i, int *w, int *h)
 typedef struct xform {
     float t[3];
     float l[3][3];            /* l[row][column] */
+    /* The turns of picture-less planes the widget sits on the axis of, which turn its picture
+       with them (the rest of l moves it but leaves its picture facing the viewer). */
+    float tilt[3][3];
     float color[4];
 } xform;
 
@@ -2694,6 +2697,7 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
         x.t[k] = parent->t[k] + parent->l[k][0] * w->pos[0] + parent->l[k][1] * w->pos[1] + parent->l[k][2] * w->pos[2];
     local_matrix(lm, w->view_rot_on ? w->view_rot : w->rot, w->scale);
     mat_mul(x.l, (float (*)[3])parent->l, lm);
+    memcpy(x.tilt, parent->tilt, sizeof(x.tilt));
     /* A plane with a size and no image is a rectangle of its colour: Underworld Evolution's
        plnBlackBack, 858x36 in black, is the band behind its menu labels, and masks such as
        Kill Bill Vol. 2's plnSSMask cover the screen when the script colours them. */
@@ -2783,7 +2787,7 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
                the way, stay as described above: The Texas Chainsaw Massacre turns its labels by
                up to 2.5 about Y as they slide. */
             float zl = sqrtf(x.l[0][2] * x.l[0][2] + x.l[1][2] * x.l[1][2] + x.l[2][2] * x.l[2][2]);
-            if (!w->view_rot_on && zl > 0 && x.l[2][2] < -0.999f * zl)
+            if (!w->view_rot_on && zl > 0 && x.l[2][2] < -0.999f * zl && x.tilt[2][2] > 0)
                 mx = -mx;
             /* The angle in the screen's plane from the image's up axis as projected (its x axis
                when the up axis is end-on): Batman tilts its carousel back by 0.1, and the two
@@ -2801,10 +2805,13 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
                keep their size. */
             float pz = x.t[2] > PERSP_D - 1 ? PERSP_D - 1 : x.t[2], f = PERSP_D / (PERSP_D - pz);
             float o00 = mx * ca * lx * f, o10 = mx * sa * lx * f, o01 = -sa * ly * f, o11 = ca * ly * f;
-            s->ex[0] = o00 * width * sxu;
-            s->ex[1] = -o10 * width * syu;
-            s->ey[0] = -o01 * height * sxu;
-            s->ey[1] = o11 * height * syu;
+            /* The picture's axes as the tilt turns them, seen from the front: a turn about Y
+               narrows it, and past a quarter turn shows it mirrored. */
+            float k00 = x.tilt[0][0], k10 = x.tilt[1][0], k01 = x.tilt[0][1], k11 = x.tilt[1][1];
+            s->ex[0] = (o00 * k00 + o01 * k10) * width * sxu;
+            s->ex[1] = -(o10 * k00 + o11 * k10) * width * syu;
+            s->ey[0] = -(o00 * k01 + o01 * k11) * height * sxu;
+            s->ey[1] = (o10 * k01 + o11 * k11) * height * syu;
             s->cx = (UNITS_W / 2 + x.t[0] * f + o00 * shift + o01 * vshift) * sxu;
             s->cy = (UNITS_H / 2 - x.t[1] * f - o10 * shift - o11 * vshift) * syu;
             memcpy(s->color, own, sizeof(s->color));
@@ -2824,8 +2831,34 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
                 (*count)++;
         }
     }
-    for (int ch = r->r.objects[i].first_child; ch >= 0; ch = r->r.objects[ch].next_sibling)
-        collect(r, c, ch, &x, list, count);
+    /* A plane without a picture that turns about X or Y turns the pictures on its axis with it:
+       Enter the Dragon flips each menu item (a picture-less plane holding its highlight, text
+       and brackets, all at x 0) about Y as the selection moves, and swings them in as its menu
+       opens. Pictures it carries around the axis keep facing the viewer, as Batman's carousel
+       needs, and so does a picture's own turn (The Texas Chainsaw Massacre's sliding labels). */
+    {
+        const float *rot = w->view_rot_on ? w->view_rot : w->rot;
+        int turns = r->r.objects[i].kind == RCO_PLANE && w->image < 0 && (rot[0] != 0 || rot[1] != 0);
+        float rm[3][3];
+        if (turns) {
+            static const float one[3] = {1, 1, 1};
+            local_matrix(rm, rot, one);
+        }
+        for (int ch = r->r.objects[i].first_child; ch >= 0; ch = r->r.objects[ch].next_sibling) {
+            xform xc = x;
+            if (turns) {
+                const float *p = r->w[ch].pos;
+                float d = 0;
+                for (int k = 0; k < 3; k++) {
+                    float q = rm[k][0] * p[0] + rm[k][1] * p[1] + rm[k][2] * p[2] - p[k];
+                    d += q * q;
+                }
+                if (d < 1.0f)
+                    mat_mul(xc.tilt, x.tilt, rm);
+            }
+            collect(r, c, ch, &xc, list, count);
+        }
+    }
 }
 
 static void grow_box(int *b, const int *add)
@@ -2865,7 +2898,7 @@ void menu_draw(menu *m, canvas *c)
 
     memset(&root, 0, sizeof(root));
     for (int k = 0; k < 3; k++)
-        root.l[k][k] = 1;
+        root.l[k][k] = root.tilt[k][k] = 1;
     for (int k = 0; k < 4; k++)
         root.color[k] = 1;
     /* Pages draw in their order in the RCO, not the order they opened: a script that reopens
@@ -2911,7 +2944,7 @@ int menu_sprites(menu *m, plat_sprite *out, int max, int *shown)
 
     memset(&root, 0, sizeof(root));
     for (int k = 0; k < 3; k++)
-        root.l[k][k] = 1;
+        root.l[k][k] = root.tilt[k][k] = 1;
     for (int k = 0; k < 4; k++)
         root.color[k] = 1;
     /* as menu_draw: pages in their order in the RCO */
@@ -2983,7 +3016,7 @@ static int button_at(menu *m, int x, int y)
 
     memset(&root, 0, sizeof(root));
     for (int k = 0; k < 3; k++)
-        root.l[k][k] = 1;
+        root.l[k][k] = root.tilt[k][k] = 1;
     for (int k = 0; k < 4; k++)
         root.color[k] = 1;
     if (input_page(r) < 0)
