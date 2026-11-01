@@ -929,6 +929,16 @@ NATIVE(w_set_focus)
     *ret = self;
     if (target < 0)
         return;
+    /* A button drawn fully transparent does not take the focus from the script. Night Watch
+       parks the focus on an empty button when it opens a submenu, and on return moves Play,
+       faded out, to the centre and focuses it: on a PSP the item it came from comes back
+       selected, from the main menu's activate. */
+    if (r->w[target].color[3] <= 0 && page >= 0 && r->focus[page] >= 0) {
+        if (getenv("MENU_TRACE"))
+            mlog(rf->m, "menu: focus to transparent %s ignored",
+                 r->r.objects[target].name ? r->r.objects[target].name : "?");
+        return;
+    }
     r->focus_page = page;
     /* A page activated just now with no focus has given it to its first button, with a
        focus-in: First Blood ignores that one on its subtitle page, and moves its crosshair to
