@@ -587,9 +587,18 @@ static int step_run(menu *m, anim_run *run)
                     run->locked = 0;
                     break;
                 }
-                play_anim(m, s->anim, run->target);
-                if (again)
-                    run->wait_until = m->now + 1;
+                /* A loop keeps its start: an animation played on the widget in the frame the
+                   loop restarts stops it. Sakura Wars blinks its cursor with an animation that
+                   plays itself again, and hides it on the item it leaves; a key in the frame
+                   of the restart left the old item blinking beside the new one. */
+                {
+                    uint64_t started = run->started;
+                    play_anim(m, s->anim, run->target);
+                    if (again) {
+                        run->wait_until = m->now + 1;
+                        run->started = started;
+                    }
+                }
             }
             if (!s->event)
                 break;
