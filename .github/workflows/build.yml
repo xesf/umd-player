@@ -119,7 +119,10 @@ jobs:
             --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
       # VitaDB copies the VPK from the release just published. The secret comes from the
       # app's VitaDB page; without it (forks) the step does nothing.
+      # VitaDB fetching the VPK is outside our control (since 2026-10-31 its server cannot
+      # resolve github.com): a failure here leaves the GitHub release published and green.
       - name: Publish to VitaDB
+        continue-on-error: true
         env:
           VITADB_SECRET: ${{ secrets.VITA_SECRET }}
         run: |
@@ -128,8 +131,8 @@ jobs:
             exit 0
           fi
           # VitaDB's server sometimes fails to reach GitHub ("Could not resolve host"): try
-          # again a few times before failing the release.
-          for try in 1 2 3 4 5; do
+          # again a few times.
+          for try in 1 2 3; do
             if curl --fail-with-body --show-error -X POST \
                 -F "secret=$VITADB_SECRET" \
                 -F "vpk_url=https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/umdplayer-$GITHUB_REF_NAME.vpk" \
