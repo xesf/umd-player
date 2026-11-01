@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.9.9 (2026-11-01)
+
+- Fixed Sakura Wars' blinking cursor sometimes staying on an item you had left, or on an item of a submenu that had closed. It happened when a key press came at the moment the blink started again.
+
 ## v0.9.8 (2026-11-01)
 
 - Fixed Night Watch's main menu selecting Play when you go back from Subtitles, Languages or Special Features. The item you came from stays selected, as on a PSP.
