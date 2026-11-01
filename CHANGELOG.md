@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.9.6 (2026-11-01)
 
 - Fixed Enter the Dragon's menu items not flipping round as the selection moves, and not swinging in as the menu opens.
 
