@@ -1,0 +1,38 @@
+# Sends an already published release's VPK to VitaDB, with no rebuild. Run it by hand from the
+# Actions tab (or `gh workflow run vitadb.yml -f tag=v0.9.7`) when the publish step of a
+# release run failed. With no tag it uses the latest release.
+name: vitadb
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v0.9.7); empty for the latest release'
+        required: false
+        default: ''
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Publish to VitaDB
+        env:
+          VITADB_SECRET: ${{ secrets.VITA_SECRET }}
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          if [ -z "$VITADB_SECRET" ]; then
+            echo "VITA_SECRET is not set"
+            exit 1
+          fi
+          if [ -z "$TAG" ]; then
+            TAG=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)
+          fi
+          URL="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/umdplayer-$TAG.vpk"
+          # Fail early if the release has no VPK, rather than letting VitaDB report it.
+          curl --fail --silent --show-error --head --location "$URL" > /dev/null
+          echo "Publishing $URL"
+          curl --fail-with-body --show-error -X POST \
+            -F "secret=$VITADB_SECRET" \
+            -F "vpk_url=$URL" \
+            https://www.rinnegatamante.eu/vitadb/publish_nightly.php
