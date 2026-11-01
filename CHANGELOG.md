@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.9.8 (2026-11-01)
+
+- Fixed Night Watch's main menu selecting Play when you go back from Subtitles, Languages or Special Features. The item you came from stays selected, as on a PSP.
+- Releases: a failed upload to VitaDB no longer marks the release as failed. A new "vitadb" workflow, run by hand from the Actions tab, sends a published release's VPK to VitaDB without building again.
+
 ## v0.9.7 (2026-11-01)
 
 - Releases: the upload to VitaDB tries again, up to five times a minute apart, when VitaDB cannot reach GitHub. v0.9.5 and v0.9.6 reached GitHub but not VitaDB this way.
