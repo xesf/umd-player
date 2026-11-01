@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.9.7 (2026-11-01)
+
+- Releases: the upload to VitaDB tries again, up to five times a minute apart, when VitaDB cannot reach GitHub. v0.9.5 and v0.9.6 reached GitHub but not VitaDB this way.
+
 ## v0.9.6 (2026-11-01)
 
 - Fixed Enter the Dragon's menu items not flipping round as the selection moves, and not swinging in as the menu opens.
