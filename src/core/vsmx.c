@@ -565,11 +565,23 @@ void vs_set_index(vsmx *vm, vs_value a, int index, vs_value value)
     vs_set(vm, a, vs_intern(vm, buf), value);
 }
 
+/* An array indexed by a fraction gets the item at its whole part. Spriggan's random(n) is
+   (Math.random() * n) % n, used as an index: read as the text "3.4", every pick missed and
+   some main menu items never showed. Other objects keep the text key, as in JavaScript. */
+static vs_value array_index(vs_value obj, vs_value index)
+{
+    if (obj.type == VS_OBJ && obj.u.o->kind == OBJ_ARRAY && index.type == VS_NUM && isfinite(index.u.n) &&
+        index.u.n >= 0 && index.u.n < 2147483647.0)
+        return vs_int(floor(index.u.n));
+    return index;
+}
+
 /* obj[index] where index may be a number or a string. */
 static vs_value get_item(vsmx *vm, vs_value obj, vs_value index)
 {
     char buf[32];
 
+    index = array_index(obj, index);
     if (index.type == VS_NUM && index.u.n == floor(index.u.n))
         return vs_get_index(vm, obj, (int)index.u.n);
     return vs_get(vm, obj, vs_intern(vm, vs_text(index, buf, sizeof(buf))));
@@ -579,6 +591,7 @@ static void set_item(vsmx *vm, vs_value obj, vs_value index, vs_value value)
 {
     char buf[32];
 
+    index = array_index(obj, index);
     if (index.type == VS_NUM && index.u.n == floor(index.u.n)) {
         vs_set_index(vm, obj, (int)index.u.n, value);
         return;
