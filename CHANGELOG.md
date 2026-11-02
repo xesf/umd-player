@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.9.10 (2026-11-02)
+
+- Fixed Scary Movie taking no keys after you back out of the scene list to the main menu.
+- Fixed Riding the Bullet's scene list, where the Main Menu option could not be selected, and its main menu showing no items after you return from the language menu.
+- Fixed Speed leaving the set-up page's "Main Menu" and the main menu's Previews on screen, and showing two items selected at once, after you move between its menus.
+- Fixed Kill Bill Vol. 1 (eng): the arrows did nothing on the scene list.
+- Fixed Starsky & Hutch sometimes leaving a star large on the main menu, beside the one selected, after you return from a submenu.
+- Fixed Spriggan's menus: main menu and character profile items that stayed hidden until you moved onto them, main menu items left on screen under the subtitle and audio menus, and a Capítulos (scene) page that showed only the preview window.
+- Fixed the warning screens before the film on about 100 discs (Iron Man, Hancock, The Princess Bride and others): pressing ✕ could leave the film unstarted. This and the Scary Movie, Riding the Bullet, Speed and Kill Bill problems came from the v0.9.8 change for Night Watch, which is undone: Night Watch again selects Play when you go back to its main menu.
+
 ## v0.9.9 (2026-11-01)
 
 - Fixed Sakura Wars' blinking cursor sometimes staying on an item you had left, or on an item of a submenu that had closed. It happened when a key press came at the moment the blink started again.
