@@ -645,25 +645,6 @@ static int first_steps_touch(const menu *m, const anim_run *run, int index)
     return 0;
 }
 
-/* 1 if a running animation still has a colour step for the widget, to come or in progress:
-   it is fading in or out, so its alpha now is not what the screen will show. */
-static int color_pending(const menu *m, int index)
-{
-    for (int i = 0; i < MAX_RUNS; i++) {
-        const anim_run *run = &m->runs[i];
-        const rco_anim *a;
-        if (!run->active)
-            continue;
-        a = &m->res->r.anims[run->anim];
-        for (int k = run->step; k < a->step_count; k++) {
-            const rco_step *s = &m->res->r.steps[a->first_step + k];
-            if (s->kind == RCO_STEP_COLOR && (s->object >= 0 ? s->object : run->target) == index)
-                return 1;
-        }
-    }
-    return 0;
-}
-
 static void step_anims(menu *m)
 {
     for (int i = 0; i < MAX_RUNS; i++)
@@ -953,14 +934,6 @@ NATIVE(w_activate)
     }
 }
 
-static int has_actions(const rco_object *o)
-{
-    for (int a = 0; a < RCO_BTN_ACTIONS; a++)
-        if (o->action[a].event || o->action[a].anim >= 0 || o->action[a].object >= 0)
-            return 1;
-    return 0;
-}
-
 NATIVE(w_set_focus)
 {
     ref *rf = user;
@@ -973,26 +946,6 @@ NATIVE(w_set_focus)
     *ret = self;
     if (target < 0)
         return;
-    /* A faded-out item does not take the focus from the script. Night Watch parks the focus
-       on an empty button with no actions when it opens a submenu, and on return moves Play,
-       faded out, to the centre and focuses it: on a PSP the item it came from comes back
-       selected, from the main menu's activate. The other transparent buttons do take it:
-       - one fading in: Scary Movie returns from its scene list fading its buttons in, then
-         focuses Scenes; ignored, no key worked on the main menu;
-       - one parked off the screen: Speed focuses btnGhostButton (at -1000,-1000) so that the
-         item it opens gets its focus-out, which hides it with the transition;
-       - a hit area with no picture but actions: Riding the Bullet's btnSSMain, beside the
-         plane that shows "Main";
-       - the button that has the focus: Riding the Bullet's set-up page returns with the main
-         items faded out and focuses the one it came from, whose focus-in fades them in. */
-    if (r->w[target].color[3] <= 0 && page >= 0 && r->focus[page] >= 0 && r->focus[page] != target &&
-        fabsf(r->w[target].pos[0]) <= 854 && fabsf(r->w[target].pos[1]) <= 480 &&
-        (r->w[target].image >= 0 || !has_actions(&r->r.objects[target])) && !color_pending(rf->m, target)) {
-        if (getenv("MENU_TRACE"))
-            mlog(rf->m, "menu: focus to transparent %s ignored",
-                 r->r.objects[target].name ? r->r.objects[target].name : "?");
-        return;
-    }
     r->focus_page = page;
     /* A page activated just now with no focus has given it to its first button, with a
        focus-in: First Blood ignores that one on its subtitle page, and moves its crosshair to
