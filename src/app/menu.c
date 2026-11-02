@@ -645,6 +645,25 @@ static int first_steps_touch(const menu *m, const anim_run *run, int index)
     return 0;
 }
 
+/* 1 if a running animation still has a colour step for the widget, to come or in progress:
+   it is fading in or out, so its alpha now is not what the screen will show. */
+static int color_pending(const menu *m, int index)
+{
+    for (int i = 0; i < MAX_RUNS; i++) {
+        const anim_run *run = &m->runs[i];
+        const rco_anim *a;
+        if (!run->active)
+            continue;
+        a = &m->res->r.anims[run->anim];
+        for (int k = run->step; k < a->step_count; k++) {
+            const rco_step *s = &m->res->r.steps[a->first_step + k];
+            if (s->kind == RCO_STEP_COLOR && (s->object >= 0 ? s->object : run->target) == index)
+                return 1;
+        }
+    }
+    return 0;
+}
+
 static void step_anims(menu *m)
 {
     for (int i = 0; i < MAX_RUNS; i++)
@@ -862,6 +881,14 @@ NATIVE(w_open)
     mlog(rf->m, "menu: open page %s", r->r.objects[rf->index].name ? r->r.objects[rf->index].name : "?");
     if (r->page_count < MAX_PAGES) {
         reset_tree(r, rf->index);
+        /* A tween left running by an animation that ended with the page's close (w_close) must
+           not carry on into the reopened page, over the widgets just reset. Starsky & Hutch's
+           main menu pulses the selected star with a scale tween; on return from a submenu the
+           page is closed and opened again, and a tween under way at that moment ended on the
+           star of the item it had come from, drawn large beside the one focused. */
+        for (int t = 0; t < MAX_TWEENS; t++)
+            if (rf->m->tweens[t].active && page_of(r, rf->m->tweens[t].widget) == rf->index)
+                rf->m->tweens[t].active = 0;
         r->under_movie[rf->index] = 0;
         preload(r, rf->index);
         r->focus[rf->index] = -1;
@@ -926,6 +953,14 @@ NATIVE(w_activate)
     }
 }
 
+static int has_actions(const rco_object *o)
+{
+    for (int a = 0; a < RCO_BTN_ACTIONS; a++)
+        if (o->action[a].event || o->action[a].anim >= 0 || o->action[a].object >= 0)
+            return 1;
+    return 0;
+}
+
 NATIVE(w_set_focus)
 {
     ref *rf = user;
@@ -938,11 +973,21 @@ NATIVE(w_set_focus)
     *ret = self;
     if (target < 0)
         return;
-    /* A button drawn fully transparent does not take the focus from the script. Night Watch
-       parks the focus on an empty button when it opens a submenu, and on return moves Play,
+    /* A faded-out item does not take the focus from the script. Night Watch parks the focus
+       on an empty button with no actions when it opens a submenu, and on return moves Play,
        faded out, to the centre and focuses it: on a PSP the item it came from comes back
-       selected, from the main menu's activate. */
-    if (r->w[target].color[3] <= 0 && page >= 0 && r->focus[page] >= 0) {
+       selected, from the main menu's activate. The other transparent buttons do take it:
+       - one fading in: Scary Movie returns from its scene list fading its buttons in, then
+         focuses Scenes; ignored, no key worked on the main menu;
+       - one parked off the screen: Speed focuses btnGhostButton (at -1000,-1000) so that the
+         item it opens gets its focus-out, which hides it with the transition;
+       - a hit area with no picture but actions: Riding the Bullet's btnSSMain, beside the
+         plane that shows "Main";
+       - the button that has the focus: Riding the Bullet's set-up page returns with the main
+         items faded out and focuses the one it came from, whose focus-in fades them in. */
+    if (r->w[target].color[3] <= 0 && page >= 0 && r->focus[page] >= 0 && r->focus[page] != target &&
+        fabsf(r->w[target].pos[0]) <= 854 && fabsf(r->w[target].pos[1]) <= 480 &&
+        (r->w[target].image >= 0 || !has_actions(&r->r.objects[target])) && !color_pending(rf->m, target)) {
         if (getenv("MENU_TRACE"))
             mlog(rf->m, "menu: focus to transparent %s ignored",
                  r->r.objects[target].name ? r->r.objects[target].name : "?");
@@ -1417,8 +1462,11 @@ NATIVE(mp_play)
        Goonies and Saw cover the first seconds of the film with a black page of no buttons,
        and remove it themselves. A page opened or activated from here on (Saw's scene list
        over the movie) shows, and a menu video shows them all. */
+    /* A film in a window, from setPos and setSize, leaves them showing around it: Spriggan's
+       scene list plays the film as a preview in the frame its page draws. */
+    int windowed = m->win[2] > 0 && m->win[3] > 0 && (m->win[2] < 854 || m->win[3] < 480);
     for (int p = 0; p < m->res->page_count; p++)
-        m->res->under_movie[m->res->pages[p]] = !m->menu_mode && menu_title_resumable(m, playlist) &&
+        m->res->under_movie[m->res->pages[p]] = !m->menu_mode && !windowed && menu_title_resumable(m, playlist) &&
                                                  first_button(m->res, m->res->pages[p]) >= 0;
     m->p.play(m->p.user, playlist, chapter, m->audio_id, m->sub_on ? m->sub_id : -1, m->menu_mode,
               args[0].type == VS_NUM && vs_number(args[0]) == 1);
@@ -2741,6 +2789,14 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
                widget. Kept at the strip's size, the number stretched down the screen as a column.
                Ultraviolet's 304x275 panel in a 450x275 widget keeps its size as it unfolds. */
             if (w->has_crop && w->size[0] > 0 && w->size[1] > 0 && ((float)iw > width || (float)ih > height))
+                rule = STRETCH;
+            /* A crop of a smaller image, in a widget of the same shape as the cropped part, fills
+               it: Spriggan's scene list cuts its frame, a 427x240 picture shown at twice its size,
+               into four pieces around the preview, each a widget of 2x its crop. Ultraviolet's
+               panel, cropped as it unfolds, is not of its widget's shape. */
+            else if (w->has_crop && w->size[0] > 0 && w->size[1] > 0 && w->crop[2] > 0 && w->crop[3] > 0 &&
+                     width > (float)iw * w->crop[2] * 1.2f && height > (float)ih * w->crop[3] * 1.2f &&
+                     fabsf((width / height) / (((float)iw * w->crop[2]) / ((float)ih * w->crop[3])) - 1.0f) < 0.03f)
                 rule = STRETCH;
             /* A title fits inside the box it sits in: Dragon Wars' 123x16 "Subtitles" in a 214x27
                widget, scaled up evenly, was 208 wide on a 184x149 parchment; it keeps its size,
