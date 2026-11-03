@@ -914,7 +914,11 @@ NATIVE(w_close)
        left running while the page was closed, the item it had entered kept pulsing beside the
        one focused on return. */
     for (int i = 0; i < MAX_RUNS; i++)
-        if (rf->m->runs[i].active && rf->m->runs[i].target >= 0 && page_of(r, rf->m->runs[i].target) == rf->index) {
+        /* Not the animation whose own event closes the page: what follows the event goes on.
+           Riding the Bullet's set-up page closes in the event of the animation that fades it
+           out, and the steps after it fade the main menu's items back in. */
+        if (rf->m->runs[i].active && &rf->m->runs[i] != rf->m->stepping && rf->m->runs[i].target >= 0 &&
+            page_of(r, rf->m->runs[i].target) == rf->index) {
             rf->m->runs[i].locked = 0;
             rf->m->runs[i].active = 0;
         }
