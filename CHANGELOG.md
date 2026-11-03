@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.9.11 (2026-11-03)
+
+- Fixed Scary Movie taking no keys on the main menu after you pick a scene, press Menu, and back out of the scene list.
+- Fixed Spriggan's scene list: a small square drawn over the preview all the time, and a preview that went away after you picked a second scene.
+- Fixed Spriggan's main menu selecting Scenes, the item above, when you go back from the character profiles. A page that a menu closes and opens again now keeps the item that was selected when it closed.
+- Fixed Riding the Bullet's main menu showing only one item after you go back from the language menu, and the language options being drawn twice on top of each other.
+- A seek to another place on the disc now holds the first chapter event for 1.2 s, not 1 s, so a menu that ignores events for 1 s after a play no longer misses it.
+
 ## v0.9.10 (2026-11-02)
 
 - Fixed Scary Movie taking no keys after you back out of the scene list to the main menu.
