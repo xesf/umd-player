@@ -870,6 +870,16 @@ NATIVE(w_open)
         for (int t = 0; t < MAX_TWEENS; t++)
             if (rf->m->tweens[t].active && page_of(r, rf->m->tweens[t].widget) == rf->index)
                 rf->m->tweens[t].active = 0;
+        /* Nor a lock an animation took while the page was closed: Scary Movie plays its lock on the
+           main menu page as the movie's menu fade starts, with the page closed, and opens the
+           page under its scene list on return, where nothing ends the lock any more. The script
+           that locks an open page plays the animation after opening it. */
+        for (int t = 0; t < MAX_RUNS; t++)
+            if (rf->m->runs[t].active && rf->m->runs[t].locked && rf->m->runs[t].target >= 0 &&
+                page_of(r, rf->m->runs[t].target) == rf->index) {
+                rf->m->runs[t].locked = 0;
+                rf->m->runs[t].active = 0;
+            }
         r->under_movie[rf->index] = 0;
         preload(r, rf->index);
         r->focus[rf->index] = -1;
