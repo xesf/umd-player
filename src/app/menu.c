@@ -2756,6 +2756,22 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
     x.color[3] *= w->fade;
     if (x.color[3] <= 0.004f || w->hidden)
         return;
+    /* A button's picture gives way to its enlarged copy: Riding the Bullet's set-up page shows
+       each language twice, as a button and as a plane of the main page with the same picture in
+       the same place, and the plane scales up to 1.3 when its item is selected. Both drawn,
+       the letters overlapped; the selected item shows the enlarged copy alone. */
+    if (r->r.objects[i].kind == RCO_BUTTON && w->image >= 0 && w->scale[0] < 1.05f)
+        for (int j = 0; j < r->r.object_count; j++) {
+            const wstate *o = &r->w[j];
+            int open = 0;
+            if (j == i || r->r.objects[j].kind != RCO_PLANE || o->image != w->image || o->scale[0] < 1.05f ||
+                o->color[3] <= 0.004f || o->hidden || fabsf(o->pos[0] - w->pos[0]) > 1 || fabsf(o->pos[1] - w->pos[1]) > 1)
+                continue;
+            for (int p = 0; p < r->page_count && !open; p++)
+                open = r->pages[p] == page_of(r, j);
+            if (open)
+                return;
+        }
     /* Position in the parent's frame, then this widget's own rotation and scale. */
     for (int k = 0; k < 3; k++)
         x.t[k] = parent->t[k] + parent->l[k][0] * w->pos[0] + parent->l[k][1] * w->pos[1] + parent->l[k][2] * w->pos[2];
