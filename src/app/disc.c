@@ -18,7 +18,7 @@
 #define UNITS_W     854.0f
 #define UNITS_H     480.0f
 #define QUIT_HOLD   1500000          /* us Circle is held to leave the disc */
-#define SEEK_US     1000000          /* a UMD drive's seek to another place: first onChapter waits */
+#define SEEK_US     1200000          /* a UMD drive's seek to another place: first onChapter waits */
 #define SEEK_NEAR   (10 * 90000)     /* a jump this short (90 kHz) is no seek */
 #define STATE_MAX   4096
 

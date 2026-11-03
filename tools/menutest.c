@@ -204,7 +204,7 @@ static void sim_play(void *user, int playlist, int chapter, int audio, int subti
     printf("  \"%s\", %.1f s\n", t->name, (len - from) / 1e6);
     {
         /* as src/app/disc.c: a new title or a jump over 10 s waits 1 s for the drive's seek */
-        uint64_t seek = 1000000;
+        uint64_t seek = 1200000;
         int still = 0;
         if (s->st.playing && s->st.playlist == playlist) {
             uint64_t cur = s->title_end > s->now ? len - (s->title_end - s->now) : len;

@@ -89,6 +89,7 @@ typedef struct res {
     int *img_w, *img_h;
     uint8_t *img_fill;        /* one colour, or a one-way gradient: a fill that stretches to its widget */
     uint8_t *img_clear;       /* some pixels fully transparent: a frame or an overlay, not a card */
+    uint8_t *img_frame;       /* a hollow frame: opaque edges around a clear middle */
     uint8_t *img_plain;       /* a filled black box: four fifths solid, every visible pixel black */
     uint8_t *own_size;        /* per widget: draw the image at its own size (same_size_labels) */
     uint8_t *under_movie;     /* per page: open when the movie started, hidden until opened or activated again */
@@ -1771,6 +1772,7 @@ static void free_res(res *r)
     free(r->img_fill);
     free(r->img_plain);
     free(r->img_clear);
+    free(r->img_frame);
     free(r->own_size);
     free(r->under_movie);
     free(r->label_k);
@@ -1822,13 +1824,14 @@ static res *load_res(menu *m, const char *name)
     r->img_fill = calloc((size_t)r->r.image_count + 1, 1);
     r->img_plain = calloc((size_t)r->r.image_count + 1, 1);
     r->img_clear = calloc((size_t)r->r.image_count + 1, 1);
+    r->img_frame = calloc((size_t)r->r.image_count + 1, 1);
     r->own_size = calloc((size_t)r->r.object_count + 1, 1);
     r->under_movie = calloc((size_t)r->r.object_count + 1, 1);
     r->label_k = calloc((size_t)r->r.object_count + 1, sizeof(float));
     r->occ = calloc((size_t)r->r.image_count + 1, sizeof(uint8_t *));
     r->img_id = calloc((size_t)r->r.image_count + 1, sizeof(uint32_t));
     r->vm = vs_create(r->r.script, r->r.script_size, vm_log, m);
-    if (!r->w || !r->wref || !r->focus || !r->aref || !r->iref || !r->sref || !r->snd_pcm || !r->snd_frames || !r->rgba || !r->img_w || !r->img_h || !r->img_fill || !r->img_plain || !r->img_clear ||
+    if (!r->w || !r->wref || !r->focus || !r->aref || !r->iref || !r->sref || !r->snd_pcm || !r->snd_frames || !r->rgba || !r->img_w || !r->img_h || !r->img_fill || !r->img_plain || !r->img_clear || !r->img_frame ||
         !r->own_size || !r->under_movie || !r->label_k || !r->occ || !r->img_id || !r->vm) {
         free_res(r);
         return NULL;
@@ -2310,6 +2313,19 @@ static const uint8_t *image_rgba(res *r, int i, int *w, int *h)
             for (int k = 0; k < iw * ih && !clear; k++)
                 clear = r->rgba[i][(size_t)k * 4 + 3] == 0;
             r->img_clear[i] = (uint8_t)clear;
+            /* Opaque edges all round and a clear middle: a frame made to be stretched around
+               something, as Spriggan's 100x100 outline around its scene preview. */
+            if (clear && iw >= 8 && ih >= 8) {
+                int edge = 1;
+                for (int x = 0; x < iw && edge; x++)
+                    edge = r->rgba[i][(size_t)x * 4 + 3] >= 128 && r->rgba[i][((size_t)(ih - 1) * iw + x) * 4 + 3] >= 128;
+                for (int y = 0; y < ih && edge; y++)
+                    edge = r->rgba[i][(size_t)y * iw * 4 + 3] >= 128 && r->rgba[i][((size_t)y * iw + iw - 1) * 4 + 3] >= 128;
+                for (int y = ih / 4; y < ih - ih / 4 && edge; y++)
+                    for (int x = iw / 4; x < iw - iw / 4 && edge; x++)
+                        edge = r->rgba[i][((size_t)y * iw + x) * 4 + 3] == 0;
+                r->img_frame[i] = (uint8_t)edge;
+            }
             uint32_t rgb = 0, seen = 0;
             for (int k = 0; k < iw * ih && plain; k++)
                 if (r->rgba[i][(size_t)k * 4 + 3]) {
@@ -2741,6 +2757,10 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
             float sxu = (float)c->w / UNITS_W, syu = (float)c->h / UNITS_H;
             float width = w->size[0] > 0 ? w->size[0] : (float)iw, height = w->size[1] > 0 ? w->size[1] : (float)ih;
             int rule = r->own_size[i] ? OWN : stretch_rule(iw, ih, width, height, r->img_fill[image]);
+            /* A hollow frame in a widget bigger than it in both directions encloses what the script
+               sized the widget for, whatever the shapes. */
+            if (r->img_frame[image] && width > 1.5f * (float)iw && height > 1.5f * (float)ih)
+                rule = STRETCH;
             /* A frame over the whole screen, with clear parts, covers it whatever its shape:
                Kill Bill Vol. 2 frames its scene previews with a 252x168 picture in an 854x480
                widget, and fitted to the height it left the preview showing at the sides.
