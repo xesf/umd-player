@@ -103,6 +103,7 @@ typedef struct res {
     int active;               /* page that takes input, or -1 */
     int focus_page;           /* page of the button the script focused last, or -1 (input_page) */
     int *focus;               /* per page: the focused button, or -1 */
+    int *last_focus;          /* per page: the button focused when the script closed it, plus 1, or 0 */
     int focused;              /* the button that had the focus-in last, on any page, or -1 */
 } res;
 
@@ -900,6 +901,7 @@ NATIVE(w_close)
     *ret = self;
     for (int i = 0; i < r->page_count; i++)
         if (r->pages[i] == rf->index) {
+            r->last_focus[rf->index] = r->focus[rf->index] + 1;
             memmove(&r->pages[i], &r->pages[i + 1], (size_t)(r->page_count - i - 1) * sizeof(int));
             r->page_count--;
             break;
@@ -961,6 +963,17 @@ NATIVE(w_set_focus)
     *ret = self;
     if (target < 0)
         return;
+    /* A page the script closed and opens again, activated just now, keeps the button that had the
+       focus when it closed, whatever the script focuses first: Spriggan's main page focuses the
+       item of the last film on return from its profiles, as on a PSP the profiles item stays
+       selected, as Night Watch's Play does. Taken once. */
+    if (page >= 0 && page == r->activated && r->activated_at == rf->m->now && r->focus[page] < 0 &&
+        r->last_focus[page] > 0) {
+        int back = r->last_focus[page] - 1;
+        r->last_focus[page] = 0;
+        if (back != target && page_of(r, back) == page && r->r.objects[back].kind == RCO_BUTTON)
+            target = back;
+    }
     r->focus_page = page;
     /* A page activated just now with no focus has given it to its first button, with a
        focus-in: First Blood ignores that one on its subtitle page, and moves its crosshair to
@@ -1817,6 +1830,7 @@ static res *load_res(menu *m, const char *name)
     r->w = calloc((size_t)r->r.object_count + 1, sizeof(wstate));
     r->wref = calloc((size_t)r->r.object_count + 1, sizeof(ref));
     r->focus = calloc((size_t)r->r.object_count + 1, sizeof(int));
+    r->last_focus = calloc((size_t)r->r.object_count + 1, sizeof(int));
     r->aref = calloc((size_t)r->r.anim_count + 1, sizeof(ref));
     r->iref = calloc((size_t)r->r.image_count + 1, sizeof(ref));
     r->sref = calloc((size_t)r->r.sound_count + 1, sizeof(ref));
@@ -1835,7 +1849,7 @@ static res *load_res(menu *m, const char *name)
     r->occ = calloc((size_t)r->r.image_count + 1, sizeof(uint8_t *));
     r->img_id = calloc((size_t)r->r.image_count + 1, sizeof(uint32_t));
     r->vm = vs_create(r->r.script, r->r.script_size, vm_log, m);
-    if (!r->w || !r->wref || !r->focus || !r->aref || !r->iref || !r->sref || !r->snd_pcm || !r->snd_frames || !r->rgba || !r->img_w || !r->img_h || !r->img_fill || !r->img_plain || !r->img_clear || !r->img_frame ||
+    if (!r->w || !r->wref || !r->focus || !r->last_focus || !r->aref || !r->iref || !r->sref || !r->snd_pcm || !r->snd_frames || !r->rgba || !r->img_w || !r->img_h || !r->img_fill || !r->img_plain || !r->img_clear || !r->img_frame ||
         !r->own_size || !r->under_movie || !r->label_k || !r->occ || !r->img_id || !r->vm) {
         free_res(r);
         return NULL;
