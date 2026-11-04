@@ -980,7 +980,10 @@ NATIVE(w_set_focus)
         r->last_focus[page] > 0) {
         int back = r->last_focus[page] - 1;
         r->last_focus[page] = 0;
-        if (back != target && page_of(r, back) == page && r->r.objects[back].kind == RCO_BUTTON)
+        /* Only an item you can see: Scary Movie parks the focus on btnDummy, a button with no
+           picture, while it plays a scene, and kept there on return the main menu took no key. */
+        if (back != target && page_of(r, back) == page && r->r.objects[back].kind == RCO_BUTTON &&
+            r->w[back].image >= 0 && r->w[back].color[3] > 0.004f && !r->w[back].hidden)
             target = back;
     }
     r->focus_page = page;
