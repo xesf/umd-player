@@ -77,6 +77,8 @@ app_settings *settings_get(void)
             s.scanlines = strcmp(value, "on") == 0;
         else if (strcmp(key, "logs") == 0)
             s.logs = strcmp(value, "on") == 0;
+        else if (strcmp(key, "skipclips") == 0)
+            s.skip_clips = strcmp(value, "on") == 0;
         else if (strcmp(key, "subtitles") == 0 && strlen(value) <= 3)
             snprintf(s.subs, sizeof(s.subs), "%s", value);
     }
@@ -86,10 +88,10 @@ app_settings *settings_get(void)
 void settings_save(void)
 {
     const app_settings *s = settings_get();
-    char buf[192];
-    int n = snprintf(buf, sizeof(buf), "screen %d\naudio %s\nsubtitles %s\nstart %s\nsheets %s\nscanlines %s\nlogs %s\n",
+    char buf[224];
+    int n = snprintf(buf, sizeof(buf), "screen %d\naudio %s\nsubtitles %s\nstart %s\nsheets %s\nscanlines %s\nlogs %s\nskipclips %s\n",
                      s->screen, s->audio, s->subs, s->start_disc ? "disc" : "movie", s->info_sheets ? "on" : "off",
-                     s->scanlines ? "on" : "off", s->logs ? "on" : "off");
+                     s->scanlines ? "on" : "off", s->logs ? "on" : "off", s->skip_clips ? "on" : "off");
 
     if (plat_data_save(FILE_NAME, buf, n) < 0)
         plat_log("cannot save the settings\n");

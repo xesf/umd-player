@@ -16,6 +16,7 @@ typedef struct app_settings {
     int info_sheets;          /* 1: write an info sheet for each disc that has none (infosheet.h) */
     int scanlines;            /* 1: dark lines over the video, like a CRT */
     int logs;                 /* 1: write log.txt in the data folder */
+    int skip_clips;           /* 1: ✕ ends any clip but the movie, even one the disc locks */
 } app_settings;
 
 /* The settings, loaded on first use (defaults: Zoom, English audio, subtitles in the system

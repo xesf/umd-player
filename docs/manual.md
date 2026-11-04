@@ -66,6 +66,7 @@ Press △ in the library. Use Up and Down to choose a row, Left and Right to cha
 | Subtitles | Off, System, 16 languages | The subtitle language for new discs. System uses the Vita's language. |
 | Info sheets | Off, On | On writes an info sheet for each disc that has none. Off (the default) writes nothing. |
 | Logs | On, Off | On (the default) writes what the player does to `log.txt` in the data folder (`ux0:data/umdplayer` on the Vita). Send this file with a bug report. |
+| Skip clips | Off, On | On lets ✕ or START end any clip on a disc (a logo, a warning, an intro or a transition), even one the disc does not let you skip. The menus and the movie work as usual. Use it to reach a menu faster when you test a disc. Off is the default. |
 
 A disc you have watched keeps its own audio, subtitle and screen choices.
 

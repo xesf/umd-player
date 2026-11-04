@@ -10,6 +10,7 @@
 #include "menu.h"
 #include "player.h"
 #include "resume.h"
+#include "settings.h"
 #include "sfx.h"
 
 #define DISC_SPRITES 512
@@ -560,6 +561,18 @@ int disc_update(disc *d, uint32_t pressed)
     }
     if (d->pl && player_menu_requested(d->pl))
         to_main_menu(d);
+    /* The Skip clips setting, for testing: ✕ or START ends a clip (a logo, a warning, an intro,
+       a transition) when no menu takes the key, even while the disc locks its keys, and the
+       script goes on from the clip's end. The movie, and the menus, keep their keys. */
+    if (settings_get()->skip_clips && d->pl && !menu_focus && (pressed & (PLAT_BTN_CROSS | PLAT_BTN_START)) &&
+        !player_title_ended(d->pl) && !menu_title_resumable(d->m, d->title)) {
+        plat_log("disc: skipping title %d\n", d->title);
+        player_close(d->pl);
+        d->pl = NULL;
+        d->menu_video = 0;
+        d->pending_end = d->title;
+        pressed &= ~(uint32_t)(PLAT_BTN_CROSS | PLAT_BTN_START);
+    }
     /* On a page over the movie, Circle and Triangle go to the main menu too, as Circle does
        during the movie. On other pages Triangle does nothing: Spider-Man 2's warning cards
        would take it as "back to the main menu" and skip the movie. During the movie Triangle

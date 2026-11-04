@@ -1155,7 +1155,7 @@ static void fill_icon_corners(library *l)
 
 /* ---- the settings panel (△) ---- */
 
-enum { SET_START, SET_SCREEN, SET_AUDIO, SET_SUBS, SET_SHEETS, SET_LOGS, SET_ROWS };
+enum { SET_START, SET_SCREEN, SET_AUDIO, SET_SUBS, SET_SHEETS, SET_LOGS, SET_SKIP, SET_ROWS };
 
 static int lang_index(const char *code)
 {
@@ -1203,6 +1203,8 @@ static void settings_input(library *l, uint32_t pressed)
     } else if (dir && l->settings_row == SET_LOGS) {
         s->logs = !s->logs;
         plat_set_log_file(s->logs);
+    } else if (dir && l->settings_row == SET_SKIP) {
+        s->skip_clips = !s->skip_clips;
     }
     if (pressed)
         l->ui_dirty = 1;
@@ -1242,6 +1244,9 @@ static void draw_settings(library *l)
     v.rows[SET_LOGS].icon = ICON_CHAPTERS;
     snprintf(v.rows[SET_LOGS].label, sizeof(v.rows[0].label), "Logs");
     snprintf(v.rows[SET_LOGS].value, sizeof(v.rows[0].value), "%s", s->logs ? "On" : "Off");
+    v.rows[SET_SKIP].icon = ICON_FORWARD;
+    snprintf(v.rows[SET_SKIP].label, sizeof(v.rows[0].label), "Skip clips");
+    snprintf(v.rows[SET_SKIP].value, sizeof(v.rows[0].value), "%s", s->skip_clips ? "On" : "Off");
     osd_draw_menu(&v, &l->ui);
 }
 
