@@ -2846,8 +2846,24 @@ static void collect(res *r, canvas *c, int i, const xform *parent, sprite *list,
                (a highlight swapped for another) still fill it. */
             if (w->script_image && r->r.objects[i].kind == RCO_PLANE && !r->img_fill[image] &&
                 (rule == FIT || rule == STRETCH) && width < 0.9f * UNITS_W && height < 0.9f * UNITS_H &&
-                fabsf((width / height) / ((float)iw / (float)ih) - 1.0f) > 0.03f)
-                rule = OWN;
+                fabsf((width / height) / ((float)iw / (float)ih) - 1.0f) > 0.03f) {
+                /* Unless the plane is its own picture at a whole magnification, the same across
+                   and down: then the script's pictures share it. Sahara's subtitle setting is a
+                   106x54 plane holding the 53x27 OFF; the 41x27 ON it swaps in is doubled too. */
+                int own_img = r->r.objects[i].image, ow, oh;
+                float kx = 0, ky = 0;
+                if (own_img >= 0 && own_img != image && image_rgba(r, own_img, &ow, &oh) && ow > 0 && oh > 0) {
+                    kx = width / (float)ow;
+                    ky = height / (float)oh;
+                }
+                if (kx >= 1.5f && kx <= OVER_MAX && fabsf(kx / ky - 1.0f) < 0.02f &&
+                    fabsf(kx - roundf(kx)) < 0.03f * kx) {
+                    rule = STRETCH;
+                    width = (float)iw * kx;
+                    height = (float)ih * kx;
+                } else
+                    rule = OWN;
+            }
             if (r->label_k[i] > 0) {
                 width = (float)iw * r->label_k[i];
                 height = (float)ih * r->label_k[i];
