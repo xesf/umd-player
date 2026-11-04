@@ -517,13 +517,22 @@ static void play_anim(menu *m, int anim, int target)
        Jason stops its looping button fades by playing "killAnim", a bare delay, on the button.
        Animations played in the same moment all run: Fawlty Towers plays its episode page's
        transition on the button and then moves the focus, whose focus-out animation on that
-       button stopped the transition before it opened the page or ended its input lock. */
+       button stopped the transition before it opened the page or ended its input lock. An
+       animation with nothing to show, empty or only delays, is played to stop the others, and
+       does at once: Sky High locks its keys on the main menu's dummy button as it opens the
+       scene list and clears the lock with an empty animation in the same moment. */
+    const rco_anim *pa = &m->res->r.anims[anim];
+    int bare = 1;
+    for (int k = 0; k < pa->step_count && bare; k++) {
+        int kind = m->res->r.steps[pa->first_step + k].kind;
+        bare = kind == RCO_STEP_DELAY || kind == RCO_STEP_UNLOCK;
+    }
     for (int i = 0; i < MAX_RUNS; i++) {
         if (!m->runs[i].active || m->runs[i].target != target || target < 0)
             continue;
         if (m->runs[i].anim == anim)
             run = &m->runs[i];
-        else if (m->runs[i].started < m->now && &m->runs[i] != m->stepping)
+        else if ((bare || m->runs[i].started < m->now) && &m->runs[i] != m->stepping)
             m->runs[i].active = 0;
     }
     for (int i = 0; !run && i < MAX_RUNS; i++)
