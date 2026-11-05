@@ -5,7 +5,7 @@
 - New setting, Skip clips: with it on, ✕ or START ends any clip on a disc (a logo, a warning, an intro or a transition), even one the disc does not let you skip. The menus and the movie work as usual. It is for testing discs and is off by default.
 - Fixed Sky High taking no keys on the scene list.
 - Fixed Sahara's subtitle setting showing "ON" at half the size of "OFF" and of the other menu items.
-- Fixed the black screen that lasted 0.2 s too long when a menu returns to its main menu from another title, as Kill Bill Vol. 1 does from its scene list. v0.9.11 caused it.
+- Shortened the black screen when Kill Bill Vol. 1 returns to its main menu from the scene list, from about a second to 0.3 s. A menu video that starts under a cover page with no buttons now shows its first chapter after 0.3 s, not after the 1 s a disc drive seek takes.
 - Fixed Scary Movie taking no keys on the main menu after you play a scene, go back to the scene list and then to the main menu. v0.9.11 caused this.
 
 ## v0.9.11 (2026-11-03)

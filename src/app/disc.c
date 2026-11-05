@@ -21,6 +21,7 @@
 #define QUIT_HOLD   1500000          /* us Circle is held to leave the disc */
 #define SEEK_US     1200000          /* a jump in the title that plays: first onChapter waits (Spriggan's preview) */
 #define SEEK_REOPEN_US 1000000       /* another title: a page that covers the picture waits on it, so no longer */
+#define COVER_US    300000           /* a menu video under a cover: first onChapter waits this long */
 #define SEEK_NEAR   (10 * 90000)     /* a jump this short (90 kHz) is no seek */
 #define STATE_MAX   4096
 
@@ -41,6 +42,8 @@ struct disc {
         uint64_t since, script, draw, scan, player;
         int frames, draws;
     } perf;
+    uint64_t play_at;         /* when the menus last asked to play a title */
+    int covered;              /* a page with no buttons covered the screen then, for a menu video */
     uint64_t seek_until;      /* the first chapter event of a title waits until then */
     int one_chapter;          /* the play being started ends at its next chapter */
     int left_title;           /* the title stop() closed, and where it was: a replay from there */
@@ -150,6 +153,8 @@ static void d_play(void *user, int playlist, int chapter, int audio, int subtitl
 {
     disc *d = user;
 
+    d->play_at = plat_time_us();
+    d->covered = menu_mode && !menu_has_focus(d->m) && menu_active_page(d->m) >= 0;
     /* Another title replacing the movie (Circle opens the menu over it): keep the movie's
        place for resume(), as a stop would. */
     if (d->title != playlist)
@@ -521,7 +526,13 @@ int disc_update(disc *d, uint32_t pressed)
            Powers covers its scene preview as it starts one and uncovers it in onChapter; The
            Goonies ignores onChapter until its scene page has finished opening, under a lock,
            and until a new scene's 0.5 s animation has ended. */
-        int due = ended || (!menu_locked(d->m) && (!first || plat_time_us() >= d->seek_until));
+        /* A menu video started under a page without buttons, a cover the script closes in its first
+           onChapter (Kill Bill's black page after its scene list), shows when its picture is out:
+           the wait for a drive's seek would only keep the screen black. */
+        uint64_t seek_until = d->seek_until;
+        if (d->covered && seek_until > d->play_at + COVER_US)
+            seek_until = d->play_at + COVER_US;
+        int due = ended || (!menu_locked(d->m) && (!first || plat_time_us() >= seek_until));
         if (!d->first_chapter && player_started(d->pl))
             d->first_chapter = ch;
         if (ch != d->last_chapter && !due)

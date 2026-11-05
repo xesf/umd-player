@@ -149,7 +149,8 @@ typedef struct sim {
     iso_volume vol;
     umdv_playlist pl;
     menu_status st;
-    uint64_t now, title_end, title_start, seek_until;  /* virtual time, us */
+    uint64_t now, title_end, title_start, seek_until, play_at;  /* virtual time, us */
+    int covered;
     int left_playlist;        /* as src/app/disc.c: the title stop() ended, and where (us) */
     uint64_t left_pos;
     int start_chapter;
@@ -244,6 +245,8 @@ static void sim_play(void *user, int playlist, int chapter, int audio, int subti
     s->start_chapter = chapter > 1 && chapter <= t->chapter_count ? chapter : 1;
     s->last_chapter = 0;
     s->events_done = from;
+    s->play_at = s->now;
+    s->covered = menu_mode && s->m && !menu_has_focus(s->m) && menu_active_page(s->m) >= 0;   /* as src/app/disc.c */
     s->menu_mode = menu_mode;
 }
 
@@ -472,7 +475,7 @@ static int run_disc(int argc, char **argv)
             }
             if (fired) {
             } else if (ch != s.last_chapter && s.now >= s.title_start + 100000 &&
-                       ((!menu_locked(m) && (s.last_chapter || s.now >= s.seek_until)) || s.now >= s.title_end)) {   /* as src/app/disc.c */
+                       ((!menu_locked(m) && (s.last_chapter || s.now >= (s.covered && s.seek_until > s.play_at + 300000 ? s.play_at + 300000 : s.seek_until))) || s.now >= s.title_end)) {   /* as src/app/disc.c */
                 if (!s.last_chapter)
                     ch = s.start_chapter;    /* the first event is the chapter it started in */
                 else if (ch > s.last_chapter + 1)
