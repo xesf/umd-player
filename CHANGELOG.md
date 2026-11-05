@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.9.12 (2026-11-05)
 
 - New setting, Skip clips: with it on, ✕ or START ends any clip on a disc (a logo, a warning, an intro or a transition), even one the disc does not let you skip. The menus and the movie work as usual. It is for testing discs and is off by default.
 - Fixed Sky High taking no keys on the scene list.
