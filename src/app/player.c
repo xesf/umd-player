@@ -1450,6 +1450,7 @@ int player_started(const player *p) { return !p->seeking || p->ended || (!p->vid
 uint64_t player_title_end(const player *p) { return p->title->end_pts; }
 uint64_t player_title_start(const player *p) { return p->title->start_pts; }
 int player_paused(const player *p) { return p->paused; }
+int player_has_picture(const player *p) { return p->shown != NULL; }
 int player_audio(const player *p) { return p->want_audio; }
 int player_subtitle(const player *p) { return p->sub_sub == DEMUX_NONE ? -1 : p->sub_sub; }
 uint64_t player_position(const player *p) { return now_or_shown((player *)p); }

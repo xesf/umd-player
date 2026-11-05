@@ -54,6 +54,8 @@ const char *player_chapter_mark(const player *p, uint32_t *data);
    ("BlankMark"), or NULL. Marks are reported in time order, one per call. */
 const char *player_next_event(player *p, uint32_t *data);
 int player_paused(const player *p);
+/* 1 once a picture has been decoded: before that the player presents nothing. */
+int player_has_picture(const player *p);
 int player_audio(const player *p);                /* substream */
 int player_subtitle(const player *p);             /* substream, or -1 for off */
 uint64_t player_position(const player *p);        /* 90 kHz, in the clip's time */

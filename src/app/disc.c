@@ -655,10 +655,11 @@ int disc_update(disc *d, uint32_t pressed)
                  d->perf.scan / n / 1000, d->perf.player / n / 1000);
         memset(&d->perf, 0, sizeof(d->perf));
     }
-    if (d->pl) {
+    if (d->pl && player_has_picture(d->pl)) {
         /* nothing more: the player presents the layer */
     } else if (d->presented != d->layer_id) {
-        /* Nothing playing: the menus alone, over black. */
+        /* Nothing playing, or a title that has no picture yet (a page that covers the start of a
+           menu video shows at once, not with its first frame): the menus alone, over black. */
         {
             d->presented = d->layer_id;
             memset(&info, 0, sizeof(info));
