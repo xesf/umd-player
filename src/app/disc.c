@@ -666,6 +666,9 @@ int disc_update(disc *d, uint32_t pressed)
     }
     if (d->pl && player_has_picture(d->pl)) {
         /* nothing more: the player presents the layer */
+    } else if (d->pl && d->covered) {
+        /* A menu video that starts under a cover page: the screen holds the last picture, the
+           page that was showing, until the video's first picture is out, not a black cover. */
     } else if (d->presented != d->layer_id) {
         /* Nothing playing, or a title that has no picture yet (a page that covers the start of a
            menu video shows at once, not with its first frame): the menus alone, over black. */
