@@ -43,6 +43,7 @@ struct disc {
         int frames, draws;
     } perf;
     uint64_t play_at;         /* when the menus last asked to play a title */
+    int pic_logged;           /* the first picture of the title played last was logged */
     int covered;              /* a page with no buttons covered the screen then, for a menu video */
     uint64_t seek_until;      /* the first chapter event of a title waits until then */
     int one_chapter;          /* the play being started ends at its next chapter */
@@ -154,6 +155,7 @@ static void d_play(void *user, int playlist, int chapter, int audio, int subtitl
     disc *d = user;
 
     d->play_at = plat_time_us();
+    d->pic_logged = 0;
     d->covered = menu_mode && !menu_has_focus(d->m) && menu_active_page(d->m) >= 0;
     /* Another title replacing the movie (Circle opens the menu over it): keep the movie's
        place for resume(), as a stop would. */
@@ -518,6 +520,11 @@ int disc_update(disc *d, uint32_t pressed)
         d->pending_end = 0;
         menu_playlist_ended(d->m, t);
     }
+    if (d->pl && !d->pic_logged && player_has_picture(d->pl)) {
+        d->pic_logged = 1;
+        plat_log("disc: first picture %.0f ms after the play%s\n", (plat_time_us() - d->play_at) / 1000.0,
+                 d->covered ? " (under a cover)" : "");
+    }
     /* Playback events, before the menus run this frame. */
     if (d->pl) {
         int ch = player_chapter(d->pl), ended = player_title_ended(d->pl), first = d->last_chapter == 0;
@@ -547,6 +554,8 @@ int disc_update(disc *d, uint32_t pressed)
         else if ((d->catching_up || d->last_chapter) && ch > d->last_chapter + 1)
             ch = d->last_chapter + 1;
         if (ch != d->last_chapter && player_started(d->pl) && due) {
+            if (first)
+                plat_log("disc: first chapter event %.0f ms after the play\n", (plat_time_us() - d->play_at) / 1000.0);
             d->catching_up |= first;
             d->last_chapter = ch;
             d->reporting = ch;
