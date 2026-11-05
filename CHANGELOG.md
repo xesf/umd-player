@@ -1,8 +1,9 @@
 # Changelog
 
-## Unreleased
+## v0.9.13 (2026-11-05)
 
-- Kill Bill Vol. 1's black screen when you leave the scene list now lasts only until the first picture of the main menu video is ready, about 0.15 s. A page that covers a menu video, and a title with no picture yet, now show at once.
+- Shortened the black screen when Kill Bill Vol. 1 returns to its main menu from the scene list. The disc's cover page now waits only for the main menu video's first picture, about 0.15 s, and the scene list stays on screen until then instead of a black screen. This applies to other discs that cover a menu video in the same way.
+- The log now records how long the first picture and the first chapter event take after each play.
 
 ## v0.9.12 (2026-11-05)
 
