@@ -475,7 +475,7 @@ static int run_disc(int argc, char **argv)
             }
             if (fired) {
             } else if (ch != s.last_chapter && s.now >= s.title_start + 100000 &&
-                       ((!menu_locked(m) && (s.last_chapter || s.now >= (s.covered && s.seek_until > s.play_at + 300000 ? s.play_at + 300000 : s.seek_until))) || s.now >= s.title_end)) {   /* as src/app/disc.c */
+                       ((!menu_locked(m) && (s.last_chapter || s.now >= (s.covered && s.seek_until > s.play_at ? s.play_at : s.seek_until))) || s.now >= s.title_end)) {   /* as src/app/disc.c */
                 if (!s.last_chapter)
                     ch = s.start_chapter;    /* the first event is the chapter it started in */
                 else if (ch > s.last_chapter + 1)

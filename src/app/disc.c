@@ -21,7 +21,7 @@
 #define QUIT_HOLD   1500000          /* us Circle is held to leave the disc */
 #define SEEK_US     1200000          /* a jump in the title that plays: first onChapter waits (Spriggan's preview) */
 #define SEEK_REOPEN_US 1000000       /* another title: a page that covers the picture waits on it, so no longer */
-#define COVER_US    300000           /* a menu video under a cover: first onChapter waits this long */
+#define COVER_US    0                /* a menu video under a cover: first onChapter waits this long */
 #define SEEK_NEAR   (10 * 90000)     /* a jump this short (90 kHz) is no seek */
 #define STATE_MAX   4096
 
