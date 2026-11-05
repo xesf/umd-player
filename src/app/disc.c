@@ -19,7 +19,8 @@
 #define UNITS_W     854.0f
 #define UNITS_H     480.0f
 #define QUIT_HOLD   1500000          /* us Circle is held to leave the disc */
-#define SEEK_US     1200000          /* a UMD drive's seek to another place: first onChapter waits */
+#define SEEK_US     1200000          /* a jump in the title that plays: first onChapter waits (Spriggan's preview) */
+#define SEEK_REOPEN_US 1000000       /* another title: a page that covers the picture waits on it, so no longer */
 #define SEEK_NEAR   (10 * 90000)     /* a jump this short (90 kHz) is no seek */
 #define STATE_MAX   4096
 
@@ -112,7 +113,7 @@ static void start(disc *d, int title, int chapter, uint64_t pos)
     d->first_chapter = 0;
     d->catching_up = 0;
     d->end_sent = 0;
-    d->seek_until = plat_time_us() + SEEK_US;
+    d->seek_until = plat_time_us() + SEEK_REOPEN_US;
     /* A title stopped and played again from its start, when it was short or near its start:
        La Blue Girl Returns stops and replays its 1 s menu video, covering the menu until
        onChapter, so a 1 s wait left it covered and took no input. */
@@ -214,7 +215,7 @@ static void d_play(void *user, int playlist, int chapter, int audio, int subtitl
         d->first_chapter = 0;
         d->catching_up = 0;
         d->end_sent = 0;
-        d->seek_until = jump > SEEK_NEAR ? plat_time_us() + SEEK_US : 0;
+        d->seek_until = jump > SEEK_NEAR ? plat_time_us() + SEEK_REOPEN_US : 0;
         d->left_title = 0;
         return;
     }

@@ -223,6 +223,8 @@ static void sim_play(void *user, int playlist, int chapter, int audio, int subti
             if (c->item_count == 1 && t->item_count == 1 && strcmp(ci->clip, ni->clip) == 0 &&
                 (cur > to ? cur - to : to - cur) <= 10000000)
                 seek = 0;
+            else
+                seek = 1000000;           /* as src/app/disc.c: another clip opens a new player */
         } else if (!s->st.playing && s->left_playlist == playlist && chapter <= 1 &&
                    s->left_pos <= 10000000) {
             seek = 0;                /* played again from its start, from near there */
