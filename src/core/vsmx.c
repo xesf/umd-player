@@ -467,6 +467,13 @@ static void native_to_string(vsmx *vm, void *user, vs_value self, const vs_value
     *ret = self.type == VS_STR ? self : vs_string(vm, vs_text(self, buf, sizeof(buf)));
 }
 
+/* valueOf of a number, a boolean or a string: the value itself. Discs do new Int(x).valueOf(). */
+static void native_value_of(vsmx *vm, void *user, vs_value self, const vs_value *args, int argc, vs_value *ret)
+{
+    (void)vm; (void)user; (void)args; (void)argc;
+    *ret = self;
+}
+
 vs_value vs_get(vsmx *vm, vs_value obj, const char *key)
 {
     vs_value out = vs_undef();
@@ -475,6 +482,8 @@ vs_value vs_get(vsmx *vm, vs_value obj, const char *key)
 
     if ((obj.type == VS_NUM || obj.type == VS_BOOL) && strcmp(key, "toString") == 0)
         return vs_new_native(vm, native_to_string, NULL);
+    if ((obj.type == VS_NUM || obj.type == VS_BOOL || obj.type == VS_STR) && strcmp(key, "valueOf") == 0)
+        return vs_new_native(vm, native_value_of, NULL);
 
     if (obj.type == VS_STR) {
         static const char *const methods[] = {"charAt", "charCodeAt", "indexOf", "lastIndexOf", "substring",
