@@ -162,6 +162,7 @@ typedef struct sim {
     int last_chapter;         /* the chapter last reported; 0 after a play, as in src/app/disc.c */
     uint64_t events_done;     /* event marks before this position (us) have been reported */
     int menu_mode;            /* the title playing is a menu video */
+    int skip_intros, skip_end;  /* MENUTEST_SKIP: as src/app/disc.c skip_intros */
     const menu *m;            /* once open: which titles keep a place to resume */
 } sim;
 
@@ -195,6 +196,18 @@ static void sim_play(void *user, int playlist, int chapter, int audio, int subti
     if (s->st.playing && !s->menu_mode && s->st.playlist != playlist) {
         s->saved_playlist = s->st.playlist;   /* as src/app/disc.c: the replaced title's place */
         s->saved_chapter = s->st.chapter;
+    }
+    if (s->skip_intros) {
+        if (menu_mode || menu_title_resumable(s->m, playlist) || menu_has_focus(s->m)) {
+            s->skip_intros = 0;
+        } else {
+            printf("  (skipped)\n");
+            s->st.playing = 0;
+            s->st.playlist = playlist;   /* as src/app/disc.c: no player, the title is still reported */
+            s->skip_end = playlist;
+            s->menu_mode = 0;
+            return;
+        }
     }
     t = &s->pl.titles[playlist - 1];
     len = (uint64_t)(t->end_pts - t->start_pts) * 100 / 9;
@@ -406,6 +419,7 @@ static int run_disc(int argc, char **argv)
         return 1;
     }
     s.m = m;
+    s.skip_intros = getenv("MENUTEST_SKIP") != NULL;
     if (state && (sf = fopen(state, "r")) != NULL) {
         int n = 0;
         if (fgets(text, sizeof(text), sf) && sscanf(text, "%d %d %n", &s.saved_playlist, &s.saved_chapter, &n) >= 2) {
@@ -413,7 +427,7 @@ static int run_disc(int argc, char **argv)
             printf("    0.00 s  CONTINUE title %d chapter %d\n", s.saved_playlist, s.saved_chapter);
         }
         fclose(sf);
-        if (!s.saved_playlist || !menu_continue(m))
+        if (!s.saved_playlist || getenv("MENUTEST_NOCONT") || !menu_continue(m))
             menu_start(m);
     } else {
         menu_start(m);
@@ -452,6 +466,11 @@ static int run_disc(int argc, char **argv)
                     }
                 }
             }
+        }
+        if (s.skip_end) {
+            int pl = s.skip_end;
+            s.skip_end = 0;
+            menu_playlist_ended(m, pl);
         }
         if (s.st.playing && !s.st.paused) {
             const umdv_title *t = &s.pl.titles[s.st.playlist - 1];

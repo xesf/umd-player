@@ -275,8 +275,12 @@ static void d_status(void *user, menu_status *st)
 
     memset(st, 0, sizeof(*st));
     st->subtitle = -1;
-    if (!d->pl)
+    if (!d->pl) {
+        /* A clip skipped on the way to the menu has no player, and its end is still reported:
+           the scripts ask which title ended (The Community Project, The Detonator). */
+        st->playlist = d->title;
         return;
+    }
     st->playing = !player_title_ended(d->pl);
     st->paused = player_paused(d->pl);
     st->playlist = d->title;  /* still the title that ended, while onPlayListEnd runs */
