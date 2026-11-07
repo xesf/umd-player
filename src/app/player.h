@@ -44,6 +44,7 @@ int player_next_title(const player *p);
 int player_finished(const player *p);
 
 /* For the disc menus. */
+int player_title_held(const player *p);           /* it ended at a one-chapter play's next chapter: the picture holds */
 int player_title_ended(const player *p);          /* the title played to its end (menu mode) */
 int player_started(const player *p);              /* a picture (or, without video, sound) is out since the last seek */
 int player_menu_requested(player *p);             /* Circle was pressed; clears the request */

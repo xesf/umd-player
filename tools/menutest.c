@@ -163,6 +163,8 @@ typedef struct sim {
     uint64_t events_done;     /* event marks before this position (us) have been reported */
     int menu_mode;            /* the title playing is a menu video */
     int skip_intros, skip_end;  /* MENUTEST_SKIP: as src/app/disc.c skip_intros */
+    int held;                 /* it ends at a one-chapter play's next chapter: the picture holds */
+    uint64_t play_len;        /* where the play ends in the title (us) */
     const menu *m;            /* once open: which titles keep a place to resume */
 } sim;
 
@@ -213,7 +215,8 @@ static void sim_play(void *user, int playlist, int chapter, int audio, int subti
     len = (uint64_t)(t->end_pts - t->start_pts) * 100 / 9;
     if (chapter > 1 && chapter <= t->chapter_count)
         from = (uint64_t)(s->pl.chapters[t->first_chapter + chapter - 1].pts - t->start_pts) * 100 / 9;
-    if (one_chapter && (chapter < 1 ? 1 : chapter) < t->chapter_count)   /* as src/app/player.c: ends at the next chapter */
+    s->held = one_chapter && (chapter < 1 ? 1 : chapter) < t->chapter_count;
+    if (s->held)   /* as src/app/player.c: ends at the next chapter */
         len = (uint64_t)(s->pl.chapters[t->first_chapter + (chapter < 1 ? 1 : chapter)].pts - t->start_pts) * 100 / 9;
     printf("  \"%s\", %.1f s\n", t->name, (len - from) / 1e6);
     {
@@ -254,6 +257,7 @@ static void sim_play(void *user, int playlist, int chapter, int audio, int subti
     s->st.audio = audio;
     s->st.subtitle = subtitle;
     s->title_end = s->now + (len > from ? len - from : 0);
+    s->play_len = len;
     s->title_start = s->now;
     s->start_chapter = chapter > 1 && chapter <= t->chapter_count ? chapter : 1;
     s->last_chapter = 0;
@@ -475,7 +479,7 @@ static int run_disc(int argc, char **argv)
         if (s.st.playing && !s.st.paused) {
             const umdv_title *t = &s.pl.titles[s.st.playlist - 1];
             uint64_t left = s.title_end > s.now ? s.title_end - s.now : 0;
-            uint64_t pos = (uint64_t)(t->end_pts - t->start_pts) * 100 / 9 - left;
+            uint64_t pos = s.play_len - left;
             int ch = 1, fired = 0, real_ch;
             for (int k = 1; k < t->chapter_count; k++)
                 if ((uint64_t)(s.pl.chapters[t->first_chapter + k].pts - t->start_pts) * 100 / 9 <= pos)
@@ -512,7 +516,8 @@ static int run_disc(int argc, char **argv)
                 printf("%8.2f s  END title %d\n", s.now / 1e6, pl);
                 s.st.playing = 0;            /* playlist stays: the scripts ask which one ended */
                 s.last_chapter = 0;
-                menu_playlist_ended(m, pl);
+                if (!s.held)                 /* as src/app/disc.c */
+                    menu_playlist_ended(m, pl);
             }
         }
         for (int i = 4; i < argc; i++) {

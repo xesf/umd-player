@@ -212,6 +212,7 @@ struct player {
     uint64_t bar_until;              /* the time bar shows until then after a chapter change */
     uint64_t last_save_us;
     int ended;
+    int held;                        /* the title ends at a one-chapter play's next chapter, not its own end */
     uint64_t audio_base_played;      /* plat_audio_played() when playback started */
     uint64_t clk_raw, clk_us, clk_last;  /* last audio clock reading, when it changed, last value given */
     uint64_t clk_base;                   /* the steered clock at clk_us */
@@ -1447,6 +1448,7 @@ static void switch_title(player *p, int dir)
 }
 
 int player_title_ended(const player *p) { return p->ended; }
+int player_title_held(const player *p) { return p->ended && p->held; }
 int player_started(const player *p) { return !p->seeking || p->ended || (!p->video && p->audio_started); }
 uint64_t player_title_end(const player *p) { return p->title->end_pts; }
 uint64_t player_title_start(const player *p) { return p->title->start_pts; }
@@ -1508,10 +1510,13 @@ static void end_at_chapter(player *p, int chapter, int one)
     int c = chapter < 1 ? 1 : chapter;
 
     p->cur.end_pts = p->playlist.items[t->first_item + p->item].end_pts;
+    p->held = 0;
     if (one && c < t->chapter_count) {
         const umdv_chapter *next = &p->playlist.chapters[t->first_chapter + c];
-        if (next->item == p->item && next->pts > p->cur.start_pts && next->pts < p->cur.end_pts)
+        if (next->item == p->item && next->pts > p->cur.start_pts && next->pts < p->cur.end_pts) {
             p->cur.end_pts = next->pts;
+            p->held = 1;
+        }
     }
 }
 
