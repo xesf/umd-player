@@ -941,15 +941,18 @@ NATIVE(w_activate)
     ref *rf = user;
     res *r = rf->m->res;
     (void)vm; (void)args; (void)argc;
-    int was = r->active, focus = r->focus[rf->index];
+    int was = r->active, focus = r->focus[rf->index], left = r->active_left;
     *ret = self;
     r->active = rf->index;
     r->active_left = 0;
     r->under_movie[rf->index] = 0;
     do_action(rf->m, &r->r.objects[rf->index].action[RCO_PAGE_ACTIVATE], rf->index);
     /* A page made active again gives its focused button its focus-in: First Blood moves its
-       crosshair back to the chosen item there on return from its scene and subtitle pages. */
-    if (was != rf->index && focus >= 0 && rf->m->res == r && r->focus[rf->index] == focus) {
+       crosshair back to the chosen item there on return from its scene and subtitle pages.
+       So does a page that became active only by the close of the one above it, and is now
+       activated by the script: The Doors closes its scene page, then activates the main page,
+       whose Scene Index button gets its large focus-in only that way. */
+    if ((was != rf->index || left) && focus >= 0 && rf->m->res == r && r->focus[rf->index] == focus) {
         take_focus(rf->m, focus);
         if (rf->m->res == r)
             do_action_named(rf->m, &r->r.objects[focus].action[RCO_BTN_FOCUS_IN], focus, "onFocusIn");
