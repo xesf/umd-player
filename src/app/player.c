@@ -190,6 +190,7 @@ struct player {
     int menu_mode, menu_request;     /* player_options.menu; Circle asked for the disc menu */
     int menu_short;                  /* a short title in menu mode: always Fit */
     int video_drained;               /* the decoder gave up its last pictures at the stream's end */
+    int hold;                        /* player_set_hold: nothing is presented */
     int window_on;                   /* player_set_window */
     float window[4];
     const uint8_t *layer;            /* player_set_layer */
@@ -1289,7 +1290,7 @@ static void present(player *p)
     screen_geom g;
     int sw, sh;
 
-    if (!p->shown)
+    if (!p->shown || p->hold)
         return;
     plat_screen_size(&sw, &sh);
     /* Disc menus are drawn for the whole 16:9 frame: while they show, and for the short titles
@@ -1450,7 +1451,13 @@ int player_started(const player *p) { return !p->seeking || p->ended || (!p->vid
 uint64_t player_title_end(const player *p) { return p->title->end_pts; }
 uint64_t player_title_start(const player *p) { return p->title->start_pts; }
 int player_paused(const player *p) { return p->paused; }
-int player_has_picture(const player *p) { return p->shown != NULL; }
+int player_has_picture(const player *p) { return p->shown != NULL && !p->hold; }
+void player_set_hold(player *p, int hold)
+{
+    if (p->hold != !!hold)
+        p->dirty = 1;
+    p->hold = !!hold;
+}
 int player_audio(const player *p) { return p->want_audio; }
 int player_subtitle(const player *p) { return p->sub_sub == DEMUX_NONE ? -1 : p->sub_sub; }
 uint64_t player_position(const player *p) { return now_or_shown((player *)p); }

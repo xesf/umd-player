@@ -21,6 +21,7 @@
 #define QUIT_HOLD   1500000          /* us Circle is held to leave the disc */
 #define SEEK_US     1200000          /* a jump in the title that plays: first onChapter waits (Spriggan's preview) */
 #define SEEK_REOPEN_US 1000000       /* another title: a page that covers the picture waits on it, so no longer */
+#define HOLD_US     1500000          /* a title after a menu video: its first picture waits this long for the menu layer to go */
 #define COVER_US    0                /* a menu video under a cover: first onChapter waits this long */
 #define SEEK_NEAR   (10 * 90000)     /* a jump this short (90 kHz) is no seek */
 #define STATE_MAX   4096
@@ -44,6 +45,7 @@ struct disc {
     } perf;
     uint64_t play_at;         /* when the menus last asked to play a title */
     int pic_logged;           /* the first picture of the title played last was logged */
+    int hold;                 /* the title's first picture waits for the menus to clear the screen (HOLD_US) */
     int covered;              /* a page with no buttons covered the screen then, for a menu video */
     uint64_t seek_until;      /* the first chapter event of a title waits until then */
     int one_chapter;          /* the play being started ends at its next chapter */
@@ -175,6 +177,14 @@ static void d_play(void *user, int playlist, int chapter, int audio, int subtitl
             return;
         }
     }
+    /* A movie or a clip that follows a menu video while the menus still show (Detonator's icons
+       slide out as the first clip starts; The Community Project fades a black curtain in over the
+       menu video and out again): its first picture would show under what is left of the pages,
+       and in Fit while they last. It waits until they are gone, as on the PSP, where the title
+       takes that long to start. */
+    int hold = !menu_mode && d->menu_video && d->layer_shown;
+
+    d->hold = 0;
     d->menu_video = menu_mode;
     /* The same title again (a looping menu video): restart it in place, which is quick, with
        its new audio and subtitles. Reopening it took a few frames on the Vita: The Transporter
@@ -229,6 +239,7 @@ static void d_play(void *user, int playlist, int chapter, int audio, int subtitl
 reopen:
     d->one_chapter = one_chapter;
     start(d, playlist, chapter, 0);
+    d->hold = hold && d->pl;
     d->one_chapter = 0;
 }
 
@@ -632,7 +643,10 @@ int disc_update(disc *d, uint32_t pressed)
         d->layer_id++;
         d->perf.draws++;
     }
+    if (d->hold && (!d->layer_shown || plat_time_us() - d->play_at >= HOLD_US))
+        d->hold = 0;
     if (d->pl) {
+        player_set_hold(d->pl, d->hold);
         player_set_layer(d->pl, d->layer_shown ? d->layer.rgba : NULL, d->layer.w, d->layer.h, d->layer.stride,
                          d->layer_id);
         player_set_sprites(d->pl, plat_draws_sprites() ? d->sprites : NULL, d->sprite_count);
