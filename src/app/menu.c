@@ -2691,13 +2691,19 @@ static void same_size_labels(menu *m, res *r)
            page: English 52x21 in 246x30) sets the size for its row too: French, 48x15 in a 111x34
            widget of nearly its shape, stretched to 2.3 times the size of English. */
         rule = stretch_rule(iw, ih, o->size[0], o->size[1], 0);
-        if (rule != OVER && !(rule == OWN && o->size[0] >= 3.0f * (float)iw))
+        if (rule != OVER && rule != OWN)
             continue;
+        int wide = rule == OVER || o->size[0] >= 3.0f * (float)iw;
         for (int j = 0; j < rc->object_count; j++) {
             const rco_object *b = &rc->objects[j];
             int bw, bh;
             if (j == i || r->own_size[j] || b->kind != RCO_BUTTON || b->parent != o->parent || b->scale[0] != o->scale[0] ||
                 b->image < 0 || png_info(rc->images[b->image].data, rc->images[b->image].size, &bw, &bh) < 0)
+                continue;
+            /* The same image size at the same scale draws the same size: Talladega Nights'
+               trailer titles, all 367x48 in widgets of 743x96 (STRETCH, doubled) and 743x222
+               (OWN), the second drawn at half the size of the others. */
+            if (!wide && !(bw == iw && bh == ih))
                 continue;
             int rule = stretch_rule(bw, bh, b->size[0], b->size[1], 0);
             if ((rule == STRETCH || rule == FIT) && b->size[0] > 1.03f * (float)bw) {
