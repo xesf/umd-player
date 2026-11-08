@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.9.14 (2026-11-08)
+
+- Fixed The Book of Cool playing only the warning and returning to the menu when you choose a video.
+- Fixed a black screen that took no keys on The Community Project and The Detonator when you go back to the main menu after playing the movie.
+- Fixed The Community Project's movie showing small for a moment before going full screen.
+- Fixed The Doors' main menu not showing Scene Index selected (large) when you go back to it from the scene menu.
+- Fixed Tales of Vesperia's scene list turning its pages by itself, with the page animation repeating endlessly, after you press left or right a few times.
+- Fixed Talladega Nights' Previews menu drawing two of its three titles at twice their size.
+- Fixed Temptation going back to the start of the disc when you choose any option other than Start. A menu clip played one chapter at a time now stops and holds its picture at the next chapter, as on a PSP. Jackass Vol. 2 and 3, Beavis and Butt-Head and Viva La Bam now keep a still menu picture instead of looping or moving to another menu page, and Gato Fedorento's pages keep their own background.
+
 ## v0.9.13 (2026-11-05)
 
 - Shortened the black screen when Kill Bill Vol. 1 returns to its main menu from the scene list. The disc's cover page now waits only for the main menu video's first picture, about 0.15 s, and the scene list stays on screen until then instead of a black screen. This applies to other discs that cover a menu video in the same way.
