@@ -593,11 +593,7 @@ int disc_update(disc *d, uint32_t pressed)
        chapter 2 of a one-second black title. */
     if (d->pl && player_title_ended(d->pl) && !d->end_sent && player_chapter(d->pl) == d->last_chapter) {
         d->end_sent = 1;
-        /* A play of one chapter holds its last picture at the chapter's end, and the title
-           has not ended: Temptation plays each of its still pages as a one-second chapter,
-           and its onPlayListEnd for that title starts the disc over. */
-        if (!player_title_held(d->pl))
-            menu_playlist_ended(d->m, d->title);
+        menu_playlist_ended(d->m, d->title);
     }
     if (d->pl && player_menu_requested(d->pl))
         to_main_menu(d);
