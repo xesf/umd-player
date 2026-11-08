@@ -48,6 +48,9 @@ typedef struct menu_player {
     void (*log)(void *user, const char *msg);
     /* Play a sound effect: 48 kHz interleaved stereo, copied; NULL stops them all. */
     void (*sound)(void *user, const int16_t *stereo, int frames);
+    /* The title playing goes on to its end: a one-chapter play no longer holds at its next
+       chapter (play(1, 1, title) with no chapter). May be NULL. */
+    void (*play_on)(void *user);
 } menu_player;
 
 /* Loads the start menus (EN100000.RCO, or another language's XX100000.RCO) and runs their top

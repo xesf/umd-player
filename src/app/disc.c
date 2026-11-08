@@ -243,6 +243,13 @@ reopen:
     d->one_chapter = 0;
 }
 
+static void d_play_on(void *user)
+{
+    disc *d = user;
+    if (d->pl)
+        player_play_on(d->pl);
+}
+
 static void d_stop(void *user)
 {
     disc *d = user;
@@ -423,6 +430,7 @@ disc *disc_open(const char *iso_path)
     mp.set_window = d_window;
     mp.log = d_log;
     mp.sound = d_sound;
+    mp.play_on = d_play_on;
     plat_language(lang);
     if (!d->layer.rgba || (d->m = menu_open(&mp, lang)) == NULL) {
         disc_close(d);
@@ -593,7 +601,11 @@ int disc_update(disc *d, uint32_t pressed)
        chapter 2 of a one-second black title. */
     if (d->pl && player_title_ended(d->pl) && !d->end_sent && player_chapter(d->pl) == d->last_chapter) {
         d->end_sent = 1;
-        menu_playlist_ended(d->m, d->title);
+        /* A play of one chapter holds its last picture at the chapter's end, and the title
+           has not ended: Temptation plays each of its still pages as a one-second chapter,
+           and its onPlayListEnd for that title starts the disc over. */
+        if (!player_title_held(d->pl))
+            menu_playlist_ended(d->m, d->title);
     }
     if (d->pl && player_menu_requested(d->pl))
         to_main_menu(d);

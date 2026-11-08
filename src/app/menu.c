@@ -1445,6 +1445,8 @@ NATIVE(mp_play)
         if (argc < 4 && st.playing && st.playlist == playlist) {
             m->menu_mode = vs_truthy(arg(args, argc, 1));
             mlog(m, "menu: play title %d with no chapter: it plays on", playlist);
+            if (m->p.play_on)
+                m->p.play_on(m->p.user);
             return;
         }
         mlog(m, "menu: play title %d chapter %d audio %d subtitle %d", playlist, chapter, m->audio_id,

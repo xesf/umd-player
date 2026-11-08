@@ -212,6 +212,7 @@ struct player {
     uint64_t bar_until;              /* the time bar shows until then after a chapter change */
     uint64_t last_save_us;
     int ended;
+    int held;                        /* the title ends at a one-chapter play's next chapter, not its own end */
     uint64_t audio_base_played;      /* plat_audio_played() when playback started */
     uint64_t clk_raw, clk_us, clk_last;  /* last audio clock reading, when it changed, last value given */
     uint64_t clk_base;                   /* the steered clock at clk_us */
@@ -914,9 +915,15 @@ static int count_long_titles(const player *p);
 
 static uint64_t now_or_shown(player *p)
 {
+    uint64_t now;
     if (p->seeking)
         return p->min_pts;
-    return p->clk_last ? p->clk_last : (p->shown_pts ? p->shown_pts : p->title->start_pts);
+    now = p->clk_last ? p->clk_last : (p->shown_pts ? p->shown_pts : p->title->start_pts);
+    /* A one-chapter play holds its picture in its chapter: the clock runs on, and Temptation
+       reopened its still page at every chapter mark it passed. */
+    if (p->held && now >= p->title->end_pts)
+        now = p->title->end_pts - 1;
+    return now;
 }
 
 static void seek_to(player *p, int64_t target, const char *why)
@@ -1447,6 +1454,7 @@ static void switch_title(player *p, int dir)
 }
 
 int player_title_ended(const player *p) { return p->ended; }
+int player_title_held(const player *p) { return p->ended && p->held; }
 int player_started(const player *p) { return !p->seeking || p->ended || (!p->video && p->audio_started); }
 uint64_t player_title_end(const player *p) { return p->title->end_pts; }
 uint64_t player_title_start(const player *p) { return p->title->start_pts; }
@@ -1508,10 +1516,35 @@ static void end_at_chapter(player *p, int chapter, int one)
     int c = chapter < 1 ? 1 : chapter;
 
     p->cur.end_pts = p->playlist.items[t->first_item + p->item].end_pts;
+    p->held = 0;
     if (one && c < t->chapter_count) {
         const umdv_chapter *next = &p->playlist.chapters[t->first_chapter + c];
-        if (next->item == p->item && next->pts > p->cur.start_pts && next->pts < p->cur.end_pts)
+        if (next->item == p->item && next->pts > p->cur.start_pts && next->pts < p->cur.end_pts) {
             p->cur.end_pts = next->pts;
+            p->held = 1;
+        }
+    }
+}
+
+/* Beavis and Butt-Head, Viva La Bam and In Just One Play start each intro with play(1, 1,
+   title, 1), then ask for the rest of it with play(1, 1, title): the title plays to its end
+   and its onPlayListEnd opens the menu. */
+void player_play_on(player *p)
+{
+    const umdv_title *t = &p->playlist.titles[p->title_index];
+    int eof;
+
+    if (!p->held)
+        return;
+    p->held = 0;
+    plat_mutex_lock(p->lock);
+    p->cur.end_pts = p->playlist.items[t->first_item + p->item].end_pts;
+    eof = p->eof;
+    plat_mutex_unlock(p->lock);
+    if (eof || p->ended) {    /* the reader stopped at the old end: read on from the picture shown */
+        uint64_t at = player_position(p);
+        p->ended = 0;
+        restart_reader(p, at, p->want_audio, p->sub_sub);
     }
 }
 
