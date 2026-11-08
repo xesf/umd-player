@@ -2710,6 +2710,11 @@ static void same_size_labels(menu *m, res *r)
             if (!wide && !(bw == iw && bh == ih))
                 continue;
             int rule = stretch_rule(bw, bh, b->size[0], b->size[1], 0);
+            /* Only artwork made at half size and doubled by its widget: House on Haunted Hill's
+               subtitle labels, 130x24 in widgets of 162x30 beside one of 145x30, keep their
+               stretch. */
+            if (!wide && (rule != STRETCH || b->size[0] < 1.9f * (float)bw))
+                continue;
             if ((rule == STRETCH || rule == FIT) && b->size[0] > 1.03f * (float)bw) {
                 r->own_size[j] = 1;
                 mlog(m, "menu: %s keeps its image size, as %s does", b->name ? b->name : "?", o->name ? o->name : "?");
