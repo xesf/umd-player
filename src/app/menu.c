@@ -983,10 +983,14 @@ NATIVE(w_set_focus)
         r->last_focus[page] > 0) {
         int back = r->last_focus[page] - 1;
         r->last_focus[page] = 0;
+        const rco_action *push = &r->r.objects[back].action[RCO_BTN_PUSH];
         /* Only an item you can see: Scary Movie parks the focus on btnDummy, a button with no
-           picture, while it plays a scene, and kept there on return the main menu took no key. */
+           picture, while it plays a scene, and kept there on return the main menu took no key.
+           And only one you can push: Tales of Vesperia's scene arrows have no push and turn the
+           page in their focus-in; given the focus again on return, each page turned the next. */
         if (back != target && page_of(r, back) == page && r->r.objects[back].kind == RCO_BUTTON &&
-            r->w[back].image >= 0 && r->w[back].color[3] > 0.004f && !r->w[back].hidden)
+            r->w[back].image >= 0 && r->w[back].color[3] > 0.004f && !r->w[back].hidden &&
+            (push->event || push->object >= 0 || push->anim >= 0))
             target = back;
     }
     r->focus_page = page;
