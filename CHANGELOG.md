@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.9.15 (2026-11-12)
+
+- Fixed The Community Project's movie showing small for a moment before going full screen when you start it from the menu, at any chapter. The movie's first picture now waits until the menus have cleared the screen.
+
 ## v0.9.14 (2026-11-08)
 
 - Fixed The Book of Cool playing only the warning and returning to the menu when you choose a video.
