@@ -1460,6 +1460,7 @@ uint64_t player_title_end(const player *p) { return p->title->end_pts; }
 uint64_t player_title_start(const player *p) { return p->title->start_pts; }
 int player_paused(const player *p) { return p->paused; }
 int player_has_picture(const player *p) { return p->shown != NULL && !p->hold; }
+int player_picture_ready(const player *p) { return p->shown != NULL; }
 void player_set_hold(player *p, int hold)
 {
     if (p->hold != !!hold)

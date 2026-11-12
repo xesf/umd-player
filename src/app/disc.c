@@ -655,7 +655,10 @@ int disc_update(disc *d, uint32_t pressed)
         d->layer_id++;
         d->perf.draws++;
     }
-    if (d->hold && (!d->layer_shown || plat_time_us() - d->play_at >= HOLD_US))
+    /* The menus clear only when the picture is out: The Community Project closes its pages as
+       a chapter is picked and opens a black curtain 40 ms later, until onChapter. Released in
+       that gap, the movie's first pictures showed under the curtain in Fit, then in Zoom. */
+    if (d->hold && ((!d->layer_shown && d->pl && player_picture_ready(d->pl)) || plat_time_us() - d->play_at >= HOLD_US))
         d->hold = 0;
     if (d->pl) {
         player_set_hold(d->pl, d->hold);

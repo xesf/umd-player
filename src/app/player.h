@@ -58,6 +58,8 @@ const char *player_next_event(player *p, uint32_t *data);
 int player_paused(const player *p);
 /* 1 once a picture has been decoded: before that the player presents nothing. */
 int player_has_picture(const player *p);
+/* 1 once a picture has been decoded, held or not. */
+int player_picture_ready(const player *p);
 /* 1: the pictures are decoded but not presented (the screen keeps what it shows) until 0. */
 void player_set_hold(player *p, int hold);
 int player_audio(const player *p);                /* substream */
